@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="OWASP explicitly distinguishes authentication—establishing who someone is—from authorization—deciding whether that person is allowed to perform a particular action. It also recommends validating permissions on">
+  <meta name="color-scheme" content="light">
+  <title>SaaS Authorization Testing: Hiding the Button Is Not Security | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 6</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-6">QA Thinking — Day 6</h1>
+<h2
+id="saas-authorization-testing-hiding-the-button-is-not-security">SaaS
+Authorization Testing: Hiding the Button Is Not Security</h2>
+<p>Imagine you are testing a SaaS e-commerce platform.</p>
+<p>Two companies use the same platform:</p>
+<pre><code>Tenant A = FashionStore
+Tenant B = BikeShop</code></pre>
+<p>Each company has users:</p>
+<pre><code>Owner
+Admin
+Support Agent
+Viewer</code></pre>
+<p>You log in as a <strong>Viewer</strong> for FashionStore.</p>
+<p>The UI correctly hides the <strong>Delete product</strong>
+button.</p>
+<p>You might conclude:</p>
+<blockquote>
+<p>“Permission works.”</p>
+</blockquote>
+<p>Now open DevTools and send the API request manually:</p>
+<pre><code>DELETE /api/products/8291
+Authorization: Bearer &lt;viewer-token&gt;</code></pre>
+<p>The server responds:</p>
+<pre><code>200 OK</code></pre>
+<p>The product disappears.</p>
+<p>The UI behaved correctly.</p>
+<p>The system did not.</p>
+<p>This is one of the most important ideas to understand when testing
+SaaS applications:</p>
+<blockquote>
+<p><strong>Authorization is a server-side business rule, not a UI
+feature.</strong></p>
+</blockquote>
+<p>OWASP explicitly distinguishes authentication—establishing who
+someone is—from authorization—deciding whether that person is allowed to
+perform a particular action. It also recommends validating permissions
+on every request rather than relying on client-side controls. <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+Cheat Sheet Series</a></p>
+<p>Today we will go further than simply testing “admin vs normal
+user.”</p>
+<p>We are going to build a model for testing <strong>roles, resources,
+tenants, APIs and data isolation</strong>.</p>
+<hr />
+<h2
+id="first-authentication-and-authorization-are-different-problems">First:
+authentication and authorization are different problems</h2>
+<p>Consider:</p>
+<pre><code>Login successful</code></pre>
+<p>That tells us:</p>
+<blockquote>
+<p>We believe this person is Shohidur.</p>
+</blockquote>
+<p>It does <strong>not</strong> tell us:</p>
+<blockquote>
+<p>Shohidur is allowed to delete Product 8291.</p>
+</blockquote>
+<p>Authentication answers:</p>
+<pre><code>Who are you?</code></pre>
+<p>Authorization answers:</p>
+<pre><code>What are you allowed to do?</code></pre>
+<p>A system can have perfect authentication while having terrible
+authorization.</p>
+<p>For example:</p>
+<pre><code>User logs in correctly ✓
+
+User accesses another customer&#39;s invoice ✗</code></pre>
+<p>The authentication system worked.</p>
+<p>The authorization system failed.</p>
+<p>OWASP's current API Security Top 10 still puts <strong>Broken Object
+Level Authorization (BOLA)</strong> at API1:2023. The risk occurs when
+an API receives an object identifier and fails to verify whether the
+authenticated user is actually allowed to access that specific object.
+<a
+href="https://owasp.org/projects/api-security-project?utm_source=chatgpt.com">OWASP
+Foundation+1</a></p>
+<p>This is why an API test such as:</p>
+<pre><code>GET /orders/123
+→ 200</code></pre>
+<p>tells you almost nothing about authorization.</p>
+<p>The interesting test is often:</p>
+<pre><code>User A:
+GET /orders/123
+→ 200
+
+User B:
+GET /orders/123
+→ ?</code></pre>
+<hr />
+<h1
+id="add-saas-multitenancy-and-the-problem-becomes-more-interesting">Add
+SaaS multitenancy and the problem becomes more interesting</h1>
+<p>A <strong>tenant</strong> is usually a customer organization using a
+shared SaaS platform.</p>
+<p>Imagine your platform hosts 5,000 merchants.</p>
+<p>Conceptually:</p>
+<pre><code>SaaS Platform
+      |
+      +--- Tenant A: FashionStore
+      |
+      +--- Tenant B: BikeShop
+      |
+      +--- Tenant C: CoffeeStore</code></pre>
+<p>Those tenants may share:</p>
+<pre><code>application servers
+databases
+message queues
+caches
+monitoring
+APIs</code></pre>
+<p>while still expecting their data to remain separated.</p>
+<p>Microsoft's current Azure multitenancy architecture guidance
+describes tenant isolation as a spectrum rather than a simple yes/no
+property. A system might share compute but separate databases, or share
+databases while enforcing tenant separation in application logic. It
+specifically warns that shared infrastructure requires careful treatment
+of both <strong>tenant identity and user identity</strong> during
+authorization. <a
+href="https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/tenancy-models?utm_source=chatgpt.com">Microsoft
+Learn</a></p>
+<p>That creates a testing mission much larger than:</p>
+<blockquote>
+<p>“Can an admin access the admin page?”</p>
+</blockquote>
+<p>You need to ask:</p>
+<blockquote>
+<p><strong>Can one customer ever see, change, delete, influence or
+degrade another customer's data or service?</strong></p>
+</blockquote>
+<hr />
+<h1 id="think-beyond-roles">Think beyond roles</h1>
+<p>Many teams model permissions like this:</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Owner</th>
+<th>Admin</th>
+<th>Viewer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>View products</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Edit product</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>Delete product</td>
+<td>✓</td>
+<td>✓</td>
+<td>✗</td>
+</tr>
+<tr>
+<td>View invoices</td>
+<td>✓</td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Manage users</td>
+<td>✓</td>
+<td>✗</td>
+<td>✗</td>
+</tr>
+</tbody>
+</table>
+<p>This is useful.</p>
+<p>OWASP's authorization-testing guidance even recommends formalizing
+authorization rules in a matrix so that combinations of roles and
+capabilities can be automatically evaluated. <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Testing_Automation_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+Cheat Sheet Series</a></p>
+<p>But a role matrix alone can still miss serious bugs.</p>
+<p>Suppose an Admin is allowed to:</p>
+<pre><code>GET /products/{id}</code></pre>
+<p>The matrix says:</p>
+<pre><code>Admin → View Product ✓</code></pre>
+<p>So this works:</p>
+<pre><code>GET /products/1001</code></pre>
+<p>Product <code>1001</code> belongs to FashionStore.</p>
+<p>Fine.</p>
+<p>Now FashionStore's admin changes the request:</p>
+<pre><code>GET /products/7839</code></pre>
+<p>Product <code>7839</code> belongs to BikeShop.</p>
+<p>If the API returns the product, your <strong>role authorization is
+correct</strong> but your <strong>tenant authorization is
+broken</strong>.</p>
+<p>The tester needs another dimension.</p>
+<hr />
+<h1 id="a-stronger-model-subject--tenant--resource--action--state">A
+stronger model: Subject × Tenant × Resource × Action × State</h1>
+<p>When you test authorization, think:</p>
+<pre><code>WHO
+is trying to do
+
+WHAT
+to
+
+WHICH RESOURCE
+belonging to
+
+WHICH TENANT
+
+under
+
+WHICH CONDITIONS</code></pre>
+<p>For example:</p>
+<pre><code>Subject:
+FashionStore Admin
+
+Tenant:
+FashionStore
+
+Resource:
+Product 1001
+
+Action:
+UPDATE
+
+State:
+Active product</code></pre>
+<p>Expected:</p>
+<pre><code>ALLOW</code></pre>
+<p>Now change only one variable:</p>
+<pre><code>Subject:
+FashionStore Admin
+
+Tenant:
+BikeShop
+
+Resource:
+Product 7839
+
+Action:
+UPDATE</code></pre>
+<p>Expected:</p>
+<pre><code>DENY</code></pre>
+<p>That small change can uncover an extremely serious vulnerability.</p>
+<p>James Bach's Heuristic Test Strategy Model encourages testers to
+reason about product factors, states, boundaries, interactions and
+quality criteria rather than simply running predefined scripts. The
+current HTSM explicitly puts additional emphasis on state-based testing
+and boundaries. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Authorization testing becomes much stronger when you use that
+mindset.</p>
+<p>You're not checking a permission checkbox.</p>
+<p>You're systematically changing the conditions around an authorization
+decision.</p>
+<hr />
+<h1 id="the-dangerous-assumption-the-id-is-impossible-to-guess">The
+dangerous assumption: “The ID is impossible to guess”</h1>
+<p>Suppose product IDs look like this:</p>
+<pre><code>product_7f924d8b-bb31-4c19</code></pre>
+<p>A developer might say:</p>
+<blockquote>
+<p>“Nobody can guess another customer's UUID.”</p>
+</blockquote>
+<p>That is not an authorization mechanism.</p>
+<p>The user might obtain the ID from:</p>
+<pre><code>logs
+browser history
+email
+analytics
+API response
+shared link
+support ticket
+JavaScript
+another endpoint</code></pre>
+<p>Even if the ID is impossible to guess, access must still be denied if
+the user is unauthorized.</p>
+<p>OWASP makes exactly this point: random or unpredictable IDs can make
+attacks harder, but they do not replace object-level authorization
+checks. Every function accessing an object using client-controlled input
+should verify the user's permission for that object. <a
+href="https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/?utm_source=chatgpt.com">OWASP
+API Security Top 10+1</a></p>
+<p>So when testing:</p>
+<pre><code>GET /shops/9f82d/orders</code></pre>
+<p>don't ask only:</p>
+<blockquote>
+<p>“Can I guess another shop ID?”</p>
+</blockquote>
+<p>Ask:</p>
+<blockquote>
+<p><strong>“What happens if I already know a valid ID belonging to
+another tenant?”</strong></p>
+</blockquote>
+<p>That's a much better test.</p>
+<hr />
+<h1 id="heres-a-realistic-e-commerce-saas-bug">Here's a realistic
+e-commerce SaaS bug</h1>
+<p>Imagine your platform contains merchant revenue dashboards.</p>
+<p>FashionStore requests:</p>
+<pre><code>GET /shops/fashion-store/revenue</code></pre>
+<p>Response:</p>
+<pre><code>{
+  &quot;revenue&quot;: 83291,
+  &quot;orders&quot;: 3412
+}</code></pre>
+<p>Change the path:</p>
+<pre><code>GET /shops/bike-shop/revenue</code></pre>
+<p>And the server returns BikeShop's figures.</p>
+<p>The user is authenticated.</p>
+<p>The endpoint is legitimate.</p>
+<p>The request syntax is valid.</p>
+<p>The authorization is wrong.</p>
+<p>OWASP actually uses a remarkably similar e-commerce scenario in its
+BOLA documentation: an e-commerce platform exposes shop revenue data,
+and changing the shop identifier allows access to other merchants'
+revenue information. <a
+href="https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/?utm_source=chatgpt.com">OWASP
+API Security Top 10</a></p>
+<p>Notice why a traditional happy-path automated test would never find
+this.</p>
+<p>Your test probably says:</p>
+<pre><code>GET ownRevenue
+expect(status).toBe(200)</code></pre>
+<p>And it passes forever.</p>
+<p>The valuable test is adversarial:</p>
+<pre><code>GET anotherTenantRevenue
+expect(status).toBe(403)</code></pre>
+<p>or whatever secure behavior your API contract defines.</p>
+<p>Good security testing often involves testing <strong>what must never
+work</strong>.</p>
+<hr />
+<h1 id="test-read-write-delete-and-side-effects-separately">Test read,
+write, delete and side effects separately</h1>
+<p>Suppose the API correctly prevents:</p>
+<pre><code>GET /tenant-B/customer/55</code></pre>
+<p>Excellent.</p>
+<p>But what about:</p>
+<pre><code>PUT /tenant-B/customer/55</code></pre>
+<p>Or:</p>
+<pre><code>DELETE /tenant-B/customer/55</code></pre>
+<p>Or:</p>
+<pre><code>POST /tenant-B/customer/55/refund</code></pre>
+<p>Or:</p>
+<pre><code>POST /tenant-B/customer/55/send-email</code></pre>
+<p>Authorization is rarely one check.</p>
+<p>The user may have permission to <strong>view</strong> an object but
+not <strong>modify</strong> it.</p>
+<p>This creates two important privilege-escalation directions.</p>
+<p><strong>Horizontal privilege escalation</strong> means accessing
+something belonging to another user or peer-level tenant.</p>
+<pre><code>FashionStore → BikeShop data</code></pre>
+<p><strong>Vertical privilege escalation</strong> means gaining
+functionality reserved for a more powerful role.</p>
+<pre><code>Viewer → Admin function</code></pre>
+<p>Both deserve testing.</p>
+<hr />
+<h1 id="the-api-response-itself-can-leak-data">The API response itself
+can leak data</h1>
+<p>There is another subtle authorization problem.</p>
+<p>Suppose a support agent is allowed to see:</p>
+<pre><code>{
+  &quot;orderId&quot;: 8192,
+  &quot;status&quot;: &quot;paid&quot;,
+  &quot;customerName&quot;: &quot;Anna&quot;
+}</code></pre>
+<p>But the backend serializes the entire database entity:</p>
+<pre><code>{
+  &quot;orderId&quot;: 8192,
+  &quot;status&quot;: &quot;paid&quot;,
+  &quot;customerName&quot;: &quot;Anna&quot;,
+  &quot;paymentToken&quot;: &quot;...&quot;,
+  &quot;fraudScore&quot;: 0.81,
+  &quot;internalNotes&quot;: &quot;...&quot;,
+  &quot;wholesaleMargin&quot;: 0.37
+}</code></pre>
+<p>The screen displays only:</p>
+<pre><code>orderId
+status
+customerName</code></pre>
+<p>So your Playwright test looks perfect.</p>
+<p>But anyone looking at the network request can see the rest.</p>
+<p>OWASP calls this <strong>Broken Object Property Level
+Authorization</strong>. An API can correctly authorize access to an
+object while still exposing object properties that the user should not
+be allowed to read or modify. <a
+href="https://api-security.owasp.org/editions/2023/en/0xa3-broken-object-property-level-authorization/?utm_source=chatgpt.com">OWASP
+API Security Top 10</a></p>
+<p>This is why API inspection should accompany UI testing.</p>
+<p>Don't ask only:</p>
+<blockquote>
+<p>“What does the user see?”</p>
+</blockquote>
+<p>Also ask:</p>
+<blockquote>
+<p><strong>“What did the server send?”</strong></p>
+</blockquote>
+<hr />
+<h1 id="now-reverse-the-problem-hidden-writable-properties">Now reverse
+the problem: hidden writable properties</h1>
+<p>Imagine the legitimate request is:</p>
+<pre><code>{
+  &quot;name&quot;: &quot;Winter Jacket&quot;,
+  &quot;price&quot;: 99
+}</code></pre>
+<p>You modify it:</p>
+<pre><code>{
+  &quot;name&quot;: &quot;Winter Jacket&quot;,
+  &quot;price&quot;: 99,
+  &quot;tenantId&quot;: &quot;bike-shop&quot;,
+  &quot;isApproved&quot;: true,
+  &quot;commissionRate&quot;: 0
+}</code></pre>
+<p>If the backend blindly maps request fields to its internal object,
+you may be able to modify properties that were never shown in the
+UI.</p>
+<p>Again:</p>
+<pre><code>UI safe
+API unsafe</code></pre>
+<p>OWASP warns specifically about this kind of property-level
+authorization failure and recommends allowing changes only to fields the
+client is actually permitted to modify. <a
+href="https://api-security.owasp.org/editions/2023/en/0xa3-broken-object-property-level-authorization/?utm_source=chatgpt.com">OWASP
+API Security Top 10</a></p>
+<p>This is one reason experienced API testers frequently manipulate
+requests rather than simply replaying what the frontend sends.</p>
+<hr />
+<h1 id="authorization-changes-when-the-product-evolves">Authorization
+changes when the product evolves</h1>
+<p>Here's where quality engineering enters.</p>
+<p>Imagine originally you have:</p>
+<pre><code>Owner
+Viewer</code></pre>
+<p>Then the business adds:</p>
+<pre><code>Admin
+Support
+Accountant
+Marketing Manager
+External Agency</code></pre>
+<p>Then features grow:</p>
+<pre><code>products
+orders
+customers
+refunds
+billing
+users
+analytics
+campaigns
+API keys</code></pre>
+<p>Then restrictions appear:</p>
+<pre><code>Support can refund ≤ €50
+Manager can refund ≤ €500
+Owner has no limit</code></pre>
+<p>Now permissions are not a simple role matrix anymore.</p>
+<p>They're business logic.</p>
+<p>OWASP notes that authorization failures often appear as products
+evolve because new or modified features are introduced without
+thoroughly reconsidering their authorization implications. Its
+automation guidance therefore recommends testing the authorization model
+as part of each release. <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Testing_Automation_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+Cheat Sheet Series</a></p>
+<p>This is exactly why authorization regression deserves automation.</p>
+<hr />
+<h1 id="but-dont-automate-it-only-through-the-ui">But don't automate it
+only through the UI</h1>
+<p>Suppose you have:</p>
+<pre><code>8 roles
+×
+40 features
+×
+4 CRUD actions</code></pre>
+<p>That's potentially:</p>
+<pre><code>1,280 combinations</code></pre>
+<p>Trying to drive all of those through Playwright would likely become
+slow and expensive.</p>
+<p>A better layered approach might be:</p>
+<pre><code>Most authorization rules
+→ API/integration tests
+
+Critical workflows
+→ UI tests
+
+Complex/adversarial behavior
+→ exploratory/security testing</code></pre>
+<p>Ministry of Testing's Playwright guidance demonstrates using separate
+authenticated storage states for multiple roles and explicitly notes the
+importance of role-based testing when users have different authorization
+levels. <a
+href="https://www.ministryoftesting.com/insights/simple-playwright-authentication-recipes-a-cookbook-for-software-testers?utm_source=chatgpt.com">MoTaverse</a></p>
+<p>That technique can be useful for the UI layer.</p>
+<p>But the primary authorization enforcement still belongs below the
+UI.</p>
+<p>You want confidence that:</p>
+<pre><code>Viewer cannot DELETE</code></pre>
+<p>whether the request originates from:</p>
+<pre><code>browser
+mobile app
+curl
+Postman
+automation
+custom script</code></pre>
+<p>OWASP's guidance is clear that permissions should be enforced
+server-side and validated on every request. <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+Cheat Sheet Series</a></p>
+<hr />
+<h1 id="a-useful-automated-test-pattern">A useful automated test
+pattern</h1>
+<p>Suppose your authorization model says:</p>
+<pre><code>Viewer → read products
+Admin → read/write products
+Owner → read/write/delete products</code></pre>
+<p>Instead of individual hard-coded tests everywhere, represent the
+rules as data:</p>
+<pre><code>const permissions = [
+  { role: &quot;viewer&quot;, action: &quot;read&quot;, allowed: true },
+  { role: &quot;viewer&quot;, action: &quot;update&quot;, allowed: false },
+  { role: &quot;viewer&quot;, action: &quot;delete&quot;, allowed: false },
+
+  { role: &quot;admin&quot;, action: &quot;read&quot;, allowed: true },
+  { role: &quot;admin&quot;, action: &quot;update&quot;, allowed: true },
+  { role: &quot;admin&quot;, action: &quot;delete&quot;, allowed: false },
+
+  { role: &quot;owner&quot;, action: &quot;read&quot;, allowed: true },
+  { role: &quot;owner&quot;, action: &quot;update&quot;, allowed: true },
+  { role: &quot;owner&quot;, action: &quot;delete&quot;, allowed: true }
+];</code></pre>
+<p>Then the same test engine can evaluate combinations.</p>
+<p>But don't stop there.</p>
+<p>Add tenant variation:</p>
+<pre><code>own tenant
+other tenant</code></pre>
+<p>Now your authorization matrix becomes dramatically more valuable.</p>
+<p>You can even introduce resource state:</p>
+<pre><code>active order
+cancelled order
+refunded order</code></pre>
+<p>Because perhaps an admin is normally allowed to refund—but not when
+an order is already fully refunded.</p>
+<p>That's <strong>authorization + domain state</strong>.</p>
+<hr />
+<h1 id="403-does-not-automatically-mean-the-feature-is-secure">“403”
+does not automatically mean the feature is secure</h1>
+<p>Suppose:</p>
+<pre><code>DELETE /tenant-B/product/5</code></pre>
+<p>returns:</p>
+<pre><code>403 Forbidden</code></pre>
+<p>Great.</p>
+<p>But investigate the side effects.</p>
+<p>Did the product still disappear?</p>
+<p>Did a message enter a queue?</p>
+<p>Did the inventory service receive an update?</p>
+<p>Did an audit record get created incorrectly?</p>
+<p>Did a webhook fire?</p>
+<p>Security tests should often check:</p>
+<pre><code>response
+AND
+resulting state</code></pre>
+<p>not merely the HTTP status.</p>
+<p>This connects to a broader tester habit:</p>
+<blockquote>
+<p><strong>Never confuse the response with the outcome.</strong></p>
+</blockquote>
+<p>A service can return:</p>
+<pre><code>403</code></pre>
+<p>after performing part of the operation.</p>
+<p>That's still a serious defect.</p>
+<hr />
+<h1 id="multitenancy-introduces-performance-isolation-too">Multitenancy
+introduces performance isolation too</h1>
+<p>Tenant isolation isn't only about secrecy.</p>
+<p>Imagine BikeShop imports:</p>
+<pre><code>5 million products</code></pre>
+<p>The database query consumes most shared resources.</p>
+<p>FashionStore's checkout suddenly goes from:</p>
+<pre><code>200 ms</code></pre>
+<p>to:</p>
+<pre><code>8 seconds</code></pre>
+<p>BikeShop never accessed FashionStore's data.</p>
+<p>But BikeShop affected FashionStore's service quality.</p>
+<p>This is known as a <strong>noisy neighbor</strong> problem.</p>
+<p>Microsoft's multitenancy guidance explicitly warns that shared
+infrastructure can produce this type of performance interference between
+tenants. <a
+href="https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/tenancy-models?utm_source=chatgpt.com">Microsoft
+Learn+1</a></p>
+<p>So your tenant-testing model can include:</p>
+<pre><code>Data isolation
+Security isolation
+Performance isolation
+Operational isolation</code></pre>
+<p>That gives you much richer test ideas.</p>
+<p>For example:</p>
+<pre><code>Tenant A generates heavy reporting workload
+↓
+Measure Tenant B checkout latency</code></pre>
+<p>That's not a traditional functional test.</p>
+<p>It may nevertheless reveal a very important SaaS quality problem.</p>
+<hr />
+<h1 id="observability-must-understand-tenants">Observability must
+understand tenants</h1>
+<p>Imagine production reports:</p>
+<pre><code>500 errors increased 300%</code></pre>
+<p>You investigate.</p>
+<p>Every failure comes from one tenant performing a massive catalog
+import.</p>
+<p>Your global dashboard makes the whole platform look unhealthy.</p>
+<p>A useful multi-tenant system often needs telemetry dimensions
+like:</p>
+<pre><code>tenant_id
+feature
+role
+operation
+request outcome
+authorization decision</code></pre>
+<p>But be careful: observability itself can become a cross-tenant
+leakage risk if logs contain sensitive customer information or if tenant
+dashboards aren't properly isolated.</p>
+<p>Microsoft even treats monitoring/telemetry isolation as its own
+architectural decision for multitenant systems. <a
+href="https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/service/application-insights?utm_source=chatgpt.com">Microsoft
+Learn</a></p>
+<p>Once again, domain architecture changes what good testing looks
+like.</p>
+<hr />
+<h1 id="the-testers-soft-skill-dont-ask-who-is-allowed-only-once">The
+tester's soft skill: don't ask “Who is allowed?” only once</h1>
+<p>Suppose the PO says:</p>
+<blockquote>
+<p>“Admins can refund orders.”</p>
+</blockquote>
+<p>Most testers will record:</p>
+<pre><code>Admin → refund ✓</code></pre>
+<p>But a strong tester asks for examples.</p>
+<p>You might ask:</p>
+<blockquote>
+<p>“Any refund amount?”</p>
+</blockquote>
+<p>The PO says:</p>
+<blockquote>
+<p>“Up to €500.”</p>
+</blockquote>
+<p>You ask:</p>
+<blockquote>
+<p>“Per transaction or total refunded amount?”</p>
+</blockquote>
+<p>Now the developer becomes interested.</p>
+<p>PO says:</p>
+<blockquote>
+<p>“Total.”</p>
+</blockquote>
+<p>Then:</p>
+<blockquote>
+<p>“Can an admin refund €400 and later another €400?”</p>
+</blockquote>
+<p>Now everyone realizes the requirement is incomplete.</p>
+<p>The important skill here isn't “finding an edge case.”</p>
+<p>It is <strong>turning a vague permission into an executable business
+rule</strong>.</p>
+<p>Instead of confronting the PO with:</p>
+<blockquote>
+<p>“The authorization requirement is incomplete.”</p>
+</blockquote>
+<p>say:</p>
+<blockquote>
+<p>“I see two interpretations. If an admin refunds €400 today and
+another €200 tomorrow, should the second refund be rejected because the
+order has exceeded the €500 admin limit?”</p>
+</blockquote>
+<p>Now the team can reason about something concrete.</p>
+<p>This is the same communication principle we've been building
+throughout this series:</p>
+<pre><code>uncertainty
+→ example
+→ discussion
+→ shared rule
+→ test</code></pre>
+<p>QA becomes useful before the bug exists.</p>
+<hr />
+<h1 id="one-sentence-that-should-trigger-your-tester-brain">One sentence
+that should trigger your tester brain</h1>
+<p>Whenever you hear:</p>
+<blockquote>
+<p>“Only admins can do that.”</p>
+</blockquote>
+<p>your brain should immediately expand it into:</p>
+<pre><code>Who counts as admin?
+
+Which tenant?
+
+Which object?
+
+Which action?
+
+Which object state?
+
+Which API?
+
+Which UI?
+
+Which background process?
+
+What happens after role changes?
+
+What happens to existing sessions?
+
+What if the resource belongs to another tenant?</code></pre>
+<p>You don't need to fire all of those questions at the team.</p>
+<p>Remember our previous lesson: strong testers don't ask every possible
+question.</p>
+<p>They identify the questions with the most risk.</p>
+<hr />
+<h1 id="test-role-changes-not-just-stable-roles">Test role changes, not
+just stable roles</h1>
+<p>Here's an especially good exploratory scenario.</p>
+<p>User begins as:</p>
+<pre><code>Admin</code></pre>
+<p>They log in.</p>
+<p>Then the Owner changes them to:</p>
+<pre><code>Viewer</code></pre>
+<p>The Admin already has:</p>
+<pre><code>browser session
+JWT
+open page
+cached data</code></pre>
+<p>What happens?</p>
+<p>Can they continue editing products for another hour?</p>
+<p>Does the token retain old permissions until expiration?</p>
+<p>Do existing WebSocket connections retain privileges?</p>
+<p>Does the UI update?</p>
+<p>Does the API reject the next request?</p>
+<p>This is a <strong>state-transition test</strong>.</p>
+<p>The stable states may both work perfectly:</p>
+<pre><code>Admin works ✓
+Viewer works ✓</code></pre>
+<p>The bug lives in:</p>
+<pre><code>Admin → Viewer</code></pre>
+<p>James Bach's current HTSM emphasis on state transitions and
+boundaries is very useful here: transitions frequently expose behavior
+that static state testing misses. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">Satisfice</a></p>
+<hr />
+<h1 id="a-practical-authorization-test-strategy">A practical
+authorization test strategy</h1>
+<p>For a SaaS product, I would frame the testing around this model:</p>
+<pre><code>IDENTITY
+Who is making the request?
+
+TENANT
+Which customer context are they operating in?
+
+ROLE / ATTRIBUTES
+What privileges should they have?
+
+RESOURCE
+Which object is being accessed?
+
+ACTION
+Read / create / update / delete / execute?
+
+STATE
+What state is the resource or account in?
+
+CHANNEL
+UI / API / background service / import / webhook?
+
+RESULT
+Was the request correctly allowed or denied?
+
+SIDE EFFECT
+Did anything change that shouldn&#39;t have?
+
+TRACE
+Can we understand the decision from logs/audit data?</code></pre>
+<p>You could use this model in:</p>
+<pre><code>exploratory testing
+API testing
+test design
+automation
+security reviews
+refinement discussions</code></pre>
+<p>It's reusable.</p>
+<hr />
+<h1 id="todays-exercise">Today's exercise</h1>
+<p>You're testing a SaaS e-commerce platform.</p>
+<p>There are two tenants:</p>
+<pre><code>Tenant A: FashionStore
+Tenant B: ElectronicsShop</code></pre>
+<p>FashionStore has:</p>
+<pre><code>Alice = Owner
+Bob = Support Agent</code></pre>
+<p>The business rule says:</p>
+<blockquote>
+<p>Support agents may view orders and refund orders up to €50.</p>
+</blockquote>
+<p>You observe:</p>
+<pre><code>POST /orders/712/refund
+
+{
+  &quot;amount&quot;: 40
+}</code></pre>
+<p>works for Bob.</p>
+<p>Good.</p>
+<p>Now design your investigation around the authorization model.</p>
+<p>Think about:</p>
+<pre><code>€49.99
+€50
+€50.01
+
+two refunds of €40
+
+an order belonging to ElectronicsShop
+
+a cancelled order
+
+a fully refunded order
+
+changing Bob from Support → Viewer while logged in
+
+calling the API directly
+
+adding unexpected properties to the request</code></pre>
+<p>But don't turn this into a giant checklist.</p>
+<p>Your task is to choose the <strong>three highest-risk
+experiments</strong> and explain why they deserve attention first.</p>
+<p>For example, I would strongly consider testing:</p>
+<pre><code>Bob refunds ElectronicsShop order</code></pre>
+<p>because cross-tenant access could expose or modify another paying
+customer's data.</p>
+<p>I would also investigate:</p>
+<pre><code>€40 + €40 on the same order</code></pre>
+<p>because the phrase “up to €50” may hide an ambiguous cumulative
+business rule.</p>
+<p>And I would test:</p>
+<pre><code>direct API request after role downgrade</code></pre>
+<p>because UI changes may not revoke existing server-side
+authorization.</p>
+<p>Notice what we're practicing.</p>
+<p>Not:</p>
+<blockquote>
+<p>“How many permission test cases can I invent?”</p>
+</blockquote>
+<p>But:</p>
+<blockquote>
+<p><strong>Which authorization failures would cause the most serious
+business damage, and what experiments best expose them?</strong></p>
+</blockquote>
+<p>That is risk-based testing.</p>
+<p>That is security thinking.</p>
+<p>And in SaaS systems, it is core quality engineering—not a separate
+activity that belongs only to a penetration-testing team.</p>
+<p>For further study, OWASP's Authorization Cheat Sheet is exceptionally
+useful because it connects authorization architecture directly with
+testing: least privilege, deny-by-default, permission checks on every
+request, object-level access and automated authorization regression. The
+BOLA chapter is particularly relevant for API-heavy SaaS platforms,
+while James Bach's HTSM is useful for expanding your strategy beyond
+roles into states, interactions and boundaries. <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+Cheat Sheet Series+2OWASP API Security Top 10+2</a></p>
+<p><a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+— Authorization Cheat Sheet</a></p>
+<p><a
+href="https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/?utm_source=chatgpt.com">OWASP
+— API1:2023 Broken Object Level Authorization</a></p>
+<p><a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Testing_Automation_Cheat_Sheet.html?utm_source=chatgpt.com">OWASP
+— Authorization Testing Automation Cheat Sheet</a></p>
+<p><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">James
+Bach — Heuristic Test Strategy Model</a></p>
+<p><a
+href="https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/tenancy-models?utm_source=chatgpt.com">Microsoft
+— Multitenant SaaS tenancy and isolation models</a></p>
+<p><a
+href="https://www.ministryoftesting.com/insights/simple-playwright-authentication-recipes-a-cookbook-for-software-testers?utm_source=chatgpt.com">Ministry
+of Testing — Playwright authentication recipes for multiple
+roles</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-05.html" rel="prev"><span>Previous</span>Testing Ad Tech: A “Win” Is Not an Impression, and a `200 OK` Can Still Lose Money</a><a href="/qa-blog/posts/qa-thinking-day-07.html" rel="next"><span>Next</span>Payment Testing: The Most Dangerous State Is Not “Failed” — It Is “I Don’t Know Whether It Succeeded”</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

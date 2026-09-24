@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Were those 500 people searching? Browsing products? Refreshing the homepage? Adding items to carts? Checking out? Waiting 30 seconds between actions? Making requests continuously?">
+  <meta name="color-scheme" content="light">
+  <title>Performance Testing: Stop Asking “How Many Users Can It Handle?” | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 10</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-10">QA Thinking — Day 10</h1>
+<h2
+id="performance-testing-stop-asking-how-many-users-can-it-handle">Performance
+Testing: Stop Asking “How Many Users Can It Handle?”</h2>
+<p>Imagine your e-commerce platform is preparing for a major promotion
+at 19:00.</p>
+<p>Someone asks:</p>
+<blockquote>
+<p>“Can we test the website with 500 users?”</p>
+</blockquote>
+<p>That sounds reasonable.</p>
+<p>So you create a k6 test:</p>
+<pre><code>export const options = {
+  vus: 500,
+  duration: &#39;10m&#39;,
+};</code></pre>
+<p>It runs.</p>
+<p>You get:</p>
+<pre><code>Average response time: 620 ms
+Error rate: 0.4%</code></pre>
+<p>The team concludes:</p>
+<blockquote>
+<p>“Great. We support 500 users.”</p>
+</blockquote>
+<p>But what did you actually learn?</p>
+<p>Very little.</p>
+<p>Were those 500 people searching? Browsing products? Refreshing the
+homepage? Adding items to carts? Checking out? Waiting 30 seconds
+between actions? Making requests continuously?</p>
+<p>And is <strong>500 concurrent users</strong> even the business
+condition you expect?</p>
+<p>A stronger performance tester does not begin with:</p>
+<blockquote>
+<p>“How many VUs should I run?”</p>
+</blockquote>
+<p>The better starting question is:</p>
+<blockquote>
+<p><strong>What demand will the real business create, and what failures
+matter when that demand increases?</strong></p>
+</blockquote>
+<p>James Bach's Heuristic Test Strategy Model is useful here because it
+treats test strategy as a reasoning problem involving product factors,
+quality criteria, project context and test techniques—not as selecting a
+tool and filling in a load number. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">Satisfice+1</a></p>
+<p>Today we'll build a realistic performance-testing model for an
+e-commerce system and, more importantly, learn how to reason about
+performance as a <strong>quality engineer</strong>, not merely a k6
+script writer.</p>
+<hr />
+<h2 id="500-users-is-not-a-workload-model">“500 users” is not a workload
+model</h2>
+<p>Imagine your analytics tell you that during a promotion you expect
+approximately:</p>
+<pre><code>Product browsing       300 actions/sec
+Search                  80 actions/sec
+Add to cart             45 actions/sec
+Checkout start          15 actions/sec
+Order placement          6 actions/sec</code></pre>
+<p>That's useful.</p>
+<p>Now compare that with:</p>
+<pre><code>500 VUs</code></pre>
+<p>The second tells us almost nothing about what pressure the system
+experiences.</p>
+<p>Two systems with 500 active users can generate completely different
+traffic.</p>
+<p>Imagine one user behaves like:</p>
+<pre><code>Open product
+wait 20 sec
+read description
+wait 30 sec
+add to cart</code></pre>
+<p>Another automated VU does:</p>
+<pre><code>GET product
+GET product
+GET product
+GET product
+GET product</code></pre>
+<p>continuously.</p>
+<p>Both count as:</p>
+<pre><code>1 user</code></pre>
+<p>but their generated load is radically different.</p>
+<p>This is why <strong>traffic rate, concurrency and user count are
+related but not interchangeable concepts</strong>.</p>
+<hr />
+<h2
+id="a-subtle-trap-your-load-test-can-slow-down-when-your-system-slows-down">A
+subtle trap: your load test can slow down when your system slows
+down</h2>
+<p>Suppose you write:</p>
+<pre><code>export default function () {
+    search();
+    productDetails();
+    addToCart();
+    checkout();
+
+    sleep(2);
+}</code></pre>
+<p>and run:</p>
+<pre><code>100 VUs</code></pre>
+<p>Initially, one complete iteration takes five seconds.</p>
+<p>So your test might produce roughly:</p>
+<pre><code>20 journeys/sec</code></pre>
+<p>Then your application slows down.</p>
+<p>The same journey now takes ten seconds.</p>
+<p>Your 100 VUs may now produce only:</p>
+<pre><code>10 journeys/sec</code></pre>
+<p>Notice the problem.</p>
+<p>Your application became slower...</p>
+<p>and your test reduced the pressure placed on it.</p>
+<p>That can hide exactly the overload behavior you're trying to
+investigate.</p>
+<p>For workloads where real demand arrives independently of system
+speed, k6 provides arrival-rate executors. With
+<code>constant-arrival-rate</code>, k6 tries to start a specified number
+of iterations per time unit, independent of how slowly previous
+iterations complete, adding VUs as needed up to the configured maximum.
+Grafana specifically describes this as useful when you want to represent
+request or iteration rates more accurately. <a
+href="https://grafana.com/docs/k6/latest/using-k6/scenarios/executors/constant-arrival-rate/?utm_source=chatgpt.com">Grafana
+Labs</a></p>
+<p>For example:</p>
+<pre><code>export const options = {
+  scenarios: {
+    checkout: {
+      executor: &#39;constant-arrival-rate&#39;,
+      rate: 15,
+      timeUnit: &#39;1s&#39;,
+      duration: &#39;10m&#39;,
+      preAllocatedVUs: 50,
+      maxVUs: 200,
+    },
+  },
+};</code></pre>
+<p>Now the question is closer to:</p>
+<blockquote>
+<p>“What happens if approximately 15 checkout journeys begin every
+second for ten minutes?”</p>
+</blockquote>
+<p>That is a much clearer performance experiment.</p>
+<hr />
+<h1 id="closed-workload-vs-open-workload">Closed workload vs open
+workload</h1>
+<p>This distinction is worth understanding properly.</p>
+<p>With a VU-oriented model, users tend to behave like a <strong>closed
+system</strong>:</p>
+<pre><code>user finishes action
+        ↓
+user begins another action</code></pre>
+<p>If the system becomes slower, users naturally perform fewer
+actions.</p>
+<p>With an arrival-rate model, you're closer to an <strong>open
+system</strong>:</p>
+<pre><code>new demand arrives
+new demand arrives
+new demand arrives</code></pre>
+<p>whether the previous demand has finished or not.</p>
+<p>Neither model is universally correct.</p>
+<p>Consider a back-office SaaS application with 50 employees.</p>
+<p>Maybe:</p>
+<pre><code>50 concurrent VUs</code></pre>
+<p>is meaningful because you genuinely have approximately 50 people
+interacting with the product.</p>
+<p>Now consider a flash sale where thousands of independent users arrive
+from an advertising campaign.</p>
+<p>Demand does not politely wait because your database is slow.</p>
+<p>An arrival-rate workload may better model that risk.</p>
+<p>This is why performance-test design should begin with the
+<strong>traffic model</strong>, not the load-testing syntax.</p>
+<hr />
+<h1 id="dont-simulate-every-user-identically">Don't simulate every user
+identically</h1>
+<p>Suppose your online store has this approximate usage
+distribution:</p>
+<pre><code>60% browsing
+20% searching
+12% cart activity
+ 6% checkout
+ 2% account management</code></pre>
+<p>Running every VU through:</p>
+<pre><code>search
+product
+cart
+checkout
+logout</code></pre>
+<p>creates a neat script.</p>
+<p>It may create a poor model of production.</p>
+<p>Instead, think about workload composition.</p>
+<p>You might create separate scenarios:</p>
+<pre><code>export const options = {
+  scenarios: {
+    browsing: {
+      executor: &#39;constant-arrival-rate&#39;,
+      rate: 300,
+      timeUnit: &#39;1s&#39;,
+      exec: &#39;browse&#39;,
+      duration: &#39;15m&#39;,
+      preAllocatedVUs: 100,
+    },
+
+    search: {
+      executor: &#39;constant-arrival-rate&#39;,
+      rate: 80,
+      timeUnit: &#39;1s&#39;,
+      exec: &#39;search&#39;,
+      duration: &#39;15m&#39;,
+      preAllocatedVUs: 50,
+    },
+
+    checkout: {
+      executor: &#39;constant-arrival-rate&#39;,
+      rate: 15,
+      timeUnit: &#39;1s&#39;,
+      exec: &#39;checkout&#39;,
+      duration: &#39;15m&#39;,
+      preAllocatedVUs: 30,
+    },
+  },
+};</code></pre>
+<p>Those scenarios run concurrently.</p>
+<p>Now your system experiences something closer to:</p>
+<pre><code>Browsing + Search + Cart + Checkout</code></pre>
+<p>rather than:</p>
+<pre><code>100 identical robots</code></pre>
+<p>This matters because the operations compete for shared resources:</p>
+<pre><code>database
+connection pool
+CPU
+cache
+message queue
+payment service
+inventory service</code></pre>
+<p>Performance problems often emerge from those
+<strong>interactions</strong>.</p>
+<hr />
+<h1 id="average-latency-can-hide-the-customer-you-care-about">Average
+latency can hide the customer you care about</h1>
+<p>Suppose the report says:</p>
+<pre><code>Average checkout latency = 400 ms</code></pre>
+<p>Excellent?</p>
+<p>Maybe.</p>
+<p>Now look at the distribution:</p>
+<pre><code>p50 = 220 ms
+p90 = 600 ms
+p95 = 1.2 s
+p99 = 8.7 s</code></pre>
+<p>The average has hidden a nasty tail.</p>
+<p>Google's SRE guidance recommends looking at latency distributions and
+percentiles because averages can conceal tail behavior. A high
+percentile such as p99 or p99.9 helps expose the experiences of slower
+requests that a simple mean can mask. <a
+href="https://sre.google/sre-book/service-level-objectives/?utm_source=chatgpt.com">Google
+SRE</a></p>
+<p>Grafana k6 likewise exposes percentile metrics such as p90, p95 and
+p99 and supports using them directly in performance thresholds. <a
+href="https://grafana.com/docs/k6/latest/using-k6/thresholds/?utm_source=chatgpt.com">Grafana
+Labs+1</a></p>
+<p>So instead of:</p>
+<pre><code>Average &lt; 500 ms</code></pre>
+<p>you might have a meaningful criterion like:</p>
+<pre><code>thresholds: {
+  &#39;http_req_duration{name:checkout}&#39;: [
+    &#39;p(95)&lt;1000&#39;,
+    &#39;p(99)&lt;2500&#39;
+  ]
+}</code></pre>
+<p>But even that is not enough.</p>
+<p>You still need to ask:</p>
+<blockquote>
+<p><strong>Why are those acceptable numbers?</strong></p>
+</blockquote>
+<p>A threshold should represent some performance expectation, SLO,
+business requirement or learned baseline—not a number copied from
+another blog.</p>
+<hr />
+<h1 id="fast-errors-can-make-your-latency-dashboard-look-excellent">Fast
+errors can make your latency dashboard look excellent</h1>
+<p>Imagine increasing load causes this:</p>
+<pre><code>Successful requests: 2.5 sec
+Failed requests:      30 ms</code></pre>
+<p>Now calculate everything together.</p>
+<p>The average might actually <strong>improve</strong> as the system
+fails more frequently.</p>
+<p>Google's SRE monitoring guidance specifically warns about this
+problem and recommends distinguishing successful-request latency from
+failed-request latency. Its four widely used golden signals are:</p>
+<pre><code>latency
+traffic
+errors
+saturation</code></pre>
+<p>because looking at latency alone cannot explain system health. <a
+href="https://sre.google/sre-book/monitoring-distributed-systems/?utm_source=chatgpt.com">Google
+SRE</a></p>
+<p>Your load-test investigation should therefore correlate things
+like:</p>
+<pre><code>p95 checkout latency
+error rate
+requests/sec
+CPU
+memory
+DB connections
+queue depth
+thread pools
+cache hit rate</code></pre>
+<p>A graph that says:</p>
+<pre><code>response time ↑</code></pre>
+<p>tells you something happened.</p>
+<p>A graph showing:</p>
+<pre><code>checkout p95 ↑
+DB connection utilization → 100%
+payment timeouts ↑</code></pre>
+<p>begins telling you <strong>where to investigate</strong>.</p>
+<hr />
+<h1 id="performance-testing-is-also-functional-testing">Performance
+testing is also functional testing</h1>
+<p>This is where many load tests become dangerously shallow.</p>
+<p>Imagine this k6 check:</p>
+<pre><code>check(response, {
+  &#39;status is 200&#39;: r =&gt; r.status === 200
+});</code></pre>
+<p>At 1,000 requests/sec:</p>
+<pre><code>100% HTTP 200</code></pre>
+<p>Fantastic.</p>
+<p>Except the response contains:</p>
+<pre><code>{
+  &quot;price&quot;: 0,
+  &quot;inventory&quot;: -4
+}</code></pre>
+<p>The service is extremely fast.</p>
+<p>And completely wrong.</p>
+<p>A performance test should usually retain enough correctness checks to
+detect corrupted behavior under load.</p>
+<p>Grafana distinguishes <strong>checks</strong>, which verify
+individual response conditions, from <strong>thresholds</strong>, which
+define aggregated pass/fail performance criteria. Their current guidance
+recommends combining the two rather than treating fast responses as
+sufficient evidence of acceptable behavior. <a
+href="https://grafana.com/docs/learning-hub/k6-performance-testing/03-establishing-a-baseline/18-checks-vs-thresholds/?utm_source=chatgpt.com">Grafana
+Labs+1</a></p>
+<p>This is particularly important because concurrency bugs often appear
+only under load.</p>
+<p>Imagine:</p>
+<pre><code>Inventory available: 1
+
+Customer A → buy
+Customer B → buy
+Customer C → buy</code></pre>
+<p>All requests return:</p>
+<pre><code>200 OK</code></pre>
+<p>You may have just sold the same item three times.</p>
+<p>From a response-time perspective:</p>
+<pre><code>PERFECT</code></pre>
+<p>From an e-commerce perspective:</p>
+<pre><code>DISASTER</code></pre>
+<hr />
+<h1 id="build-performance-invariants">Build performance invariants</h1>
+<p>Instead of checking only status codes, add business consistency
+rules.</p>
+<p>For example:</p>
+<pre><code>successful order
+→ must have one valid order ID</code></pre>
+<p>or:</p>
+<pre><code>accepted inventory reservations
+≤ available inventory</code></pre>
+<p>or:</p>
+<pre><code>successful payment
+→ must correspond to exactly one order</code></pre>
+<p>Now your load test becomes much more interesting.</p>
+<p>You're no longer asking only:</p>
+<blockquote>
+<p>“How quickly does the system respond?”</p>
+</blockquote>
+<p>You're asking:</p>
+<blockquote>
+<p><strong>“Does the system remain correct when many things happen at
+once?”</strong></p>
+</blockquote>
+<p>That is closer to quality engineering.</p>
+<hr />
+<h1
+id="e-commerce-performance-has-a-dangerous-trade-off-caching">E-commerce
+performance has a dangerous trade-off: caching</h1>
+<p>Suppose your product page is slow because every request
+calculates:</p>
+<pre><code>price
+inventory
+promotion
+recommendations
+shipping estimate</code></pre>
+<p>Someone proposes aggressive caching.</p>
+<p>Performance improves dramatically.</p>
+<p>But now consider:</p>
+<pre><code>Cached inventory: 5
+Actual inventory: 0</code></pre>
+<p>or:</p>
+<pre><code>Cached price: €59
+Current price: €79</code></pre>
+<p>You've improved one quality characteristic while damaging
+another.</p>
+<p>A very recent real-world e-commerce example illustrates this tension.
+Nuvemshop reported in June 2026 that improvements including rendering
+optimization and edge caching helped raise the proportion of stores with
+good LCP substantially; the company also reported improved conversion
+metrics. But its engineers explicitly called out the need to avoid
+caching stale <strong>price and inventory data</strong>, because those
+errors directly affect buyer trust and revenue. <a
+href="https://web.dev/case-studies/nuvemshop?utm_source=chatgpt.com">web.dev</a></p>
+<p>That's an excellent QA lesson.</p>
+<p>A performance improvement should trigger questions such as:</p>
+<pre><code>What became cached?
+
+How is it invalidated?
+
+How stale may it become?
+
+Which data must never be stale?
+
+What happens during cache failure?</code></pre>
+<p>A tester should not celebrate:</p>
+<pre><code>300 ms → 80 ms</code></pre>
+<p>until asking:</p>
+<blockquote>
+<p>“Are we still serving the correct thing?”</p>
+</blockquote>
+<hr />
+<h1 id="dont-only-test-normal-load">Don't only test normal load</h1>
+<p>Suppose production usually handles:</p>
+<pre><code>200 requests/sec</code></pre>
+<p>You verify that.</p>
+<p>Good.</p>
+<p>Now what happens at:</p>
+<pre><code>300
+500
+800
+1,200</code></pre>
+<p>Eventually something must break.</p>
+<p>The important question isn't:</p>
+<blockquote>
+<p>“Can we make it break?”</p>
+</blockquote>
+<p>Of course you can.</p>
+<p>The interesting questions are:</p>
+<blockquote>
+<p><strong>What breaks first?</strong></p>
+</blockquote>
+<p>and:</p>
+<blockquote>
+<p><strong>How does the system fail?</strong></p>
+</blockquote>
+<p>Google's SRE guidance on preventing cascading failures explicitly
+recommends testing capacity limits <strong>and the system's failure mode
+under overload</strong>, because without realistic load testing it can
+be difficult to predict what resource will exhaust and how the failure
+will manifest. <a
+href="https://sre.google/sre-book/addressing-cascading-failures/?utm_source=chatgpt.com">Google
+SRE</a></p>
+<p>Consider two systems.</p>
+<p>System A:</p>
+<pre><code>400 req/s → healthy
+500 req/s → slower
+600 req/s → 429 / graceful rejection
+700 req/s → still operating</code></pre>
+<p>System B:</p>
+<pre><code>400 req/s → healthy
+500 req/s → slower
+550 req/s → DB exhausted
+560 req/s → every endpoint failing
+570 req/s → restart
+580 req/s → retry storm</code></pre>
+<p>Both technically reached their capacity.</p>
+<p>System A has a much better failure mode.</p>
+<p>That's something worth testing.</p>
+<hr />
+<h1
+id="search-and-checkout-should-not-necessarily-have-the-same-priority">Search
+and checkout should not necessarily have the same priority</h1>
+<p>Imagine excessive traffic arrives.</p>
+<p>You may prefer:</p>
+<pre><code>product recommendations → degraded
+search suggestions       → degraded
+checkout                 → protected
+payment                  → protected</code></pre>
+<p>because failure of recommendations is inconvenient.</p>
+<p>Failure of checkout is lost revenue.</p>
+<p>That is a <strong>business-informed performance
+strategy</strong>.</p>
+<p>Rather than asking:</p>
+<blockquote>
+<p>“Can the whole website support 1,000 RPS?”</p>
+</blockquote>
+<p>ask:</p>
+<blockquote>
+<p>“When resources become scarce, which workflows must continue
+working?”</p>
+</blockquote>
+<p>This is also where QA can influence architecture.</p>
+<p>Maybe recommendations need:</p>
+<pre><code>timeouts
+fallbacks
+cached results
+load shedding</code></pre>
+<p>so that they cannot consume resources required for checkout.</p>
+<p>Performance testing can reveal architectural risks before they become
+incidents.</p>
+<hr />
+<h1 id="a-breakpoint-test-is-not-the-same-as-a-normal-load-test">A
+breakpoint test is not the same as a normal-load test</h1>
+<p>Grafana's k6 documentation describes several useful workload styles,
+including increasing load until performance thresholds fail. <a
+href="https://grafana.com/docs/k6/latest/examples/get-started-with-k6/test-for-performance/?utm_source=chatgpt.com">Grafana
+Labs</a></p>
+<p>But keep the missions separate.</p>
+<p>A normal-load test asks:</p>
+<blockquote>
+<p><strong>Can we meet expectations under expected traffic?</strong></p>
+</blockquote>
+<p>A stress or breakpoint experiment asks:</p>
+<blockquote>
+<p><strong>Where does behavior become unacceptable?</strong></p>
+</blockquote>
+<p>A spike experiment asks:</p>
+<blockquote>
+<p><strong>What happens when traffic increases suddenly?</strong></p>
+</blockquote>
+<p>An endurance experiment asks:</p>
+<blockquote>
+<p><strong>Does behavior degrade over hours?</strong></p>
+</blockquote>
+<p>Those are different questions.</p>
+<p>If you run:</p>
+<pre><code>2,000 users</code></pre>
+<p>and the system collapses, that finding is almost meaningless unless
+you know why you chose 2,000 and what you were trying to learn.</p>
+<p>Performance testing needs a mission just like exploratory functional
+testing does.</p>
+<hr />
+<h1 id="your-workload-should-come-from-evidence">Your workload should
+come from evidence</h1>
+<p>Where possible, use production or analytics data.</p>
+<p>For example:</p>
+<pre><code>Peak traffic last month
+Checkout starts/sec
+Searches/sec
+Orders/min
+Regional distribution
+Typical session duration
+Promotion spikes</code></pre>
+<p>Then ask the Product Owner, developers, operations team or
+business:</p>
+<blockquote>
+<p>“What are we preparing for?”</p>
+</blockquote>
+<p>Perhaps normal peak is:</p>
+<pre><code>100 orders/min</code></pre>
+<p>but marketing expects a campaign to generate:</p>
+<pre><code>500 orders/min</code></pre>
+<p>Now you have a meaningful experiment.</p>
+<p>If you have no production data because the product is new, document
+your assumptions.</p>
+<p>For example:</p>
+<blockquote>
+<p>“We're modeling 20 checkout starts/sec because the business expects
+approximately 1,000 active campaign visitors per minute and estimates
+around 1–2% entering checkout.”</p>
+</blockquote>
+<p>That is much better than pretending your number is authoritative.</p>
+<p>Testing under uncertainty is normal.</p>
+<p>Hidden assumptions are the real danger.</p>
+<hr />
+<h1 id="how-to-communicate-performance-findings">How to communicate
+performance findings</h1>
+<p>Weak report:</p>
+<blockquote>
+<p>“Performance bad with 300 VUs.”</p>
+</blockquote>
+<p>Slightly better:</p>
+<blockquote>
+<p>“p95 is 2.7 seconds.”</p>
+</blockquote>
+<p>Still not very actionable.</p>
+<p>A stronger report might say:</p>
+<blockquote>
+<p>At our expected campaign load of approximately 15 checkout
+starts/sec, checkout p95 increased from 480 ms to 2.6 s after eight
+minutes. Payment-related HTTP errors rose from 0.1% to 3.4%, while
+catalog browsing remained below 600 ms. During the same period, database
+connection-pool usage stayed above 95%. I haven't confirmed that the
+pool is the root cause, but its saturation correlates closely with the
+checkout degradation. The main business risk is failed or uncertain
+order/payment creation during campaign peaks.</p>
+</blockquote>
+<p>Notice what happened.</p>
+<p>You communicated:</p>
+<pre><code>workload
+observation
+time
+scope
+evidence
+uncertainty
+business consequence</code></pre>
+<p>You didn't say:</p>
+<blockquote>
+<p>“Database caused it.”</p>
+</blockquote>
+<p>unless you've demonstrated that.</p>
+<p>Michael Bolton's recent writing continues to emphasize accuracy,
+relevance and usefulness of technical information—qualities that matter
+just as much when testers communicate measurements as when evaluating
+software output. <a
+href="https://developsense.com/blog/2026/07/just-the-facts-please?utm_source=chatgpt.com">DevelopSense</a></p>
+<p>The tester's credibility increases when the difference between
+<strong>observation</strong> and <strong>explanation</strong> remains
+clear.</p>
+<hr />
+<h1
+id="a-performance-test-strategy-i-would-use-for-an-e-commerce-platform">A
+performance test strategy I would use for an e-commerce platform</h1>
+<p>I would first learn actual traffic and identify the commercially
+important flows.</p>
+<p>Then I'd create a baseline with very light traffic so I understand
+what “healthy” looks like.</p>
+<p>After that, I would exercise realistic mixed traffic—for example
+browsing, searching, carts and checkout simultaneously—rather than
+isolated endpoint benchmarking.</p>
+<p>I'd inspect the four broad signals:</p>
+<pre><code>Latency
+Traffic
+Errors
+Saturation</code></pre>
+<p>and correlate them with domain signals such as:</p>
+<pre><code>orders completed
+payments accepted
+inventory inconsistencies
+cart errors
+checkout abandonment</code></pre>
+<p>Then I'd deliberately increase pressure until something
+deteriorates.</p>
+<p>Finally, I'd investigate recovery:</p>
+<pre><code>Load removed
+      ↓
+Does latency recover?
+
+Do queues drain?
+
+Does database pressure fall?
+
+Do stuck orders remain?
+
+Are payments left uncertain?</code></pre>
+<p>The last part is easily forgotten.</p>
+<p>A system that survives overload but remains degraded for 30 minutes
+afterward has a different risk profile from one that recovers in
+seconds.</p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>You receive these business expectations for a sale:</p>
+<pre><code>Normal:
+Product views        80/sec
+Search               20/sec
+Add to cart           8/sec
+Checkout              3/sec
+
+Expected sale peak:
+Product views       500/sec
+Search              120/sec
+Add to cart          60/sec
+Checkout             18/sec</code></pre>
+<p>Current SLOs say:</p>
+<pre><code>Product API p95 &lt; 500 ms
+Checkout p95 &lt; 1,000 ms
+Error rate &lt; 1%</code></pre>
+<p>During your load test you observe:</p>
+<pre><code>400 product views/sec
+100 searches/sec
+50 add-to-cart/sec
+15 checkout/sec
+
+Product p95:        430 ms
+Checkout p95:     2,400 ms
+HTTP errors:        0.7%
+CPU:                 55%
+Memory:              62%
+DB connections:      98%</code></pre>
+<p>Do <strong>not</strong> simply conclude:</p>
+<blockquote>
+<p>“Database bottleneck.”</p>
+</blockquote>
+<p>Your challenge is to design only three next experiments:</p>
+<ol type="1">
+<li><p>One experiment that tests whether database-connection saturation
+is actually related to checkout degradation.</p></li>
+<li><p>One experiment that checks whether checkout remains
+<strong>business-correct</strong> under this load, not merely
+responsive.</p></li>
+<li><p>One experiment that determines how the system behaves when
+traffic reaches or exceeds the expected 18 checkouts/sec.</p></li>
+</ol>
+<p>For each experiment, state what evidence would make you change your
+current hypothesis.</p>
+<p>That final sentence matters.</p>
+<p>A tester is not supposed to prove their first theory correct.</p>
+<p>A tester should design experiments capable of proving it
+<strong>wrong</strong>.</p>
+<p>That is critical thinking.</p>
+<p>And that is today's central lesson:</p>
+<blockquote>
+<p><strong>Performance testing is not generating lots of traffic. It is
+modeling realistic demand, observing how quality changes under pressure,
+finding where unacceptable behavior begins, and explaining the resulting
+risk with credible evidence.</strong></p>
+</blockquote>
+<p>Knowing k6 is valuable.</p>
+<p>Knowing <strong>why to generate a particular load, what to observe,
+and what conclusions the evidence actually supports</strong> is the
+skill that makes you a stronger quality engineer.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James Bach's current HTSM is useful for keeping performance inside a
+broader risk-based test strategy rather than reducing it to tooling.
+Google's SRE material is excellent for latency distributions, the four
+golden signals and overload behavior. Grafana's current k6 documentation
+explains how arrival-rate executors, checks and thresholds translate
+those ideas into executable experiments. The June 2026 Nuvemshop case
+study is particularly worth reading because it connects web performance
+with real e-commerce business metrics while also exposing the
+correctness risks of performance techniques such as caching. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">web.dev+4Satisfice+4Google
+SRE+4</a></p>
+<p><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">James
+Bach — Heuristic Test Strategy Model</a></p>
+<p><a
+href="https://sre.google/sre-book/service-level-objectives/?utm_source=chatgpt.com">Google
+SRE — Service Level Objectives and latency percentiles</a></p>
+<p><a
+href="https://sre.google/sre-book/monitoring-distributed-systems/?utm_source=chatgpt.com">Google
+SRE — Monitoring Distributed Systems and the four golden signals</a></p>
+<p><a
+href="https://sre.google/sre-book/addressing-cascading-failures/?utm_source=chatgpt.com">Google
+SRE — Addressing Cascading Failures</a></p>
+<p><a
+href="https://grafana.com/docs/k6/latest/using-k6/scenarios/executors/constant-arrival-rate/?utm_source=chatgpt.com">Grafana
+k6 — Constant arrival rate</a></p>
+<p><a
+href="https://grafana.com/docs/k6/latest/using-k6/thresholds/?utm_source=chatgpt.com">Grafana
+k6 — Thresholds</a></p>
+<p><a
+href="https://web.dev/case-studies/nuvemshop?utm_source=chatgpt.com">Nuvemshop
+— 2026 e-commerce performance case study</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-09.html" rel="prev"><span>Previous</span>Bug Advocacy: Finding the Bug Is Only Half the Job</a><a href="/qa-blog/posts/qa-thinking-day-11.html" rel="next"><span>Next</span>Feature Flags Change What “the Version” Means</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

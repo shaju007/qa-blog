@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Auction wins 1,000,000 Impressions 820,000 Clicks 9,300 Conversions 410 Advertising spend €24,600">
+  <meta name="color-scheme" content="light">
+  <title>Ad-Tech Event Integrity: An Auction Win Is Not an Impression, and a 200 OK Is Not a Conversion | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 14</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-14">QA Thinking — Day 14</h1>
+<h2
+id="ad-tech-event-integrity-an-auction-win-is-not-an-impression-and-a-200-ok-is-not-a-conversion">Ad-Tech
+Event Integrity: An Auction Win Is Not an Impression, and a 200 OK Is
+Not a Conversion</h2>
+<p>Imagine your company runs an advertising platform.</p>
+<p>At the end of the day, the dashboard says:</p>
+<pre><code>Auction wins          1,000,000
+Impressions             820,000
+Clicks                    9,300
+Conversions                 410
+Advertising spend       €24,600</code></pre>
+<p>Someone from Product asks:</p>
+<blockquote>
+<p>“Why did we win one million ads but show only 820,000 impressions?
+Are we losing 180,000 events?”</p>
+</blockquote>
+<p>That question sounds reasonable.</p>
+<p>But a tester who understands the domain should not immediately look
+for a missing-event bug.</p>
+<p>An <strong>auction win</strong>, an <strong>ad being
+rendered</strong>, a <strong>billable impression</strong>, a
+<strong>click</strong>, and a <strong>conversion</strong> are different
+business events. They may occur in different systems, at different
+times, and some of them may legitimately never happen.</p>
+<p>The OpenRTB specification explicitly warns that winning an auction
+does not mean that the ad was delivered, viewable, or billable. It even
+says that a win-notice event should not be used to count impressions
+because downstream auctions, playback failures, and other conditions can
+prevent a winning ad from becoming an actual impression. <a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf">IAB
+Tech Lab</a></p>
+<p>That gives us today's central lesson:</p>
+<blockquote>
+<p><strong>When testing event-driven business systems, don't verify that
+“an event happened.” Understand what each event means, what caused it,
+what business consequence it creates, and how the system prevents events
+from being lost, duplicated, misordered, or misinterpreted.</strong></p>
+</blockquote>
+<p>Ad tech is an excellent domain for learning this because tiny
+data-integrity problems can turn directly into incorrect billing,
+campaign optimization, reporting, or customer trust.</p>
+<hr />
+<h2 id="first-understand-the-business-flow">First, understand the
+business flow</h2>
+<p>A simplified programmatic advertising flow might look like this:</p>
+<pre><code>User opens page
+      ↓
+Publisher has ad space
+      ↓
+Ad request
+      ↓
+Exchange / SSP
+      ↓
+Bid requests sent to DSPs
+      ↓
+Advertisers bid
+      ↓
+Auction winner selected
+      ↓
+WIN
+      ↓
+Ad creative delivered
+      ↓
+Ad rendered
+      ↓
+IMPRESSION / BILLABLE EVENT
+      ↓
+User clicks
+      ↓
+CLICK
+      ↓
+User buys/signs up
+      ↓
+CONVERSION</code></pre>
+<p>Several businesses may participate.</p>
+<p>The <strong>publisher</strong> owns the app or website containing the
+advertising space.</p>
+<p>A <strong>DSP</strong>—demand-side platform—typically represents
+advertisers buying advertising inventory.</p>
+<p>An exchange or SSP sits on the supply side and helps sell
+opportunities to show ads.</p>
+<p>The important QA lesson is not memorizing those names. It is
+understanding that money and reporting can depend on different points in
+the chain.</p>
+<p>For example:</p>
+<pre><code>WIN</code></pre>
+<p>can mean:</p>
+<blockquote>
+<p>“Our bid won the auction.”</p>
+</blockquote>
+<p>Whereas:</p>
+<pre><code>IMPRESSION</code></pre>
+<p>can mean:</p>
+<blockquote>
+<p>“The ad actually reached the point that qualifies as an
+impression.”</p>
+</blockquote>
+<p>And:</p>
+<pre><code>BILLING EVENT</code></pre>
+<p>means something even stronger:</p>
+<blockquote>
+<p>“According to our business policy, this event now causes money to be
+booked.”</p>
+</blockquote>
+<p>OpenRTB describes the billing notice as a financial event: the DSP
+can use it to increment spend and reduce the campaign's remaining
+budget. The specification recommends firing that billing notice close to
+the moment revenue is actually booked. <a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf">IAB
+Tech Lab</a></p>
+<p>So one of the first things I would ask when joining an ad-tech
+project is:</p>
+<blockquote>
+<p><strong>Which event does our company consider billable?</strong></p>
+</blockquote>
+<p>That question sounds simple.</p>
+<p>It may expose major differences between teams.</p>
+<hr />
+<h2
+id="impression-itself-may-be-more-complicated-than-you-think">“Impression”
+itself may be more complicated than you think</h2>
+<p>Suppose an app downloads an advertisement.</p>
+<p>Is that an impression?</p>
+<p>Not necessarily.</p>
+<p>Imagine:</p>
+<pre><code>Ad markup downloaded
+        ↓
+User closes app
+        ↓
+Ad never displayed</code></pre>
+<p>If your tracking logic counts:</p>
+<pre><code>markup downloaded = impression</code></pre>
+<p>you may bill for something the user never had an opportunity to
+see.</p>
+<p>The OpenRTB implementation guidance specifically discusses this risk
+in mobile applications: ad markup may be fetched in advance for
+buffering, yet never displayed. It also notes that client-side tracking
+mechanisms are prone to discrepancies because network timing and
+connectivity can result in one party receiving a tracking signal while
+another does not. <a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf">IAB
+Tech Lab+1</a></p>
+<p>This gives you an excellent testing experiment.</p>
+<p>Don't test only:</p>
+<pre><code>Ad loads
+→ tracking request appears</code></pre>
+<p>Try:</p>
+<pre><code>Request ad
+      ↓
+creative downloaded
+      ↓
+close screen BEFORE rendering</code></pre>
+<p>Then investigate:</p>
+<pre><code>Did we count impression?
+Did we bill advertiser?
+Did publisher revenue increase?
+Did campaign budget decrease?</code></pre>
+<p>A UI tester may never notice this.</p>
+<p>A domain-aware quality engineer will.</p>
+<hr />
+<h1 id="event-names-are-not-the-oracle-business-meaning-is">Event names
+are not the oracle; business meaning is</h1>
+<p>Suppose your Kafka topic receives:</p>
+<pre><code>{
+  &quot;type&quot;: &quot;IMPRESSION&quot;,
+  &quot;campaignId&quot;: &quot;C-501&quot;,
+  &quot;price&quot;: 0.004
+}</code></pre>
+<p>Your automated test checks:</p>
+<pre><code>expect(event.type).toBe(&quot;IMPRESSION&quot;);
+expect(event.campaignId).toBeDefined();</code></pre>
+<p>Green.</p>
+<p>But what made the system produce the event?</p>
+<p>Perhaps the implementation emits <code>IMPRESSION</code> when:</p>
+<pre><code>auction won</code></pre>
+<p>instead of when:</p>
+<pre><code>ad displayed</code></pre>
+<p>The event's structure is perfectly valid.</p>
+<p>Its <strong>meaning is wrong</strong>.</p>
+<p>This is one reason James Bach's new September 22, 2026 article on
+responsible quality engineering is useful. He describes quality
+engineering as alignment between what people intend, what is specified,
+what is delivered, and what the receiver actually experiences. Testing
+helps assess that alignment. <a
+href="https://www.satisfice.com/blog/archives/488069">Satisfice</a></p>
+<p>Ad measurement gives us a very concrete example:</p>
+<pre><code>Specification:
+&quot;Count displayed ads&quot;
+
+Implementation:
+&quot;Emit impression after auction win&quot;
+
+Dashboard:
+&quot;820,000 impressions&quot;
+
+Advertiser experience:
+&quot;Some ads were never rendered&quot;</code></pre>
+<p>Every system may be technically functioning.</p>
+<p>Yet the measurement is not representing the business reality it
+claims to represent.</p>
+<p>That's a quality problem.</p>
+<hr />
+<h1 id="duplicate-events-are-not-merely-data-problems">Duplicate events
+are not merely “data problems”</h1>
+<p>Imagine an exchange decides that an impression is billable and
+sends:</p>
+<pre><code>POST /billing-notice
+
+eventId=IMP-78192
+price=0.01</code></pre>
+<p>Your server processes it.</p>
+<p>Then the exchange loses the HTTP response.</p>
+<p>From its perspective:</p>
+<pre><code>Did the billing endpoint receive the event?
+
+UNKNOWN</code></pre>
+<p>So it retries.</p>
+<pre><code>POST /billing-notice
+
+eventId=IMP-78192
+price=0.01</code></pre>
+<p>If your system performs:</p>
+<pre><code>receive event
+→ add €0.01 spend</code></pre>
+<p>each time, the advertiser is charged twice.</p>
+<p>The OpenRTB specification explicitly recognizes this. Because billing
+notifications travel across an unreliable public network, it recommends
+retries when appropriate and recommends that the receiving endpoint be
+<strong>idempotent to avoid double counting</strong>. <a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf">IAB
+Tech Lab+1</a></p>
+<p>We've already encountered idempotency in our payment-testing
+lesson.</p>
+<p>Now notice something important.</p>
+<p>The same reasoning pattern transfers to a completely different
+industry.</p>
+<pre><code>Payment:
+duplicate retry
+→ duplicate charge
+
+Ad tech:
+duplicate retry
+→ duplicate impression/spend
+
+Marketplace:
+duplicate refund event
+→ duplicate financial adjustment</code></pre>
+<p>A strong tester accumulates these reusable mental models.</p>
+<p>You stop memorizing “payment test cases” and “ad-tech test
+cases.”</p>
+<p>You start recognizing:</p>
+<blockquote>
+<p><strong>This is a distributed side-effect problem.</strong></p>
+</blockquote>
+<hr />
+<h1 id="event-identity-is-therefore-critical">Event identity is
+therefore critical</h1>
+<p>Suppose you receive:</p>
+<pre><code>IMPRESSION
+IMPRESSION</code></pre>
+<p>Are those duplicates?</p>
+<p>You cannot know without identity.</p>
+<p>Good event flows often contain correlation information such as:</p>
+<pre><code>request_id
+auction_id
+bid_id
+impression_id
+click_id
+campaign_id
+order_id</code></pre>
+<p>Different platforms use different identifiers.</p>
+<p>What matters is that you can answer:</p>
+<blockquote>
+<p>“Does this event represent a new business occurrence or another
+delivery of the same occurrence?”</p>
+</blockquote>
+<p>This distinction is essential.</p>
+<p>Imagine:</p>
+<pre><code>Same advertisement shown twice</code></pre>
+<p>You may legitimately need:</p>
+<pre><code>2 impressions</code></pre>
+<p>But:</p>
+<pre><code>same impression message delivered twice</code></pre>
+<p>should probably remain:</p>
+<pre><code>1 impression</code></pre>
+<p>Those situations look almost identical if your data doesn't preserve
+event identity.</p>
+<hr />
+<h1 id="now-follow-the-pipeline-into-conversion-tracking">Now follow the
+pipeline into conversion tracking</h1>
+<p>Suppose your advertiser is an online shop.</p>
+<p>A user clicks an advertisement.</p>
+<pre><code>Ad click
+   ↓
+Store
+   ↓
+Purchase
+   ↓
+ORDER-9281</code></pre>
+<p>The store reports:</p>
+<pre><code>Conversion:
+ORDER-9281
+Value: €120</code></pre>
+<p>A network timeout occurs.</p>
+<p>The tracking service sends it again.</p>
+<pre><code>Conversion:
+ORDER-9281
+Value: €120</code></pre>
+<p>Without deduplication, your dashboard may claim:</p>
+<pre><code>Conversions: 2
+Revenue: €240</code></pre>
+<p>while the merchant has:</p>
+<pre><code>Orders: 1
+Revenue: €120</code></pre>
+<p>Google Ads strongly recommends sending a unique transaction/order ID
+for purchases because duplicate conversions with the same transaction ID
+can then be recognized and not counted again. Its API documentation
+likewise recommends <code>order_id</code>, and duplicate order IDs can
+produce explicit duplicate errors. <a
+href="https://support.google.com/google-ads/answer/6386790?hl=en&amp;utm_source=chatgpt.com">Google
+Hilfe+1</a></p>
+<p>This gives you another business invariant:</p>
+<pre><code>one merchant order
+should not become
+multiple purchase conversions
+for the same conversion action</code></pre>
+<p>Now test it.</p>
+<p>Not merely:</p>
+<pre><code>Send conversion
+→ 200</code></pre>
+<p>but:</p>
+<pre><code>Send ORDER-9281
+Send ORDER-9281 again
+Send ORDER-9281 again</code></pre>
+<p>Then inspect:</p>
+<pre><code>API response
+internal tracking database
+advertising report
+revenue calculation
+optimization input</code></pre>
+<p>One duplicated event can affect far more than a dashboard.</p>
+<hr />
+<h1
+id="a-successful-upload-does-not-prove-the-conversion-exists-in-reporting">A
+successful upload does not prove the conversion exists in reporting</h1>
+<p>This is a particularly useful integration-testing lesson.</p>
+<p>Suppose your conversion uploader receives:</p>
+<pre><code>HTTP 200</code></pre>
+<p>The test says:</p>
+<pre><code>PASS</code></pre>
+<p>Google's current conversion troubleshooting documentation explicitly
+warns that a successful API import response does <strong>not necessarily
+mean the conversion was ultimately attributed</strong>. Processing and
+attribution happen beyond the initial API acknowledgement. <a
+href="https://developers.google.com/google-ads/api/docs/conversions/troubleshooting?utm_source=chatgpt.com">Google
+for Developers</a></p>
+<p>We saw almost exactly the same pattern with payments:</p>
+<pre><code>API accepted request
+≠
+business transaction completed</code></pre>
+<p>Here:</p>
+<pre><code>API accepted conversion
+≠
+conversion successfully attributed/reported</code></pre>
+<p>So when testing asynchronous pipelines, learn to distinguish:</p>
+<pre><code>ACCEPTED
+PROCESSED
+VALIDATED
+ATTRIBUTED
+REPORTED</code></pre>
+<p>Those states may be separated by seconds, minutes, or hours.</p>
+<p>Testing only the first one produces false confidence.</p>
+<hr />
+<h1 id="batch-processing-creates-another-trap-partial-failure">Batch
+processing creates another trap: partial failure</h1>
+<p>Imagine your system uploads 100 conversions:</p>
+<pre><code>Conversion 1
+Conversion 2
+...
+Conversion 100</code></pre>
+<p>The API accepts 99.</p>
+<p>One has an invalid click identifier.</p>
+<p>What should your importer do?</p>
+<p>Bad implementation:</p>
+<pre><code>API call returned
+→ mark batch SUCCESS</code></pre>
+<p>Conversion 57 is silently lost.</p>
+<p>Another bad implementation:</p>
+<pre><code>one failed
+→ retry all 100</code></pre>
+<p>Now you risk 99 duplicates unless deduplication is perfect.</p>
+<p>Google Ads conversion upload flows explicitly support partial
+failure, meaning individual operations within a batch can fail while
+others succeed. Clients are expected to inspect individual
+results/errors. <a
+href="https://developers.google.com/google-ads/api/docs/conversions/legacy_oci_guide?utm_source=chatgpt.com">Google
+for Developers+1</a></p>
+<p>That's a fantastic testing scenario.</p>
+<p>Create:</p>
+<pre><code>99 valid events
+1 deliberately invalid event</code></pre>
+<p>Then ask:</p>
+<pre><code>Were the 99 successful ones committed?
+
+Was the failed event identified?
+
+Can it be retried independently?
+
+Will the successful 99 be sent again?
+
+Can operations see which one failed?</code></pre>
+<p>This is much stronger than:</p>
+<pre><code>batch upload test = successful batch</code></pre>
+<p>because production failures rarely arrive in neat all-or-nothing
+packages.</p>
+<hr />
+<h1 id="event-driven-architecture-changes-what-order-means">Event-driven
+architecture changes what “order” means</h1>
+<p>Ministry of Testing's current event-driven architecture guidance
+highlights several testing concerns that come with asynchronous systems:
+timing, ordering, retries, and events that appear late or out of
+sequence. <a
+href="https://www.ministryoftesting.com/software-testing-glossary/event-driven-architecture-eda?utm_source=chatgpt.com">MoTaverse</a></p>
+<p>Consider this conversion pipeline:</p>
+<pre><code>CLICK
+   ↓
+PURCHASE</code></pre>
+<p>Looks obvious.</p>
+<p>Now network timing produces:</p>
+<pre><code>12:00:00 purchase processed
+
+12:00:02 conversion event published
+
+12:00:04 click event processing delayed
+
+12:00:05 conversion consumer sees purchase
+
+12:00:09 click finally appears</code></pre>
+<p>Your processing system may observe:</p>
+<pre><code>CONVERSION
+then
+CLICK</code></pre>
+<p>even though real-world time was:</p>
+<pre><code>CLICK
+then
+CONVERSION</code></pre>
+<p>What should happen?</p>
+<p>A brittle implementation might say:</p>
+<pre><code>No click exists
+→ conversion invalid
+→ discard forever</code></pre>
+<p>A more resilient architecture might:</p>
+<pre><code>hold unmatched conversion
+retry attribution later</code></pre>
+<p>Which behavior is correct?</p>
+<p>That is not a Kafka question.</p>
+<p>It is a business requirement.</p>
+<p>And it deserves explicit testing.</p>
+<hr />
+<h1 id="the-five-event-mutations-i-use-constantly">The five event
+mutations I use constantly</h1>
+<p>When I test an event-driven workflow, I keep one small heuristic
+nearby:</p>
+<ul>
+<li><p><strong>Missing</strong> — expected event never arrives.</p></li>
+<li><p><strong>Duplicate</strong> — the same logical event arrives more
+than once.</p></li>
+<li><p><strong>Late</strong> — event arrives much later than
+expected.</p></li>
+<li><p><strong>Reordered</strong> — events arrive in a different
+sequence.</p></li>
+<li><p><strong>Corrected</strong> — something believed earlier must
+later be revised.</p></li>
+</ul>
+<p>You can apply this almost everywhere.</p>
+<p>For ad tech:</p>
+<pre><code>Missing impression
+Duplicate billing notice
+Late conversion
+Conversion before click processing
+Conversion value later adjusted/refunded</code></pre>
+<p>For sports:</p>
+<pre><code>Missing goal
+Duplicate goal
+Late goal
+Events reordered
+Goal overturned by VAR</code></pre>
+<p>For payments:</p>
+<pre><code>Missing webhook
+Duplicate capture event
+Late settlement
+Refund before local capture event
+Capture later fails</code></pre>
+<p>This is why I like heuristics more than giant predefined
+checklists.</p>
+<p>A useful heuristic keeps generating relevant experiments across
+domains.</p>
+<hr />
+<h1
+id="ad-tech-discrepancies-are-normal-unexplained-discrepancies-are-the-problem">Ad-tech
+discrepancies are normal; unexplained discrepancies are the problem</h1>
+<p>Imagine two companies are counting the same advertising activity.</p>
+<p>Publisher says:</p>
+<pre><code>Impressions: 1,000,000</code></pre>
+<p>DSP says:</p>
+<pre><code>Impressions: 975,000</code></pre>
+<p>The immediate tester reaction might be:</p>
+<blockquote>
+<p>“We lost 25,000 events.”</p>
+</blockquote>
+<p>Maybe.</p>
+<p>But client-side measurement is inherently exposed to timing,
+connectivity, blocked requests, caching, browser behavior, and different
+measurement definitions. OpenRTB specifically notes that different
+tracking approaches can produce discrepancies and recommends business
+partners explicitly agree on what constitutes the billable event and the
+technical mechanism used to count it. <a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf">IAB
+Tech Lab+1</a></p>
+<p>The important QA question becomes:</p>
+<blockquote>
+<p><strong>Is this discrepancy expected, explainable, bounded, and
+monitored?</strong></p>
+</blockquote>
+<p>Suppose historical difference is:</p>
+<pre><code>0.5–1.0%</code></pre>
+<p>Today it suddenly becomes:</p>
+<pre><code>12%</code></pre>
+<p>That's much more actionable.</p>
+<p>Instead of asserting:</p>
+<blockquote>
+<p>“Numbers must match exactly,”</p>
+</blockquote>
+<p>you may need an operational oracle such as:</p>
+<pre><code>Partner discrepancy normally &lt; 1.5%
+
+Today = 12%
+
+Investigate.</code></pre>
+<p>Testing data products often requires understanding
+<strong>relationships and tolerances</strong>, not only exact
+values.</p>
+<hr />
+<h1
+id="observability-must-let-you-reconcile-the-event-chain">Observability
+must let you reconcile the event chain</h1>
+<p>Imagine the advertiser contacts support:</p>
+<blockquote>
+<p>“You charged us for impression 883927, but we never saw it.”</p>
+</blockquote>
+<p>Can your system reconstruct what happened?</p>
+<p>Ideally, an engineer could trace something like:</p>
+<pre><code>ad_request_id    = R-712
+auction_id       = A-991
+bid_id           = B-422
+impression_id    = I-883927
+campaign_id      = C-55
+billing_event_id = BILL-821
+timestamp        = ...</code></pre>
+<p>Then follow:</p>
+<pre><code>request
+→ auction
+→ win
+→ render signal
+→ billable event
+→ billing notice
+→ spend ledger</code></pre>
+<p>If every service creates unrelated identifiers, investigating a
+discrepancy may require guesswork.</p>
+<p>That is a <strong>testability problem</strong>.</p>
+<p>Your test strategy should therefore include the question:</p>
+<blockquote>
+<p>“Can I trace one business transaction across the entire system?”</p>
+</blockquote>
+<p>Not just in test environments.</p>
+<p>In production too.</p>
+<p>Because many event-pipeline defects only become obvious when real
+traffic produces unusual combinations.</p>
+<hr />
+<h1 id="aggregate-monitoring-is-not-enough">Aggregate monitoring is not
+enough</h1>
+<p>Suppose your dashboards say:</p>
+<pre><code>billing endpoint availability: 99.99%
+Kafka consumer healthy
+CPU 40%
+memory 55%</code></pre>
+<p>Excellent.</p>
+<p>Meanwhile:</p>
+<pre><code>billable impressions       1,000,000
+billing ledger entries     1,080,000</code></pre>
+<p>Your infrastructure is extremely healthy while your advertiser is
+being overcharged.</p>
+<p>This is why domain-level observability matters.</p>
+<p>For an ad-tech system, I would want to understand relationships such
+as:</p>
+<pre><code>wins vs impressions
+impressions vs billing events
+billing events vs spend entries
+clicks vs conversions
+merchant purchases vs purchase conversions
+duplicate-event rate
+unmatched-conversion rate
+event-processing delay</code></pre>
+<p>You don't necessarily alert when two numbers differ.</p>
+<p>You alert when the relationship stops making sense.</p>
+<p>That's a much more powerful model of production quality.</p>
+<hr />
+<h1 id="testing-the-dashboard-alone-is-dangerously-weak">Testing the
+dashboard alone is dangerously weak</h1>
+<p>Suppose your reporting UI displays:</p>
+<pre><code>Conversions = 410</code></pre>
+<p>You check the database:</p>
+<pre><code>SELECT COUNT(*)
+→ 410</code></pre>
+<p>Test passes.</p>
+<p>But perhaps the same conversion has been stored twice and two
+legitimate conversions are missing:</p>
+<pre><code>Real:
+A
+B
+C
+D
+
+Stored:
+A
+A
+B
+C</code></pre>
+<p>Count:</p>
+<pre><code>4</code></pre>
+<p>looks correct.</p>
+<p>Data:</p>
+<pre><code>wrong</code></pre>
+<p>This is an important testing principle:</p>
+<blockquote>
+<p><strong>Aggregates can hide individual data corruption.</strong></p>
+</blockquote>
+<p>When possible, reconcile at the <strong>identity level</strong>, not
+only the count level.</p>
+<p>Instead of only:</p>
+<pre><code>orders = conversions = 410</code></pre>
+<p>sample or compare:</p>
+<pre><code>ORDER-1001 → CONVERSION-1001
+ORDER-1002 → CONVERSION-1002
+...</code></pre>
+<p>Now you're testing data integrity, not just totals.</p>
+<hr />
+<h1
+id="attribution-introduces-business-rules-that-testers-must-understand">Attribution
+introduces business rules that testers must understand</h1>
+<p>Suppose a customer:</p>
+<pre><code>Monday:
+clicks Ad A
+
+Wednesday:
+clicks Ad B
+
+Friday:
+buys €100 product</code></pre>
+<p>Which advertisement gets the conversion?</p>
+<p>That depends on the attribution model.</p>
+<p>Maybe Ad B gets all the credit.</p>
+<p>Maybe both get partial credit.</p>
+<p>Maybe the conversion falls outside the configured lookback window and
+receives no advertising attribution.</p>
+<p>That means:</p>
+<pre><code>Merchant purchases = 100
+
+Ad-platform conversions = 83</code></pre>
+<p>does not automatically indicate missing data.</p>
+<p>Google's conversion-management documentation explicitly frames
+conversions as user actions attributed after advertising interactions,
+and the platform has business rules around click identifiers,
+timestamps, attribution, consent, and lookback behavior. <a
+href="https://developers.google.com/google-ads/api/docs/conversions/overview?utm_source=chatgpt.com">Google
+for Developers+1</a></p>
+<p>So before testing conversion counts, ask:</p>
+<blockquote>
+<p><strong>What is the attribution rule?</strong></p>
+</blockquote>
+<p>Otherwise you don't have a meaningful oracle.</p>
+<hr />
+<h1 id="refunds-make-conversion-data-mutable">Refunds make conversion
+data mutable</h1>
+<p>Suppose:</p>
+<pre><code>Day 1
+ORDER-9001
+Revenue = €100
+
+Conversion sent:
+€100</code></pre>
+<p>Three days later:</p>
+<pre><code>Customer returns half the order.
+
+Actual retained revenue = €50</code></pre>
+<p>Should the advertising platform still optimize as though this
+customer generated €100?</p>
+<p>Perhaps not.</p>
+<p>Google Ads supports conversion adjustments so previously recorded
+conversion values can later be restated or retracted. It recommends
+identifying those conversions with a durable order ID. <a
+href="https://developers.google.com/google-ads/api/docs/conversions/upload-adjustments?utm_source=chatgpt.com">Google
+for Developers</a></p>
+<p>Now the test is no longer:</p>
+<pre><code>Did we send conversion?</code></pre>
+<p>It becomes:</p>
+<pre><code>Did original conversion arrive?
+
+Did refund trigger adjustment?
+
+Did adjustment reference correct order?
+
+Did revenue become €50?
+
+Could the adjustment arrive twice?
+
+What if adjustment arrives before original processing finishes?</code></pre>
+<p>Domain knowledge keeps generating stronger tests.</p>
+<hr />
+<h1 id="soft-skill-when-marketing-says-tracking-is-broken">Soft skill:
+when marketing says “tracking is broken”</h1>
+<p>Imagine Marketing sends you:</p>
+<blockquote>
+<p>“Google Ads shows 410 purchases but our database has 460. Tracking is
+broken. Can QA fix this urgently?”</p>
+</blockquote>
+<p>Don't respond:</p>
+<blockquote>
+<p>“It's probably attribution.”</p>
+</blockquote>
+<p>And don't respond:</p>
+<blockquote>
+<p>“Yes, bug.”</p>
+</blockquote>
+<p>Start with evidence.</p>
+<p>A useful response might be:</p>
+<blockquote>
+<p>“I can confirm the two totals differ by 50. Before treating those as
+missing tracking events, I want to compare the same purchase window and
+attribution rules, then reconcile order IDs where possible. I’ll also
+check duplicate/rejected conversion uploads and processing delays. That
+should tell us whether we're looking at event loss, attribution
+differences, or reporting scope.”</p>
+</blockquote>
+<p>That communication does several things.</p>
+<p>It acknowledges the concern.</p>
+<p>It separates <strong>observation</strong> from
+<strong>explanation</strong>.</p>
+<p>It proposes an investigation.</p>
+<p>It avoids blaming Marketing, Google, or Engineering before you know
+what happened.</p>
+<p>This is how QA influences without authority.</p>
+<hr />
+<h1 id="ask-better-questions-when-metrics-disagree">Ask better questions
+when metrics disagree</h1>
+<p>Suppose Product says:</p>
+<blockquote>
+<p>“Conversion is down 20% since Tuesday's release.”</p>
+</blockquote>
+<p>A weaker tester immediately starts replaying checkout tests.</p>
+<p>A stronger tester asks questions such as:</p>
+<pre><code>Did actual orders also fall 20%?
+
+Is conversion measured by event time or processing time?
+
+Did attribution configuration change?
+
+Did traffic source mix change?
+
+Are purchase events arriving late?
+
+Did deduplication rate change?
+
+Are we comparing the same timezone/window?
+
+Was consent behavior changed?
+
+Did one campaign or country create most of the decline?</code></pre>
+<p>You don't need to ask all of those aloud.</p>
+<p>Use them to structure the investigation.</p>
+<p>Perhaps:</p>
+<pre><code>Orders unchanged
+Conversions -20%</code></pre>
+<p>That directs you toward measurement.</p>
+<p>But:</p>
+<pre><code>Orders -20%
+Conversions -20%</code></pre>
+<p>could mean the tracking system is perfectly accurate and the
+product/business itself changed.</p>
+<p>Testing means distinguishing hypotheses, not merely reproducing
+symptoms.</p>
+<hr />
+<h1 id="a-practical-ad-tech-event-test-strategy">A practical ad-tech
+event test strategy</h1>
+<p>For an important measurement pipeline, I would build the model around
+the entire business chain rather than individual endpoints:</p>
+<pre><code>REAL-WORLD OCCURRENCE
+
+Did the user/ad/business action actually happen?
+
+        ↓
+
+EVENT GENERATION
+
+Was the correct event produced at the correct trigger?
+
+        ↓
+
+IDENTITY
+
+Can duplicates of the same business event be recognized?
+
+        ↓
+
+TRANSPORT
+
+What happens when events are lost, delayed, retried or reordered?
+
+        ↓
+
+PROCESSING
+
+Were validation, enrichment and attribution correct?
+
+        ↓
+
+FINANCIAL EFFECT
+
+Did billing/spend/revenue change exactly once?
+
+        ↓
+
+REPORTING
+
+Did dashboards represent the resulting business state correctly?
+
+        ↓
+
+RECONCILIATION
+
+Can we prove how a reported number relates back to real events?</code></pre>
+<p>Then use automation where it gives leverage.</p>
+<p>Schema checks are useful.</p>
+<p>Contract tests are useful.</p>
+<p>Event-consumer tests are useful.</p>
+<p>Synthetic end-to-end tracking events are useful.</p>
+<p>Production reconciliation is useful.</p>
+<p>But none replaces understanding the business meaning of the
+event.</p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>You are testing an ad platform.</p>
+<p>One advertisement produces this timeline:</p>
+<pre><code>10:00:00
+Auction won
+auctionId = A100
+
+10:00:01
+Creative downloaded
+
+10:00:02
+Impression rendered
+impressionId = I500
+
+10:00:02
+Billing notification sent
+eventId = B900
+
+10:00:03
+Billing endpoint processes B900
+Advertiser spend += €0.01
+
+10:00:04
+Network timeout prevents sender receiving response
+
+10:00:14
+Billing notification B900 retried
+
+10:00:15
+Advertiser spend += €0.01 again
+
+10:05:00
+User clicks advertisement
+
+10:10:00
+User purchases ORDER-700 for €80
+
+10:10:05
+Conversion ORDER-700 uploaded successfully
+
+10:10:07
+Uploader crashes before saving local success state
+
+10:11:00
+ORDER-700 uploaded again</code></pre>
+<p>The final dashboards show:</p>
+<pre><code>Auction wins        1
+Impressions         1
+Billing events      2
+Spend             €0.02
+
+Clicks              1
+
+Conversions         2
+Revenue           €160</code></pre>
+<p>The real-world business state was:</p>
+<pre><code>one impression
+one billable impression
+one purchase worth €80</code></pre>
+<p>Your challenge is to design only <strong>three
+experiments</strong>.</p>
+<p>Choose the three that give you the most confidence against this class
+of financial/data-integrity failure.</p>
+<p>For each experiment, answer four questions:</p>
+<pre><code>What business invariant am I protecting?
+
+Where should I inject the failure?
+
+What evidence proves the result is correct?
+
+What telemetry would detect this problem in production?</code></pre>
+<p>For example, you might inject:</p>
+<pre><code>lost HTTP response after billing processing</code></pre>
+<p>and verify:</p>
+<pre><code>same billing event retried
+→ only one ledger entry</code></pre>
+<p>But don't stop with duplicate events.</p>
+<p>Consider whether one of your three experiments should
+investigate:</p>
+<pre><code>partial conversion-upload failure</code></pre>
+<p>or:</p>
+<pre><code>late/out-of-order attribution</code></pre>
+<p>or:</p>
+<pre><code>conversion adjustment after refund</code></pre>
+<p>The point is not maximizing scenario count.</p>
+<p>The point is selecting experiments that protect the most important
+<strong>business invariants</strong>.</p>
+<p>And today's deepest lesson is this:</p>
+<blockquote>
+<p><strong>In event-driven systems, reliability does not mean that every
+message arrives exactly once and perfectly on time. Reliable systems are
+designed so that missing, repeated, delayed, and reordered messages do
+not silently corrupt the business.</strong></p>
+</blockquote>
+<p>An inexperienced tester sees:</p>
+<pre><code>POST /billing
+200 OK</code></pre>
+<p>and thinks:</p>
+<blockquote>
+<p>“Billing works.”</p>
+</blockquote>
+<p>A stronger tester asks:</p>
+<blockquote>
+<p>“What if the sender never receives that 200?”</p>
+</blockquote>
+<p>A quality engineer asks one step further:</p>
+<blockquote>
+<p><strong>“How do we prove that one real-world business event produces
+exactly the financial and reporting effect we intend—even when the
+distributed system behaves imperfectly?”</strong></p>
+</blockquote>
+<p>That question applies to ad tech.</p>
+<p>It also applies to payments, sports data, marketplaces, SaaS
+integrations, analytics pipelines, and almost every event-driven system
+you will test.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James Bach's <strong>Responsible Quality Engineering</strong>,
+published on September 22, 2026, is worth reading because it frames
+testing as assessing alignment between intended value, specification,
+delivered system, and actual experience—an especially useful model when
+a metric claims to represent something that happened in the real world.
+The OpenRTB 2.6 specification's section on billable events is unusually
+valuable QA reading because it shows how much business meaning hides
+behind superficially simple events like “win” and “impression.” Ministry
+of Testing's event-driven architecture guidance is a useful reminder to
+explicitly investigate timing, ordering and retry behavior. Google's
+current conversion-management documentation gives concrete examples of
+deduplication, transaction IDs, partial failures, delayed attribution,
+and conversion adjustment in a production advertising ecosystem. <a
+href="https://www.satisfice.com/blog/archives/488069">Google for
+Developers+3Satisfice+3IAB Tech Lab+3</a></p>
+<p><a
+href="https://www.satisfice.com/blog/archives/488069?utm_source=chatgpt.com">James
+Bach — Responsible Quality Engineering</a></p>
+<p><a
+href="https://iabtechlab.com/wp-content/uploads/2022/05/OpenRTB-2.6.pdf?utm_source=chatgpt.com">IAB
+Tech Lab — OpenRTB 2.6 specification</a></p>
+<p><a
+href="https://iabtechlab.com/standards/open-measurement-sdk/?utm_source=chatgpt.com">IAB
+Tech Lab — Open Measurement SDK</a></p>
+<p><a
+href="https://www.ministryoftesting.com/software-testing-glossary/event-driven-architecture-eda?utm_source=chatgpt.com">Ministry
+of Testing — Event-Driven Architecture</a></p>
+<p><a
+href="https://developers.google.com/google-ads/api/docs/conversions/overview?utm_source=chatgpt.com">Google
+Ads API — Conversion management</a></p>
+<p><a
+href="https://support.google.com/google-ads/answer/6386790?utm_source=chatgpt.com">Google
+Ads — Use a transaction ID to minimize duplicate conversions</a></p>
+<p><a
+href="https://developers.google.com/google-ads/api/docs/conversions/troubleshooting?utm_source=chatgpt.com">Google
+Ads API — Troubleshooting conversion imports</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-13.html" rel="prev"><span>Previous</span>Contract Testing: A Green Schema Test Can Still Break the Consumer</a><a href="/qa-blog/posts/qa-thinking-day-15.html" rel="next"><span>Next</span>Overselling Isn&#39;t a Bug in the Code — It&#39;s a Bug in the Timeline</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

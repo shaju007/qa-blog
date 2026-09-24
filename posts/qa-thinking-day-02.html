@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A customer has €120 worth of products, applies a 20% discount, and the cart correctly displays €96. But when the payment request is sent to the payment provider, the backend still sends €120.">
+  <meta name="color-scheme" content="light">
+  <title>Bug Advocacy: A Strong Tester Doesn’t “Win” the Bug Argument — They Help the Team Make a Better Decision | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 2</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-2">QA Thinking — Day 2</h1>
+<h2
+id="bug-advocacy-a-strong-tester-doesnt-win-the-bug-argument--they-help-the-team-make-a-better-decision">Bug
+Advocacy: A Strong Tester Doesn’t “Win” the Bug Argument — They Help the
+Team Make a Better Decision</h2>
+<p>Imagine you find this problem during checkout:</p>
+<p>A customer has <strong>€120 worth of products</strong>, applies a 20%
+discount, and the cart correctly displays €96. But when the payment
+request is sent to the payment provider, the backend still sends
+<strong>€120</strong>.</p>
+<p>You create a bug:</p>
+<p><strong>“Checkout payment amount is incorrect after applying
+discount.”</strong></p>
+<p>The developer replies:</p>
+<blockquote>
+<p>“It works for me.”</p>
+</blockquote>
+<p>You reproduce it again and respond:</p>
+<blockquote>
+<p>“I tested it three times. It is definitely a bug.”</p>
+</blockquote>
+<p>The discussion starts becoming tester-versus-developer.</p>
+<p>This situation teaches an important QA skill that has almost nothing
+to do with Selenium, Playwright, Postman, or programming.</p>
+<p>It is <strong>bug advocacy</strong>.</p>
+<p>Cem Kaner's BBST material treats bug reporting as more than
+documenting technical facts. The tester's credibility, investigation,
+clarity, and judgment influence how seriously a problem will be taken.
+His Bug Advocacy material explicitly examines questions such as how much
+investigation a tester should perform, how bugs should be presented, and
+how a tester's decisions affect credibility. <a
+href="https://kaner.com/pdfs/bugadvoc.pdf?utm_source=chatgpt.com">Kaner+1</a></p>
+<p>The objective therefore isn't:</p>
+<p><strong>“Prove that I am right.”</strong></p>
+<p>It is:</p>
+<p><strong>“Give the team enough trustworthy information to make a good
+decision about this risk.”</strong></p>
+<hr />
+<h2
+id="start-separating-three-things-observation-inference-and-risk">Start
+separating three things: observation, inference and risk</h2>
+<p>This is one of the most useful habits you can develop as a
+tester.</p>
+<p>Suppose you observe:</p>
+<p><strong>Cart UI:</strong> €96<br />
+<strong>Payment API request:</strong> €120</p>
+<p>That is an <strong>observation</strong>.</p>
+<p>You might then think:</p>
+<blockquote>
+<p>“Customers will be overcharged.”</p>
+</blockquote>
+<p>That is not yet an observation.</p>
+<p>It is an <strong>inference</strong>.</p>
+<p>Perhaps the payment provider ignores that field. Perhaps another
+service recalculates the price. Perhaps the payment request is only a
+preliminary authorization.</p>
+<p>So investigate.</p>
+<p>You complete the payment using a test payment account and discover
+that the provider actually authorizes €120.</p>
+<p>Now you have stronger evidence.</p>
+<p>Then ask:</p>
+<p><strong>What is the consequence?</strong></p>
+<p>If a customer expects €96 but €120 is authorized, possible
+consequences include customer complaints, abandoned purchases, refunds,
+chargebacks, loss of trust and potentially legal/compliance
+concerns.</p>
+<p>That's the <strong>risk</strong>.</p>
+<p>Notice how much stronger this is than:</p>
+<blockquote>
+<p>“Price is wrong. Severity: Critical.”</p>
+</blockquote>
+<p>A senior tester increasingly learns to communicate this way:</p>
+<p><strong>I observed X. Under conditions Y. I investigated Z. This
+appears capable of producing consequence Q.</strong></p>
+<p>That style makes your reasoning inspectable.</p>
+<p>And inspectable reasoning creates credibility.</p>
+<hr />
+<h1 id="bug-severity-isnt-the-same-as-bug-importance">Bug severity isn't
+the same as bug importance</h1>
+<p>Suppose another bug exists:</p>
+<p>The checkout button is misaligned by 6 pixels on Safari.</p>
+<p>And another:</p>
+<p>Some discounted orders can charge the customer the pre-discount
+amount.</p>
+<p>You don't need a complicated severity matrix to understand which one
+deserves attention first.</p>
+<p>But sometimes testers accidentally weaken themselves by saying:</p>
+<blockquote>
+<p>“Both are High because they fail acceptance criteria.”</p>
+</blockquote>
+<p>Acceptance criteria tell you something about expected behaviour.</p>
+<p>They do <strong>not automatically tell you business
+impact</strong>.</p>
+<p>Michael Bolton's risk-focused testing material emphasizes organizing
+testing around suspected product risks and grounding risk discussions in
+evidence. He also describes product risk as leading to business risk. <a
+href="https://developsense.com/rstf-risk?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<p>So instead of:</p>
+<p><strong>Severity = High</strong></p>
+<p>try thinking:</p>
+<p><strong>Who can be affected? How often? Under what conditions? What
+could it cost? Can the customer recover? Can the business detect
+it?</strong></p>
+<p>Now you are discussing risk.</p>
+<hr />
+<h1 id="the-sentence-that-improves-many-qa-conversations">The sentence
+that improves many QA conversations</h1>
+<p>Try replacing:</p>
+<blockquote>
+<p>“This is a critical bug.”</p>
+</blockquote>
+<p>with:</p>
+<blockquote>
+<p><strong>“I'm concerned this could…”</strong></p>
+</blockquote>
+<p>For example:</p>
+<blockquote>
+<p>“I'm concerned this could charge customers the original amount when a
+cart-level discount is applied.”</p>
+</blockquote>
+<p>Then present the evidence.</p>
+<p>This sounds like a tiny communication change, but it matters.</p>
+<p>You aren't surrendering your technical opinion.</p>
+<p>You are separating:</p>
+<p><strong>evidence</strong> from <strong>assessment</strong> from
+<strong>decision</strong>.</p>
+<p>The tester contributes information.</p>
+<p>The PO, engineering, business and other stakeholders may contribute
+information you don't have.</p>
+<p>Perhaps the Product Owner tells you:</p>
+<blockquote>
+<p>“That discount feature launches next month, so no production customer
+can currently reach this path.”</p>
+</blockquote>
+<p>Interesting.</p>
+<p>The bug is still real.</p>
+<p>But the <strong>immediate release risk has changed</strong>.</p>
+<p>Good testers allow new information to modify their assessment.</p>
+<p>Bad bug advocacy looks like:</p>
+<blockquote>
+<p>“I found the bug, so it MUST be fixed.”</p>
+</blockquote>
+<p>Good bug advocacy looks like:</p>
+<blockquote>
+<p>“Here is the failure, here are the conditions, here is why I believe
+it matters, and here is the evidence.”</p>
+</blockquote>
+<hr />
+<h1 id="your-credibility-is-part-of-your-testing-toolkit">Your
+credibility is part of your testing toolkit</h1>
+<p>Suppose over six months you repeatedly create tickets like:</p>
+<p><strong>CRITICAL!!! CHECKOUT BROKEN!!!</strong></p>
+<p>Then developers open the ticket and discover:</p>
+<p>Safari 15 occasionally shows a 1-pixel border around an icon.</p>
+<p>Eventually something dangerous happens.</p>
+<p>You write:</p>
+<p><strong>CRITICAL!!! PAYMENT BROKEN!!!</strong></p>
+<p>What happens psychologically?</p>
+<p>People have learned to discount your signal.</p>
+<p>Cem Kaner's Bug Advocacy work explicitly connects the tester's
+reporting choices and quality of investigation with their credibility.
+<a
+href="https://kaner.com/pdfs/bugadvoc.pdf?utm_source=chatgpt.com">Kaner</a></p>
+<p>This doesn't mean you should avoid reporting small problems.</p>
+<p>It means <strong>describe them proportionately</strong>.</p>
+<p>James Bach has even described a technique called
+“mipping”—<em>mentioning in passing</em>—for situations where something
+seems worth communicating but doesn't justify extensive formal
+investigation. The larger principle is useful: reporting doesn't have to
+be binary between “huge Jira ticket” and “say nothing.” <a
+href="https://www.satisfice.com/blog/archives/97?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Your team might use Slack, a comment on the story, pairing with the
+developer, a lightweight ticket, or a formal defect depending on the
+situation.</p>
+<p>Ministry of Testing makes a similar point: sometimes a conversation
+or pairing session is more useful than immediately creating a formal bug
+report. <a
+href="https://www.ministryoftesting.com/courses/bug-reporting-101?utm_source=chatgpt.com">MoTaverse+1</a></p>
+<p>That's quality engineering thinking.</p>
+<p>The tool is secondary.</p>
+<p>The communication objective comes first.</p>
+<hr />
+<h1 id="now-suppose-the-developer-says-thats-an-edge-case">Now suppose
+the developer says: “That's an edge case”</h1>
+<p>This is one of the best moments for a tester to investigate rather
+than argue.</p>
+<p>Imagine the failure occurs only when:</p>
+<p>Customer has 27 products + coupon + French delivery address +
+PayPal.</p>
+<p>Perhaps that truly is extraordinarily unusual.</p>
+<p>Don't immediately defend the bug.</p>
+<p>Try to <strong>uncorner the corner case</strong>.</p>
+<p>Cem Kaner's Bug Advocacy material specifically recommends
+investigating whether a failure discovered with unusual conditions can
+also be reproduced under more mainstream conditions. <a
+href="https://kaner.com/?utm_source=chatgpt.com">Kaner+1</a></p>
+<p>Remove variables.</p>
+<p>Twenty-seven products → three.</p>
+<p>France → Germany.</p>
+<p>PayPal → credit card.</p>
+<p>Coupon → automatic promotion.</p>
+<p>You discover this:</p>
+<p>Three products + <strong>any percentage discount</strong> reproduces
+the problem.</p>
+<p>Now your strange corner case has become:</p>
+<blockquote>
+<p>“Any customer using a cart-level percentage discount may be charged
+the undiscounted amount.”</p>
+</blockquote>
+<p>That is dramatically more persuasive.</p>
+<p>Notice what made the report stronger.</p>
+<p>Not better wording.</p>
+<p><strong>Better testing.</strong></p>
+<p>Bug advocacy and test design are connected.</p>
+<hr />
+<h1 id="dont-make-the-developer-your-opponent">Don't make the developer
+your opponent</h1>
+<p>Michael Bolton describes testing as socially challenging because
+testers challenge both the product and people's beliefs about the
+product. That can naturally create discomfort. <a
+href="https://developsense.com/blog/2023/03/testing-is-socially-challenging?utm_source=chatgpt.com">DevelopSense</a></p>
+<p>Suppose a developer says:</p>
+<blockquote>
+<p>“That isn't our service. Pricing comes from checkout-core.”</p>
+</blockquote>
+<p>A weak tester hears:</p>
+<p><strong>“He's trying to reject my bug.”</strong></p>
+<p>A stronger tester hears:</p>
+<p><strong>“I just learned something about the
+architecture.”</strong></p>
+<p>Now ask:</p>
+<blockquote>
+<p>“Interesting. So should checkout-core always be the source of truth
+for the amount sent to payments?”</p>
+</blockquote>
+<p>That question might expose something more important than the original
+defect.</p>
+<p>Perhaps you discover:</p>
+<p>Frontend calculates promotions.</p>
+<p>Checkout service calculates promotions separately.</p>
+<p>Payment service receives another independently calculated total.</p>
+<p>Now the real risk might be:</p>
+<p><strong>three systems can disagree about the order
+amount.</strong></p>
+<p>That leads to much more valuable testing:</p>
+<p>UI total ↔︎ checkout API total ↔︎ order total ↔︎ payment authorization ↔︎
+invoice total ↔︎ refund total.</p>
+<p>Your original bug just revealed an architectural testing
+opportunity.</p>
+<p>That's the difference between:</p>
+<p><strong>Bug finder</strong></p>
+<p>and</p>
+<p><strong>Quality engineer who learns from bugs.</strong></p>
+<hr />
+<h1 id="dont-measure-yourself-by-number-of-bugs">Don't measure yourself
+by number of bugs</h1>
+<p>This is especially important.</p>
+<p>Ten cosmetic bugs do not automatically represent more valuable
+testing than one payment-integrity defect.</p>
+<p>James Bach published a useful piece in 2026 arguing against treating
+bug counts as a measure of quality. Such metrics can be manipulated
+without improving the system—for example by changing reporting rules,
+classification, or what gets recorded. <a
+href="https://www.satisfice.com/blog/archives/487091?utm_source=chatgpt.com">Satisfice</a></p>
+<p>This also means:</p>
+<p><strong>“I found 30 bugs this sprint.”</strong></p>
+<p>is usually weak evidence that you tested well.</p>
+<p>A much stronger story might be:</p>
+<blockquote>
+<p>“We identified a risk where promotion calculation could diverge
+between checkout and payments. I investigated the affected discount
+types, helped isolate the responsible service, and we added API-level
+checks around the calculation boundary.”</p>
+</blockquote>
+<p>That tells me far more about the tester's skill.</p>
+<hr />
+<h1 id="how-this-changes-your-work-tomorrow">How this changes your work
+tomorrow</h1>
+<p>When you find your next meaningful bug, resist opening Jira
+immediately.</p>
+<p>Spend another 10–15 minutes investigating.</p>
+<p>Try to answer:</p>
+<p><strong>What exactly happened?</strong></p>
+<p><strong>What conditions trigger it?</strong></p>
+<p><strong>Which condition actually matters?</strong></p>
+<p><strong>Can I simplify reproduction?</strong></p>
+<p><strong>Can I reproduce it through API as well as UI?</strong></p>
+<p><strong>Which component appears responsible?</strong></p>
+<p><strong>How many users/workflows might be affected?</strong></p>
+<p><strong>What business consequence could result?</strong></p>
+<p><strong>What evidence would change someone's mind about its
+importance?</strong></p>
+<p>Then write the report.</p>
+<p>You will frequently discover that those extra minutes either make the
+bug much stronger—or prove that the problem is less serious than you
+initially thought.</p>
+<p>Both outcomes are valuable.</p>
+<hr />
+<h2 id="todays-challenge">Today's challenge</h2>
+<p>Consider this e-commerce defect:</p>
+<blockquote>
+<p>A logged-in customer adds products worth €80 to their cart. After
+logging out and logging back in on another device, the cart contains the
+products but the previously applied discount has disappeared.</p>
+</blockquote>
+<p>Don't write test cases yet.</p>
+<p>Imagine you are about to discuss this with the Product Owner and
+developer.</p>
+<p>Determine the <strong>observation</strong>, your <strong>initial
+hypothesis</strong>, at least three possible <strong>business
+risks</strong>, what you would <strong>investigate before reporting
+it</strong>, and what evidence could make you either <strong>increase or
+decrease its priority</strong>.</p>
+<p>The important part isn't finding one “correct” answer.</p>
+<p>It's practicing the transition:</p>
+<p><strong>Bug → Investigation → Evidence → Risk → Communication →
+Decision.</strong></p>
+<p>That's one of the transitions that separates someone who executes
+tests from someone who can genuinely influence product quality.</p>
+<p>For deeper reading, Cem Kaner's original Bug Advocacy material is
+worth studying, and James Bach's Rapid Testing bug-reporting guide is a
+useful companion. <a
+href="https://kaner.com/pdfs/bugadvoc.pdf?utm_source=chatgpt.com">Kaner+1</a></p>
+<p><a
+href="https://kaner.com/pdfs/bugadvoc.pdf?utm_source=chatgpt.com">Cem
+Kaner — Bug Advocacy material</a><br />
+<a
+href="https://www.satisfice.com/download/rapid-testing-guide-to-making-good-bug-reports?utm_source=chatgpt.com">James
+Bach — Rapid Testing Guide to Making Good Bug Reports</a><br />
+<a
+href="https://developsense.com/blog/2023/03/testing-is-socially-challenging?utm_source=chatgpt.com">Michael
+Bolton — Testing Is Socially Challenging</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-01.html" rel="prev"><span>Previous</span>A Good Tester Does Not Just Verify Requirements</a><a href="/qa-blog/posts/qa-thinking-day-03.html" rel="next"><span>Next</span>Test Before the Code Exists: How a Strong QA Engineer Uses Refinement to Prevent Bugs</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

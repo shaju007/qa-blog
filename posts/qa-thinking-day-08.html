@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Customer pays €100 ↓ Marketplace commission €10 Seller receives €90">
+  <meta name="color-scheme" content="light">
+  <title>Marketplace Refunds: Follow the Money, Not the Status | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 8</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-8">QA Thinking — Day 8</h1>
+<h2 id="marketplace-refunds-follow-the-money-not-the-status">Marketplace
+Refunds: Follow the Money, Not the Status</h2>
+<p>Imagine you are testing a marketplace.</p>
+<p>A customer buys a jacket for <strong>€100</strong> from a seller.</p>
+<p>The marketplace keeps a 10% commission.</p>
+<p>So conceptually:</p>
+<pre><code>Customer pays                  €100
+                                  ↓
+Marketplace commission          €10
+Seller receives                 €90</code></pre>
+<p>Everything works.</p>
+<p>A week later, the customer returns the jacket.</p>
+<p>Your refund API succeeds:</p>
+<pre><code>POST /orders/8421/refund
+
+200 OK</code></pre>
+<p>The customer receives:</p>
+<pre><code>€100 refunded</code></pre>
+<p>The UI shows:</p>
+<pre><code>Order status: REFUNDED</code></pre>
+<p>Your automated test passes.</p>
+<p>But somewhere else:</p>
+<pre><code>Seller still has               €90
+Marketplace returned          €100</code></pre>
+<p>The marketplace has effectively lost <strong>€90</strong>.</p>
+<p>The refund functionality worked perfectly from the customer's
+perspective.</p>
+<p>The business transaction is completely wrong.</p>
+<p>Today's lesson is:</p>
+<blockquote>
+<p><strong>In marketplace testing, don't test statuses in isolation.
+Model how money moves between all participants and check whether those
+movements remain consistent when things change.</strong></p>
+</blockquote>
+<p>This is also a lesson in exploratory testing. Before writing dozens
+of refund test cases, we are going to build a model, identify risks,
+create a focused exploratory charter, investigate what the system
+actually does, and only then decide what deserves automation.</p>
+<p>Rapid Software Testing emphasizes exactly this kind of product- and
+risk-focused approach: learn the product, focus deeper testing where
+potential risk matters, use lightweight heuristics, and be able to
+explain what your testing discovered. <a
+href="https://developsense.com/rst-approach?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<hr />
+<h2 id="first-understand-what-a-marketplace-actually-is">First
+understand what a marketplace actually is</h2>
+<p>In a normal online shop, the commercial relationship may be
+relatively simple:</p>
+<pre><code>Customer
+   ↓
+Shop</code></pre>
+<p>In a marketplace, you may have:</p>
+<pre><code>Customer
+   ↓
+Marketplace platform
+   ↓
+Seller</code></pre>
+<p>Examples include platforms where independent merchants, restaurants,
+drivers, hosts, freelancers, or shops sell through one common
+platform.</p>
+<p>The marketplace may handle:</p>
+<pre><code>checkout
+payment processing
+commission
+seller balances
+refunds
+disputes
+payouts
+tax
+reporting</code></pre>
+<p>while the seller provides the actual product or service.</p>
+<p>That creates a very different testing problem.</p>
+<p>A transaction isn't simply:</p>
+<pre><code>CUSTOMER_PAID = true</code></pre>
+<p>It has several financial relationships.</p>
+<hr />
+<h1 id="learn-these-marketplace-terms">Learn these marketplace
+terms</h1>
+<p>A few terms matter a lot when testing marketplace systems.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Practical meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Platform fee / commission</strong></td>
+<td>Amount the marketplace keeps for facilitating the transaction</td>
+</tr>
+<tr>
+<td><strong>Transfer</strong></td>
+<td>Money moved from the platform/payment account to a seller's
+account</td>
+</tr>
+<tr>
+<td><strong>Payout</strong></td>
+<td>Money actually sent from a payment-provider balance to the seller's
+external bank account</td>
+</tr>
+<tr>
+<td><strong>Refund</strong></td>
+<td>Money returned to the customer</td>
+</tr>
+<tr>
+<td><strong>Transfer reversal</strong></td>
+<td>Money previously transferred to a seller is moved back toward the
+platform</td>
+</tr>
+<tr>
+<td><strong>Dispute / chargeback</strong></td>
+<td>Customer challenges a payment through their bank/payment
+provider</td>
+</tr>
+</tbody>
+</table>
+<p>The distinction between <strong>transfer</strong> and
+<strong>payout</strong> is especially important.</p>
+<p>Stripe Connect, for example, defines a <code>Transfer</code> as
+movement of funds between Stripe accounts. A payout is a separate
+operation that moves funds toward an external bank account. <a
+href="https://docs.stripe.com/api/transfers?lang=connect&amp;utm_source=chatgpt.com">Stripe-Dokumentation+1</a></p>
+<p>So this:</p>
+<pre><code>Marketplace
+     ↓
+Seller Stripe balance</code></pre>
+<p>is not necessarily the same event as:</p>
+<pre><code>Seller Stripe balance
+     ↓
+Seller&#39;s bank account</code></pre>
+<p>That difference can become extremely important during refunds.</p>
+<hr />
+<h1
+id="a-refund-is-not-necessarily-the-reverse-of-the-original-transaction">A
+refund is not necessarily the reverse of the original transaction</h1>
+<p>This is one of the most useful marketplace concepts for a tester to
+understand.</p>
+<p>Suppose:</p>
+<pre><code>Customer pays           €100
+Platform transfers       €90 → Seller
+Platform keeps           €10</code></pre>
+<p>Then:</p>
+<pre><code>Customer refund         €100</code></pre>
+<p>It is tempting to imagine that the payment system automatically
+performs:</p>
+<pre><code>Seller                  -€90
+Marketplace             -€10
+Customer               +€100</code></pre>
+<p>But systems do not necessarily behave that way.</p>
+<p>With Stripe Connect's <strong>separate charges and transfers</strong>
+model, the customer's charge and the seller transfer are deliberately
+decoupled. Stripe's current documentation states that refunding the
+charge does <strong>not</strong> automatically affect associated
+transfers; the platform is responsible for reconciling that money, for
+example by reversing the transfer or reducing future transfers. <a
+href="https://docs.stripe.com/connect/separate-charges-and-transfers?utm_source=chatgpt.com">Stripe-Dokumentation+1</a></p>
+<p>That one implementation detail produces an entire family of
+tests.</p>
+<p>And this is exactly why domain knowledge matters.</p>
+<p>If you didn't understand the marketplace payment model, you might
+happily automate:</p>
+<pre><code>refund API → 200
+refund status → REFUNDED
+customer balance → correct</code></pre>
+<p>and completely miss the platform losing money.</p>
+<hr />
+<h1 id="dont-begin-with-test-cases-draw-the-money-flow">Don't begin with
+test cases. Draw the money flow.</h1>
+<p>Whenever you're testing marketplace payments, refunds or commission,
+I recommend drawing something like this first:</p>
+<pre><code>                  CUSTOMER
+                     |
+                     | €100
+                     v
+                MARKETPLACE
+                 /       \
+            €10 /         \ €90
+               v           v
+         PLATFORM      SELLER
+           FEE          BALANCE</code></pre>
+<p>Now apply the refund:</p>
+<pre><code>                  CUSTOMER
+                     ^
+                     | €100 refund
+                     |
+                MARKETPLACE
+                     ^
+                     |
+                     ?
+                   SELLER</code></pre>
+<p>That question mark is where your testing begins.</p>
+<p>Who funds the refund?</p>
+<p>Does the seller return the money?</p>
+<p>Does the marketplace absorb it?</p>
+<p>Does it depend on the reason for the refund?</p>
+<p>Can the seller's future earnings be reduced?</p>
+<p>What if the seller has already been paid out?</p>
+<p>What if the seller has no balance?</p>
+<p>What if only part of the order is refunded?</p>
+<p>Those aren't obscure edge cases.</p>
+<p>They are fundamental <strong>business rules</strong>.</p>
+<hr />
+<h1 id="this-is-where-a-tester-should-ask-who-bears-the-loss">This is
+where a tester should ask “Who bears the loss?”</h1>
+<p>Suppose an order arrives damaged.</p>
+<p>The customer receives a full refund.</p>
+<p>Who should pay?</p>
+<p>Possibilities include:</p>
+<pre><code>Seller
+Marketplace
+Shipping provider
+Insurance provider
+Shared responsibility</code></pre>
+<p>Now suppose the seller shipped correctly, but the marketplace's
+courier lost the package.</p>
+<p>Maybe the seller should still receive their money.</p>
+<p>The same technical operation:</p>
+<pre><code>REFUND CUSTOMER €100</code></pre>
+<p>can therefore require completely different downstream accounting
+depending on <strong>why the refund exists</strong>.</p>
+<p>This is a beautiful example of why testing cannot be reduced to API
+status codes.</p>
+<p>You need the business model.</p>
+<hr />
+<h1
+id="ask-the-product-owner-concrete-questions-not-what-should-happen">Ask
+the Product Owner concrete questions, not “What should happen?”</h1>
+<p>A weak refinement question is:</p>
+<blockquote>
+<p>“How are refunds supposed to work?”</p>
+</blockquote>
+<p>That's too broad.</p>
+<p>A much stronger question is:</p>
+<blockquote>
+<p>“Customer paid €100, we already transferred €90 to the seller, and
+then the customer receives a full refund. Should we recover the €90 from
+the seller, or does the platform absorb it?”</p>
+</blockquote>
+<p>Now everyone can reason about the same transaction.</p>
+<p>Then change one variable:</p>
+<blockquote>
+<p>“What if the refund is because our delivery service lost the
+package?”</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>“What if the seller has already withdrawn the €90 to their bank?”</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>“What if only €40 of the order is refunded?”</p>
+</blockquote>
+<p>You are doing testing before code execution.</p>
+<p>You're testing the <strong>business model for contradictions and
+ambiguity</strong>.</p>
+<p>This also improves collaboration. Instead of telling the PO:</p>
+<blockquote>
+<p>“Your requirement is incomplete.”</p>
+</blockquote>
+<p>you're exposing a decision that needs to be made.</p>
+<p>That is much easier for people to work with.</p>
+<hr />
+<h1 id="partial-refunds-reveal-hidden-assumptions">Partial refunds
+reveal hidden assumptions</h1>
+<p>Consider:</p>
+<pre><code>Order total:       €100
+Marketplace fee:    10%
+Seller share:       90%</code></pre>
+<p>Customer receives a partial refund:</p>
+<pre><code>€40</code></pre>
+<p>What should happen to the seller's money?</p>
+<p>Perhaps proportional reversal:</p>
+<pre><code>Customer refund:           €40
+Seller transfer reversal:  €36
+Platform fee returned:      €4</code></pre>
+<p>But maybe marketplace policy says:</p>
+<blockquote>
+<p>Commission is non-refundable.</p>
+</blockquote>
+<p>Then perhaps:</p>
+<pre><code>Customer refund:           €40
+Seller bears:              €40
+Platform keeps:            €10 overall</code></pre>
+<p>Or perhaps fees are calculated per item rather than
+proportionally.</p>
+<p>The tester should <strong>not invent the answer</strong>.</p>
+<p>The tester should expose the missing rule.</p>
+<p>This is one reason boundary-value testing alone is not enough.</p>
+<p>You can beautifully test:</p>
+<pre><code>refund €39.99
+refund €40.00
+refund €40.01</code></pre>
+<p>while still having no idea whether the accounting rule itself is
+correct.</p>
+<hr />
+<h1
+id="multi-seller-orders-make-the-problem-much-more-interesting">Multi-seller
+orders make the problem much more interesting</h1>
+<p>Now imagine a marketplace order contains products from two
+sellers.</p>
+<pre><code>Seller A products          €60
+Seller B products          €40
+------------------------------
+Customer total            €100</code></pre>
+<p>Marketplace commission is 10%.</p>
+<p>So:</p>
+<pre><code>Seller A gets              €54
+Seller B gets              €36
+Marketplace keeps          €10</code></pre>
+<p>The customer returns only Seller A's item.</p>
+<p>Refund:</p>
+<pre><code>€60</code></pre>
+<p>What should happen?</p>
+<p>A plausible model might be:</p>
+<pre><code>Seller A reversal          €54
+Marketplace fee reversal    €6
+Seller B                    €0 change
+Customer                  +€60</code></pre>
+<p>But now suppose the customer's order also contained:</p>
+<pre><code>€6 shipping fee</code></pre>
+<p>Was the shipping fee refunded?</p>
+<p>Was it originally split across sellers?</p>
+<p>Was shipping paid to the seller, logistics provider, or
+marketplace?</p>
+<p>Suppose a voucher reduced the order from €100 to €80.</p>
+<p>Which seller absorbed the voucher?</p>
+<p>Suddenly “refund €60 item” is not simple.</p>
+<p>This is where domain knowledge starts turning into testing skill.</p>
+<hr />
+<h1 id="look-for-financial-invariants">Look for financial
+invariants</h1>
+<p>Instead of immediately writing 100 scenarios, think about rules that
+should remain true.</p>
+<p>An <strong>invariant</strong> is something that should remain valid
+across many different flows.</p>
+<p>For example:</p>
+<blockquote>
+<p>A customer should never receive more total refund than the amount the
+business rules allow for that transaction.</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>A seller should not have the same transfer reversed twice.</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>Every seller-facing financial adjustment should be traceable back to
+an order, refund, dispute or explicit correction.</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>A full refund must leave the platform's financial records in a state
+that can be reconciled with customer and seller records.</p>
+</blockquote>
+<p>Notice that these rules don't depend on which button the user
+clicked.</p>
+<p>That's useful.</p>
+<p>They can be checked across:</p>
+<pre><code>UI flows
+API tests
+integration tests
+database queries
+event streams
+production monitoring</code></pre>
+<p>This is much stronger than an assertion like:</p>
+<pre><code>expect(refund.status).toBe(&quot;succeeded&quot;);</code></pre>
+<p>A successful refund status proves one operation completed.</p>
+<p>It doesn't prove the marketplace ended in a financially correct
+state.</p>
+<hr />
+<h1
+id="exploratory-testing-is-perfect-for-this-kind-of-feature">Exploratory
+testing is perfect for this kind of feature</h1>
+<p>Marketplace refunds often have too many interacting rules for you to
+understand the whole system from requirements alone.</p>
+<p>This is where exploratory testing becomes powerful.</p>
+<p>James and Jon Bach's Session-Based Test Management approach uses four
+central elements:</p>
+<p><strong>a charter, a time box, a reviewable result, and a
+debrief.</strong> A charter is a short mission that guides investigation
+without prescribing every step. <a
+href="https://www.satisfice.com/download/session-based-test-management?utm_source=chatgpt.com">Satisfice+1</a></p>
+<p>Ministry of Testing's recent 2026 discussions on charters make the
+same practical point: structured charters can sharpen exploration, align
+people around purpose, and make quality work more visible without
+turning exploration into rigid scripts. <a
+href="https://www.ministryoftesting.com/media-sessions/roundtable-exploring-quality-with-templates-and-charters?utm_source=chatgpt.com">Ministry
+of Testing+1</a></p>
+<p>For this marketplace feature, I might use:</p>
+<blockquote>
+<p><strong>Explore partial and full refunds after seller transfer to
+discover ways customer, marketplace, and seller balances can become
+inconsistent.</strong></p>
+</blockquote>
+<p>That's a good charter.</p>
+<p>Notice what it does <strong>not</strong> say:</p>
+<pre><code>1. Create order
+2. Click refund
+3. Enter 50
+4. Click submit
+5. Check status</code></pre>
+<p>The charter gives you a mission.</p>
+<p>Your observations guide what you investigate next.</p>
+<hr />
+<h1 id="a-60-minute-marketplace-refund-session">A 60-minute marketplace
+refund session</h1>
+<p>Suppose I had one hour.</p>
+<p>I might begin with the simplest transaction:</p>
+<pre><code>Customer €100
+Seller €90
+Marketplace €10</code></pre>
+<p>Then perform:</p>
+<pre><code>full refund</code></pre>
+<p>I would inspect more than the UI.</p>
+<p>I would look at:</p>
+<pre><code>order API
+payment provider
+seller balance
+transfer records
+refund record
+platform ledger
+events/messages</code></pre>
+<p>If everything works, I might change one thing:</p>
+<pre><code>partial refund</code></pre>
+<p>Then:</p>
+<pre><code>second partial refund</code></pre>
+<p>Then:</p>
+<pre><code>refund after seller payout</code></pre>
+<p>Then perhaps:</p>
+<pre><code>retry the refund request</code></pre>
+<p>The next experiment depends on what I learn.</p>
+<p>That's exploration.</p>
+<p>James Bach describes exploratory testing as active investigation
+rather than mere execution of prepared artifacts; his more recent
+Thread-Based Test Management discussion similarly argues that testing is
+fundamentally an activity of exploration rather than simply producing
+and executing test-case documents. <a
+href="https://www.satisfice.com/blog/archives/5214?utm_source=chatgpt.com">Satisfice+1</a></p>
+<hr />
+<h1 id="dont-confuse-exploratory-testing-with-random-clicking">Don't
+confuse exploratory testing with random clicking</h1>
+<p>A lot of people hear:</p>
+<blockquote>
+<p>“No predetermined test cases.”</p>
+</blockquote>
+<p>and interpret that as:</p>
+<blockquote>
+<p>“Do whatever.”</p>
+</blockquote>
+<p>That's not skilled exploratory testing.</p>
+<p>Your session has:</p>
+<pre><code>mission
+risk
+model
+observations
+questions
+notes
+experiments</code></pre>
+<p>You continuously ask:</p>
+<blockquote>
+<p>What did this result teach me?</p>
+</blockquote>
+<p>and:</p>
+<blockquote>
+<p>What should I try next because of what I just learned?</p>
+</blockquote>
+<p>For example:</p>
+<p>You refund €50.</p>
+<p>You notice:</p>
+<pre><code>Customer refund              €50
+Seller transfer reversal     €45</code></pre>
+<p>Good.</p>
+<p>Then you ask:</p>
+<blockquote>
+<p>What happened to the marketplace's €5 commission?</p>
+</blockquote>
+<p>You inspect another ledger.</p>
+<p>You discover:</p>
+<pre><code>Platform still retains €10</code></pre>
+<p>Now your next experiment might be:</p>
+<pre><code>full refund</code></pre>
+<p>because you want to see whether the commission remains even when the
+entire transaction is reversed.</p>
+<p>The previous observation designed the next test.</p>
+<p>That's exploratory thinking.</p>
+<hr />
+<h1 id="time-is-another-test-dimension">Time is another test
+dimension</h1>
+<p>Marketplace money flows often happen at different moments.</p>
+<p>Consider:</p>
+<pre><code>T0   Customer pays
+
+T1   Order confirmed
+
+T2   Seller transfer created
+
+T3   Seller balance becomes available
+
+T4   Seller payout sent to bank
+
+T5   Customer requests refund</code></pre>
+<p>Testing a refund at <code>T1</code> may behave very differently from
+a refund at <code>T4</code>.</p>
+<p>So don't model only:</p>
+<pre><code>refund amount</code></pre>
+<p>Model:</p>
+<pre><code>refund timing</code></pre>
+<p>For example:</p>
+<pre><code>refund before transfer
+refund after transfer
+refund after seller payout
+refund after partial payout
+refund during transfer processing</code></pre>
+<p>A feature may work perfectly in one state and fail in the transition
+between states.</p>
+<p>We've seen this principle repeatedly in this series.</p>
+<p>Sports:</p>
+<pre><code>goal → corrected goal</code></pre>
+<p>Payments:</p>
+<pre><code>authorization → capture</code></pre>
+<p>SaaS permissions:</p>
+<pre><code>admin → viewer</code></pre>
+<p>Marketplace:</p>
+<pre><code>seller funded → seller paid out → refund</code></pre>
+<p><strong>Transitions are often more interesting than stable
+states.</strong></p>
+<hr />
+<h1 id="now-introduce-failures">Now introduce failures</h1>
+<p>Suppose refund flow is:</p>
+<pre><code>1. Refund customer
+2. Reverse seller transfer
+3. Update order
+4. Send email</code></pre>
+<p>Step 1 succeeds.</p>
+<p>Step 2 fails.</p>
+<p>What now?</p>
+<p>Customer has their money.</p>
+<p>Seller still has theirs.</p>
+<p>Marketplace carries the loss.</p>
+<p>Does the system mark the entire operation:</p>
+<pre><code>FAILED</code></pre>
+<p>That would also be misleading, because the customer refund actually
+succeeded.</p>
+<p>Maybe you need states such as:</p>
+<pre><code>CUSTOMER_REFUNDED
+SELLER_RECOVERY_PENDING
+RECONCILIATION_REQUIRED</code></pre>
+<p>This is why failure testing can reveal domain-model problems.</p>
+<p>Sometimes a feature is hard to test because the product's state model
+is too simplistic.</p>
+<p>That's valuable information.</p>
+<hr />
+<h1 id="a-transfer-reversal-can-itself-fail">A transfer reversal can
+itself fail</h1>
+<p>Real systems make this concrete.</p>
+<p>Stripe's Connect documentation says transfer reversals can be full or
+partial, but recovery depends on the connected account's available
+balance or configured reserves. <a
+href="https://docs.stripe.com/api/transfer_reversals?api-version=2026-07-29.preview&amp;utm_source=chatgpt.com">Stripe-Dokumentation+1</a></p>
+<p>So imagine:</p>
+<pre><code>Seller received            €90
+Seller paid out            €80
+Seller available balance   €10</code></pre>
+<p>Marketplace now wants:</p>
+<pre><code>reverse €90</code></pre>
+<p>What happens?</p>
+<p>That isn't simply a Stripe API question.</p>
+<p>It's a <strong>product policy question</strong>.</p>
+<p>Perhaps:</p>
+<pre><code>recover €10 now
+record €80 seller debt
+deduct from future sales</code></pre>
+<p>Maybe seller accounts can go negative.</p>
+<p>Maybe the marketplace absorbs the loss.</p>
+<p>Maybe a reserve prevented the seller from withdrawing everything.</p>
+<p>Those business decisions should create tests.</p>
+<hr />
+<h1 id="this-is-where-stakeholder-management-becomes-qa-work">This is
+where stakeholder management becomes QA work</h1>
+<p>A developer may not know the correct answer.</p>
+<p>The Product Owner may not know either.</p>
+<p>Finance might.</p>
+<p>Operations might.</p>
+<p>Legal might.</p>
+<p>Payments specialists might.</p>
+<p>So the QA engineer's job can become:</p>
+<blockquote>
+<p>“We have a case where the customer refund succeeds after the seller
+has already withdrawn the funds. What is the intended ownership of that
+loss, and how should the platform represent it?”</p>
+</blockquote>
+<p>That is excellent stakeholder communication.</p>
+<p>You identified:</p>
+<pre><code>specific scenario
+financial consequence
+missing business decision</code></pre>
+<p>instead of saying:</p>
+<blockquote>
+<p>“Requirements unclear.”</p>
+</blockquote>
+<p>QA can sometimes function as the person who discovers that
+<strong>different parts of the business have different assumptions about
+the same workflow</strong>.</p>
+<p>That's extremely valuable.</p>
+<hr />
+<h1
+id="reconciliation-should-be-part-of-your-test-strategy">Reconciliation
+should be part of your test strategy</h1>
+<p>Suppose yesterday your system processed:</p>
+<pre><code>Customer charges           €1,000,000
+Customer refunds             €80,000
+Seller transfers            €820,000
+Transfer reversals           €65,000
+Platform commission          ...</code></pre>
+<p>How would anyone know if €15,000 of expected seller recovery never
+happened?</p>
+<p>You need reconciliation.</p>
+<p>Stripe's own bank reconciliation tooling is based on exactly this
+general idea: connect transaction activity, payouts and bank deposits so
+discrepancies can be identified rather than assuming that individually
+successful operations add up correctly. <a
+href="https://docs.stripe.com/bank-reconciliation?utm_source=chatgpt.com">Stripe-Dokumentation</a></p>
+<p>For your marketplace, useful reconciliation dimensions might
+include:</p>
+<pre><code>order
+payment
+refund
+seller transfer
+transfer reversal
+platform fee
+seller payout</code></pre>
+<p>Then you can ask:</p>
+<blockquote>
+<p>For every refund, is the corresponding financial responsibility
+accounted for somewhere?</p>
+</blockquote>
+<p>That's much more powerful than monitoring:</p>
+<pre><code>refund-api 99.99% uptime</code></pre>
+<p>Your services can be perfectly available while the accounting is
+wrong.</p>
+<hr />
+<h1
+id="observability-should-include-business-inconsistencies">Observability
+should include business inconsistencies</h1>
+<p>Imagine Grafana says:</p>
+<pre><code>CPU healthy
+Memory healthy
+HTTP 5xx low
+Database healthy
+Queues healthy</code></pre>
+<p>Meanwhile:</p>
+<pre><code>500 refunds yesterday
+472 seller reversals</code></pre>
+<p>That may be legitimate.</p>
+<p>Or it may mean 28 marketplace losses.</p>
+<p>Your observability should make that difference explainable.</p>
+<p>Useful domain signals could include things like:</p>
+<pre><code>refunds without seller reconciliation
+duplicate transfer reversals
+seller recovery pending &gt; 24h
+refund amount &gt; recoverable amount
+orders with mismatched financial states</code></pre>
+<p>The strongest production monitoring often comes from the same
+invariants you discovered while testing.</p>
+<p>So exploratory testing feeds observability.</p>
+<p>Testing is not merely pre-production activity.</p>
+<hr />
+<h1 id="automation-should-come-after-learning">Automation should come
+after learning</h1>
+<p>Suppose your exploratory sessions reveal the important model.</p>
+<p>Then automation becomes much easier to prioritize.</p>
+<p>I would automate core money-integrity scenarios mostly at
+API/integration level:</p>
+<pre><code>full refund before transfer
+full refund after transfer
+partial refund
+two partial refunds
+multi-seller partial refund
+duplicate refund request
+seller recovery failure</code></pre>
+<p>Then keep perhaps one or two representative UI flows to confirm that
+customers and sellers see the correct information.</p>
+<p>You probably do <strong>not</strong> need every financial combination
+driven through Playwright.</p>
+<p>Rapid Software Testing explicitly recommends using tools and
+automated checking where they help, while keeping tools subordinate to
+the testing mission rather than treating automation as the centre of
+testing. <a
+href="https://developsense.com/rst-approach?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<p>The order should usually be:</p>
+<pre><code>Understand
+   ↓
+Model
+   ↓
+Explore
+   ↓
+Find important risks
+   ↓
+Learn expected behavior
+   ↓
+Automate stable, valuable checks</code></pre>
+<p>not:</p>
+<pre><code>Open Playwright
+   ↓
+What can I automate?</code></pre>
+<hr />
+<h1 id="your-testing-notes-matter">Your testing notes matter</h1>
+<p>During exploratory testing, write down more than pass/fail.</p>
+<p>For example:</p>
+<pre><code>14:05
+Created €100 order.
+Seller transfer = €90.
+
+14:09
+Full refund succeeded.
+Customer = +€100.
+
+14:11
+Seller transfer still €90.
+No reversal visible.
+
+QUESTION:
+Is seller recovery asynchronous?
+
+14:14
+Checked events.
+refund.completed exists.
+No transfer_reversal event.
+
+RISK:
+Platform appears to fund entire refund.
+Need confirmation from payments team.</code></pre>
+<p>That's incredibly useful.</p>
+<p>When you debrief with the developer or PO, you're not saying:</p>
+<blockquote>
+<p>“Something seems weird.”</p>
+</blockquote>
+<p>You have a short investigation story.</p>
+<p>Session-Based Test Management treats the result of exploration as
+something reviewable and debriefable, not something that exists only in
+the tester's head. <a
+href="https://www.developsense.com/presentations/2007-10-PNSQC-AnExploratoryTestersNotebook.pdf?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<p>That is how exploratory testing becomes credible inside a
+professional team.</p>
+<hr />
+<h1 id="the-soft-skill-lesson-distinguish-observation-from-policy">The
+soft-skill lesson: distinguish observation from policy</h1>
+<p>Suppose you discover:</p>
+<pre><code>Customer refund: €100
+Seller reversal: €0</code></pre>
+<p>Don't immediately write:</p>
+<blockquote>
+<p>“BUG: seller reversal missing.”</p>
+</blockquote>
+<p>Maybe the product intentionally lets the seller keep the money in
+certain scenarios.</p>
+<p>Your observation is:</p>
+<blockquote>
+<p>The customer was refunded €100 and no seller transfer reversal
+occurred.</p>
+</blockquote>
+<p>Your question is:</p>
+<blockquote>
+<p>Is this consistent with the intended refund-liability policy?</p>
+</blockquote>
+<p>Your risk assessment might be:</p>
+<blockquote>
+<p>If the seller should fund this type of refund, the marketplace
+currently absorbs €90.</p>
+</blockquote>
+<p>That is much stronger.</p>
+<p>You're separating:</p>
+<pre><code>fact
+interpretation
+business rule
+risk</code></pre>
+<p>This pattern should become habitual in your testing.</p>
+<p>It improves both technical analysis and communication.</p>
+<hr />
+<h1 id="a-reusable-marketplace-test-model">A reusable marketplace test
+model</h1>
+<p>For any marketplace money-related feature, walk mentally through:</p>
+<pre><code>CUSTOMER
+What did the buyer pay or receive?
+
+ORDER
+What is the commercial state?
+
+PLATFORM
+What money did the marketplace keep or return?
+
+SELLER
+What money was credited, removed or owed?
+
+PAYMENT PROVIDER
+What actually happened financially?
+
+TIMING
+At which lifecycle stage did this happen?
+
+FAILURE
+What if only half the workflow succeeds?
+
+RETRY
+What happens if the action occurs twice?
+
+RECONCILIATION
+How will we discover disagreement later?</code></pre>
+<p>That is already a strong skeleton for testing:</p>
+<pre><code>refunds
+cancellations
+commissions
+seller payouts
+disputes
+chargebacks
+promotions
+multi-seller orders</code></pre>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>You're testing a marketplace.</p>
+<p>A customer buys:</p>
+<pre><code>Seller A item              €60
+Seller B item              €40
+------------------------------
+Total                     €100</code></pre>
+<p>Marketplace commission:</p>
+<pre><code>10%</code></pre>
+<p>So initially:</p>
+<pre><code>Seller A transfer          €54
+Seller B transfer          €36
+Marketplace commission     €10</code></pre>
+<p>Seller A has already withdrawn most of their money.</p>
+<p>Later, the customer returns <strong>Seller A's €60 item</strong>.</p>
+<p>The marketplace refunds:</p>
+<pre><code>€60</code></pre>
+<p>Now investigate.</p>
+<p>Don't jump directly into test cases.</p>
+<p>Ask yourself what you need to know.</p>
+<p>Should Seller A return €54?</p>
+<p>Should the marketplace return its €6 commission associated with
+Seller A's item?</p>
+<p>What happens if Seller A has only €20 left in their marketplace
+balance?</p>
+<p>Should Seller B be affected at all?</p>
+<p>What happens if the transfer reversal fails after the customer refund
+succeeds?</p>
+<p>What does the seller dashboard show?</p>
+<p>What does finance see?</p>
+<p>What happens if the refund request is retried?</p>
+<p>Then create <strong>one exploratory testing charter</strong>, not
+twenty scripted tests.</p>
+<p>For example:</p>
+<blockquote>
+<p><strong>Explore refunds of already-paid multi-seller orders to
+discover ways customer refunds, seller recovery and platform commission
+can become financially inconsistent.</strong></p>
+</blockquote>
+<p>Give yourself about an hour.</p>
+<p>Keep notes.</p>
+<p>Follow interesting observations.</p>
+<p>At the end, report three things:</p>
+<p><strong>what you learned about the product, what risks remain, and
+what you think should be investigated next.</strong></p>
+<p>That is the real exercise.</p>
+<p>The important skill today isn't memorizing Stripe terminology.</p>
+<p>It is learning to look at a marketplace and think:</p>
+<blockquote>
+<p><strong>Where did the money come from, where did it go, who owns it
+now, and what must happen when the business event changes?</strong></p>
+</blockquote>
+<p>Once you start thinking that way, a refund is no longer a button or
+endpoint.</p>
+<p>It becomes a distributed business transaction.</p>
+<p>And that is the level at which a strong quality engineer should test
+it.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James and Jon Bach's Session-Based Test Management paper is worth
+studying because it shows how exploratory testing can remain focused,
+reviewable and manageable without turning into rigid scripted execution.
+Ministry of Testing's charter material is useful for seeing how
+practitioners apply that structure today. For the domain side, Stripe's
+Connect documentation is a good real-world example of why marketplace
+refunds, transfers and seller balances must be understood as separate
+financial operations. <a
+href="https://www.satisfice.com/download/session-based-test-management?utm_source=chatgpt.com">Satisfice+2Ministry
+of Testing+2</a></p>
+<p><a
+href="https://www.satisfice.com/download/session-based-test-management?utm_source=chatgpt.com">James
+Bach and Jon Bach — Session-Based Test Management</a></p>
+<p><a
+href="https://developsense.com/rst-approach?utm_source=chatgpt.com">Rapid
+Software Testing — The RST Approach</a></p>
+<p><a
+href="https://www.ministryoftesting.com/media-sessions/roundtable-exploring-quality-with-templates-and-charters?utm_source=chatgpt.com">Ministry
+of Testing — Exploring Quality with Templates and Charters</a></p>
+<p><a
+href="https://docs.stripe.com/connect/separate-charges-and-transfers?utm_source=chatgpt.com">Stripe
+— Separate Charges and Transfers</a></p>
+<p><a
+href="https://docs.stripe.com/connect/marketplace/tasks/refunds-disputes?utm_source=chatgpt.com">Stripe
+— Marketplace Refunds and Disputes</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-07.html" rel="prev"><span>Previous</span>Payment Testing: The Most Dangerous State Is Not “Failed” — It Is “I Don’t Know Whether It Succeeded”</a><a href="/qa-blog/posts/qa-thinking-day-09.html" rel="next"><span>Next</span>Bug Advocacy: Finding the Bug Is Only Half the Job</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

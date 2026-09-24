@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="James Bach&#39;s work on risk- and requirements-based testing makes an important point: knowing what the requirements say isn&#39;t enough; testers also need to understand why those requirements exist. Satisfice">
+  <meta name="color-scheme" content="light">
+  <title>Test Before the Code Exists: How a Strong QA Engineer Uses Refinement to Prevent Bugs | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 3</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-3">QA Thinking — Day 3</h1>
+<h2
+id="test-before-the-code-exists-how-a-strong-qa-engineer-uses-refinement-to-prevent-bugs">Test
+Before the Code Exists: How a Strong QA Engineer Uses Refinement to
+Prevent Bugs</h2>
+<p>Suppose a Product Owner brings this story into refinement:</p>
+<blockquote>
+<p><strong>“As a customer, I want free shipping when my cart value is
+€50 or more.”</strong></p>
+</blockquote>
+<p>The acceptance criterion says:</p>
+<blockquote>
+<p>“If cart total ≥ €50, shipping is free.”</p>
+</blockquote>
+<p>A tester can look at that and think:</p>
+<p><strong>Clear enough. I'll test €49.99, €50, and €50.01 after
+development.</strong></p>
+<p>That is reasonable testing.</p>
+<p>But a stronger tester notices something else:</p>
+<p><strong>We don't yet know what “cart total” means.</strong></p>
+<p>Does it mean before discount or after discount?</p>
+<p>Does VAT count?</p>
+<p>Do gift cards count?</p>
+<p>Does €50 apply to physical goods only?</p>
+<p>Does every shipping method become free?</p>
+<p>Does Germany use the same threshold as France?</p>
+<p>What happens when the customer reaches €50, gets free shipping, then
+removes an item?</p>
+<p>What if the cart contains €60 of products but €20 of those products
+cannot be shipped?</p>
+<p>There may already be several defects hiding inside this one
+sentence—before a developer has written a line of code.</p>
+<p>That leads to today's lesson:</p>
+<blockquote>
+<p><strong>Testing is not something that has to wait for implemented
+software.</strong></p>
+</blockquote>
+<p>A strong tester can test <strong>ideas, assumptions, requirements,
+examples, models, and decisions</strong> before testing the executable
+product.</p>
+<p>James Bach's work on risk- and requirements-based testing makes an
+important point: knowing what the requirements say isn't enough; testers
+also need to understand <strong>why those requirements exist</strong>.
+<a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing">Satisfice</a></p>
+<p>That changes the way you participate in refinement.</p>
+<hr />
+<h2 id="requirements-are-not-truth">Requirements are not truth</h2>
+<p>Many teams unconsciously treat a requirement like this:</p>
+<p><strong>PO writes requirement → developer implements requirement →
+tester checks requirement.</strong></p>
+<p>That model assumes the requirement itself is correct.</p>
+<p>But requirements can be incomplete, ambiguous, outdated,
+contradictory, or simply wrong.</p>
+<p>Michael Bolton argues that explicit requirement documents represent
+only some intentions and needs around a product. Legitimate needs may be
+undocumented, and documented requirements themselves may contain
+misunderstandings or errors. Good testing therefore includes questioning
+what the requirement says—not merely checking conformance to it. <a
+href="https://developsense.com/blog/2024/05/missing-requirements">Developsense</a></p>
+<p>Imagine this acceptance criterion:</p>
+<blockquote>
+<p><strong>“Maximum quantity per product is 10.”</strong></p>
+</blockquote>
+<p>You could create a nice boundary test:</p>
+<pre><code>9   → allowed
+10  → allowed
+11  → rejected</code></pre>
+<p>Everything passes.</p>
+<p>But then you discover why the limit exists.</p>
+<p>The business wanted to prevent resellers from purchasing large
+quantities of scarce products.</p>
+<p>Now consider:</p>
+<pre><code>Product A × 10
+Product A × 10 in another browser
+Product A × 10 from mobile</code></pre>
+<p>Same account.</p>
+<p>Thirty items purchased.</p>
+<p>Your implementation satisfies the written requirement.</p>
+<p>It may completely fail the <strong>business intention</strong>.</p>
+<p>That's why the question:</p>
+<blockquote>
+<p><strong>“Why do we have this rule?”</strong></p>
+</blockquote>
+<p>can sometimes generate better tests than:</p>
+<blockquote>
+<p>“What are the acceptance criteria?”</p>
+</blockquote>
+<hr />
+<h1 id="your-job-in-refinement-is-not-to-invent-requirements">Your job
+in refinement is not to invent requirements</h1>
+<p>There is an important distinction here.</p>
+<p>A tester shouldn't decide:</p>
+<blockquote>
+<p>“Free shipping should happen after discount.”</p>
+</blockquote>
+<p>That's a business decision.</p>
+<p>Instead, a tester identifies uncertainty:</p>
+<blockquote>
+<p>“Does the €50 threshold use the subtotal before or after
+discounts?”</p>
+</blockquote>
+<p>You expose the gap.</p>
+<p>The PO or relevant domain expert decides the intended rule.</p>
+<p>Then the team shares that understanding.</p>
+<p>This is an underrated QA soft skill.</p>
+<p>The goal isn't to demonstrate that the requirement is bad.</p>
+<p>The goal is to make the team's <strong>mental model more
+precise</strong>.</p>
+<p>That difference matters enormously in how people respond to your
+questions.</p>
+<p>Compare these two approaches:</p>
+<blockquote>
+<p>“This requirement isn't clear.”</p>
+</blockquote>
+<p>versus:</p>
+<blockquote>
+<p>“I want to make sure checkout and pricing interpret this
+consistently. If the customer has €60 of products and applies a €20
+coupon, should free shipping remain active?”</p>
+</blockquote>
+<p>The second question gives the team something concrete to reason
+about.</p>
+<p>You're not criticizing.</p>
+<p>You're helping.</p>
+<hr />
+<h1 id="examples-are-a-testing-tool">Examples are a testing tool</h1>
+<p>The phrase:</p>
+<blockquote>
+<p>“Free shipping starts at €50.”</p>
+</blockquote>
+<p>sounds simple.</p>
+<p>Instead of debating definitions abstractly, introduce examples.</p>
+<p><strong>Example 1</strong></p>
+<p>Products: €49.99<br />
+Discount: €0<br />
+Shipping: ?</p>
+<p>Obviously probably not free.</p>
+<p><strong>Example 2</strong></p>
+<p>Products: €50<br />
+Discount: €0<br />
+Shipping: ?</p>
+<p>Probably free.</p>
+<p>Now make it interesting.</p>
+<p><strong>Example 3</strong></p>
+<p>Products: €60<br />
+Coupon: −€15<br />
+Final product total: €45<br />
+Shipping: ?</p>
+<p>People may suddenly disagree.</p>
+<p>The PO thinks shipping should cost money.</p>
+<p>The developer assumed the threshold was calculated before
+discounts.</p>
+<p>The existing backend pricing service already calculates it after
+discounts.</p>
+<p>You have just discovered a potential defect without running the
+application.</p>
+<p>This is one reason approaches such as Three Amigos bring business,
+development, and testing perspectives together before implementation.
+Ministry of Testing describes the business perspective as focusing on
+value and intent, development on feasibility and implementation, and
+testing on risks, edge conditions, and ways the logic might fail. <a
+href="https://www.ministryoftesting.com/software-testing-glossary/three-amigos">Ministry
+of Testing</a></p>
+<p>The value isn't that there must literally be exactly three people in
+a meeting.</p>
+<p>The value is <strong>multiple models colliding early</strong>.</p>
+<hr />
+<h1 id="dont-become-the-tester-who-asks-40-random-questions">Don't
+become the tester who asks 40 random questions</h1>
+<p>There is a danger here.</p>
+<p>You learn that testers should ask questions, so every refinement
+becomes:</p>
+<p>“What if the Internet disappears?”</p>
+<p>“What if the database fails?”</p>
+<p>“What about 400 browser tabs?”</p>
+<p>“What happens in Antarctica?”</p>
+<p>“What if someone enters emoji?”</p>
+<p>“What if there are 10 million products?”</p>
+<p>Technically these are questions.</p>
+<p>That doesn't make them useful.</p>
+<p>Good testing involves <strong>selection</strong>.</p>
+<p>You have limited time.</p>
+<p>So connect your questions to risk.</p>
+<p>For the free-shipping feature, questions about discount calculation,
+country, currency, eligible products and cart mutation are probably more
+important than:</p>
+<blockquote>
+<p>“What happens if the customer's browser language is Finnish?”</p>
+</blockquote>
+<p>unless localization somehow affects price calculations.</p>
+<p>James Bach frames testing work around mission and risk rather than
+blindly completing predetermined actions; his broader point is that the
+amount and type of testing should serve the testing mission. <a
+href="https://www.satisfice.com/blog/archives/6203?utm_source=chatgpt.com">Satisfice</a></p>
+<p>The same principle applies during refinement.</p>
+<p>Don't try to prove how many edge cases you can imagine.</p>
+<p>Find the <strong>important uncertainty</strong>.</p>
+<hr />
+<h1
+id="a-technique-you-can-use-immediately-rule--variables--boundaries--interactions">A
+technique you can use immediately: Rule → Variables → Boundaries →
+Interactions</h1>
+<p>Let's apply a lightweight reasoning model to our shipping rule.</p>
+<p>The rule is:</p>
+<blockquote>
+<p>Free shipping applies when eligible cart value reaches €50.</p>
+</blockquote>
+<p>First identify the important variables.</p>
+<p>You might find:</p>
+<p><code>cart value</code></p>
+<p><code>discount</code></p>
+<p><code>country</code></p>
+<p><code>currency</code></p>
+<p><code>shipping method</code></p>
+<p><code>product type</code></p>
+<p><code>customer type</code></p>
+<p><code>tax</code></p>
+<p><code>cart state</code></p>
+<p>Now ask what boundaries exist.</p>
+<p>For cart value:</p>
+<pre><code>&lt; €50
+= €50
+&gt; €50</code></pre>
+<p>For discounts:</p>
+<pre><code>none
+percentage
+fixed amount
+promotion
+voucher</code></pre>
+<p>For destination:</p>
+<pre><code>domestic
+EU
+non-EU</code></pre>
+<p>Now interactions appear.</p>
+<p>Maybe:</p>
+<pre><code>cart value × discount
+cart value × destination
+discount × product eligibility
+currency × threshold
+shipping method × threshold</code></pre>
+<p>You don't need to test every mathematical combination.</p>
+<p>You're building a model that helps identify <strong>where different
+rules meet</strong>.</p>
+<p>Rule intersections are excellent places to find bugs.</p>
+<hr />
+<h1
+id="e-commerce-domain-knowledge-makes-you-a-better-tester">E-commerce
+domain knowledge makes you a better tester</h1>
+<p>This is where domain knowledge becomes powerful.</p>
+<p>A tester unfamiliar with e-commerce might see:</p>
+<p><strong>€50 → free shipping.</strong></p>
+<p>A tester who understands commerce starts thinking about:</p>
+<p>merchandise subtotal → promotions → taxable total → VAT → shipping
+eligibility → shipping fee → payment total.</p>
+<p>That sequence matters.</p>
+<p>Suppose the system contains three services:</p>
+<pre><code>Cart Service
+    ↓
+Promotion Service
+    ↓
+Shipping Service
+    ↓
+Checkout Service</code></pre>
+<p>Now a requirement change isn't just a UI change.</p>
+<p>It may be a distributed business rule.</p>
+<p>Maybe Cart Service sends:</p>
+<pre><code>{
+  &quot;subtotal&quot;: 60,
+  &quot;discount&quot;: 15
+}</code></pre>
+<p>Shipping Service receives only:</p>
+<pre><code>{
+  &quot;subtotal&quot;: 60
+}</code></pre>
+<p>and decides:</p>
+<pre><code>60 &gt;= 50 → FREE SHIPPING</code></pre>
+<p>But the business rule eventually becomes:</p>
+<blockquote>
+<p>threshold calculated after coupon discounts.</p>
+</blockquote>
+<p>Your Playwright test may expose the problem.</p>
+<p>But understanding the domain allows you to ask:</p>
+<p><strong>Where should this rule actually be calculated?</strong></p>
+<p>That leads naturally to API and integration testing.</p>
+<p>You might want tests around:</p>
+<pre><code>cart
+→ promotion calculation
+→ shipping eligibility
+→ checkout total</code></pre>
+<p>That's quality engineering rather than simply browser automation.</p>
+<hr />
+<h1
+id="the-testers-soft-skill-challenge-without-becoming-the-blocker">The
+tester's soft skill: challenge without becoming “the blocker”</h1>
+<p>This matters because testers sometimes develop a reputation for
+saying:</p>
+<blockquote>
+<p>“No.”</p>
+</blockquote>
+<p>Developers bring a design.</p>
+<p>QA says no.</p>
+<p>PO brings a requirement.</p>
+<p>QA finds ten problems.</p>
+<p>Release approaches.</p>
+<p>QA says not ready.</p>
+<p>Eventually QA becomes perceived as the department preventing work
+rather than helping the team succeed.</p>
+<p>The solution isn't to stop challenging things.</p>
+<p>It's to change <strong>how you challenge them</strong>.</p>
+<p>Instead of:</p>
+<blockquote>
+<p>“The acceptance criteria are incomplete.”</p>
+</blockquote>
+<p>try:</p>
+<blockquote>
+<p>“I see two possible interpretations here. Can we decide which one we
+want before implementation?”</p>
+</blockquote>
+<p>Instead of:</p>
+<blockquote>
+<p>“That won't work.”</p>
+</blockquote>
+<p>try:</p>
+<blockquote>
+<p>“What should happen when the coupon drops the cart below the
+threshold?”</p>
+</blockquote>
+<p>Instead of:</p>
+<blockquote>
+<p>“This is wrong.”</p>
+</blockquote>
+<p>try:</p>
+<blockquote>
+<p>“My understanding was that the threshold applies after discounts. Is
+that still the intended business rule?”</p>
+</blockquote>
+<p>You are still challenging assumptions.</p>
+<p>But you're inviting collaboration rather than declaring judgment.</p>
+<p>This connects strongly with the quality-culture article you shared
+earlier: introducing better quality practices succeeds much more easily
+when QA builds understanding and trust rather than imposing a process on
+everyone.</p>
+<hr />
+<h1 id="acceptance-criteria-are-not-your-complete-test-suite">Acceptance
+criteria are not your complete test suite</h1>
+<p>Another trap:</p>
+<pre><code>AC1 → automated test
+AC2 → automated test
+AC3 → automated test
+
+All green.
+
+Done.</code></pre>
+<p>Not necessarily.</p>
+<p>Bolton points out that explicit requirements are only one source of
+expectations about the product. Testing can reveal tacit requirements,
+unanticipated problems, and needs that were never written down. <a
+href="https://developsense.com/blog/2024/05/missing-requirements">Developsense</a></p>
+<p>Suppose the story says:</p>
+<blockquote>
+<p>Shipping becomes free at €50.</p>
+</blockquote>
+<p>You satisfy every acceptance criterion.</p>
+<p>Then exploratory testing reveals:</p>
+<ol type="1">
+<li><p>Put €55 into the cart.</p></li>
+<li><p>Free shipping appears.</p></li>
+<li><p>Open a second tab.</p></li>
+<li><p>Remove €10 of products there.</p></li>
+<li><p>Return to the original tab.</p></li>
+<li><p>Checkout still shows free shipping.</p></li>
+<li><p>Payment completes with the €45 cart.</p></li>
+</ol>
+<p>No acceptance criterion told you to test multi-tab state
+synchronization.</p>
+<p>But a real customer can do it.</p>
+<p>The product's behaviour creates testing ideas beyond the
+document.</p>
+<p>This is why:</p>
+<blockquote>
+<p><strong>Acceptance criteria are a starting point for testing, not the
+border around testing.</strong></p>
+</blockquote>
+<hr />
+<h1
+id="documentation-should-serve-the-team-not-become-the-goal">Documentation
+should serve the team, not become the goal</h1>
+<p>Cem Kaner made a related argument about test documentation: the right
+amount and style of documentation depend on the project's needs,
+readers, risks, rate of change, regulatory environment, and purpose.
+Very detailed scripts can be expensive to create and maintain,
+especially where the design changes quickly. <a
+href="https://kaner.com/pdfs/QaiRequirements.pdf">Kaner</a></p>
+<p>Apply that to refinement.</p>
+<p>You don't necessarily need a giant requirements document containing
+every conceivable example.</p>
+<p>Sometimes three carefully chosen examples and one diagram can
+establish more shared understanding than a 30-line acceptance-criteria
+list.</p>
+<p>The objective isn't:</p>
+<p><strong>perfect documentation.</strong></p>
+<p>It's:</p>
+<p><strong>sufficient shared understanding for the team to build, test
+and evaluate the product responsibly.</strong></p>
+<hr />
+<h1 id="what-i-want-you-to-practice-at-work">What I want you to practice
+at work</h1>
+<p>When you next enter refinement, don't initially think:</p>
+<blockquote>
+<p>“What test cases can I write?”</p>
+</blockquote>
+<p>Try this mental sequence instead:</p>
+<p><strong>What business problem are we solving?</strong></p>
+<p>Then:</p>
+<p><strong>What rule is being introduced or changed?</strong></p>
+<p>Then:</p>
+<p><strong>Which words hide assumptions?</strong></p>
+<p>Then:</p>
+<p><strong>What variables affect this rule?</strong></p>
+<p>Then:</p>
+<p><strong>Where are the boundaries?</strong></p>
+<p>Then:</p>
+<p><strong>Which other rules interact with it?</strong></p>
+<p>Then:</p>
+<p><strong>What failure would matter to the customer or
+business?</strong></p>
+<p>Only afterward think:</p>
+<p><strong>How should I test it?</strong></p>
+<p>And only after that:</p>
+<p><strong>What should be automated?</strong></p>
+<p>The order matters.</p>
+<p>A tester who starts with automation often automates examples.</p>
+<p>A tester who starts with the business model can discover what
+actually deserves testing.</p>
+<hr />
+<h1 id="todays-exercise">Today's exercise</h1>
+<p>Your Product Owner gives you this requirement:</p>
+<blockquote>
+<p><strong>“Customers who spend more than €100 receive a 10%
+discount.”</strong></p>
+</blockquote>
+<p>Before writing any test cases, investigate the requirement
+mentally.</p>
+<p>Consider questions around the exact €100 boundary, whether the
+threshold is before or after other discounts, tax, currency, product
+exclusions, quantity changes, returns, partial refunds, guest checkout,
+persisted carts, multiple devices, coupon stacking, and where the
+calculation occurs across services.</p>
+<p>Then identify <strong>three questions that are genuinely important
+enough to ask the PO before development</strong>.</p>
+<p>Not twenty questions.</p>
+<p>Three.</p>
+<p>That constraint is intentional.</p>
+<p>A skilled tester isn't merely good at generating questions.</p>
+<p>A skilled tester learns <strong>which questions deserve people's
+attention</strong>.</p>
+<p>That's part of testing judgment—and part of becoming a QA engineer
+people actively want in refinement.</p>
+<p>For further reading, James Bach's short piece on risk and
+requirements is particularly relevant because it directly challenges the
+idea that knowing the requirement is sufficient for testing. Michael
+Bolton's “Missing Requirements” extends that idea by showing why
+undocumented and emergent needs matter, while Ministry of Testing's
+Three Amigos material gives a practical collaborative mechanism for
+applying these ideas before code is written. <a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing">Satisfice+2Developsense+2</a></p>
+<p><a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing?utm_source=chatgpt.com">James
+Bach — Risk and Requirements-Based Testing</a><br />
+<a
+href="https://developsense.com/blog/2024/05/missing-requirements?utm_source=chatgpt.com">Michael
+Bolton — Missing Requirements</a><br />
+<a
+href="https://www.ministryoftesting.com/software-testing-glossary/three-amigos?utm_source=chatgpt.com">Ministry
+of Testing — Three Amigos</a><br />
+<a
+href="https://kaner.com/pdfs/QaiRequirements.pdf?utm_source=chatgpt.com">Cem
+Kaner — Requirements for Test Documentation</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-02.html" rel="prev"><span>Previous</span>Bug Advocacy: A Strong Tester Doesn’t “Win” the Bug Argument — They Help the Team Make a Better Decision</a><a href="/qa-blog/posts/qa-thinking-day-04.html" rel="next"><span>Next</span>Testing Live Sports Data: When the “Correct” Answer Keeps Changing</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

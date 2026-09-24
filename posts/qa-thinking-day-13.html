@@ -1,0 +1,1028 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="James Bach&#39;s 2025 discussion of integration testing gives us a useful framing: integration testing is testing motivated specifically by risks created when parts are combined. Those parts may come from different">
+  <meta name="color-scheme" content="light">
+  <title>Contract Testing: A Green Schema Test Can Still Break the Consumer | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 13</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-13">QA Thinking — Day 13</h1>
+<h2
+id="contract-testing-a-green-schema-test-can-still-break-the-consumer">Contract
+Testing: A Green Schema Test Can Still Break the Consumer</h2>
+<p>Imagine an e-commerce platform with two services:</p>
+<pre><code>Cart Service
+     ↓
+Pricing Service</code></pre>
+<p>The cart asks:</p>
+<pre><code>GET /prices/SKU-42</code></pre>
+<p>The pricing service responds:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;SKU-42&quot;,
+  &quot;unitPrice&quot;: 49.99,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;IN_STOCK&quot;
+}</code></pre>
+<p>Everything works.</p>
+<p>A developer improves the pricing API and deploys this:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;SKU-42&quot;,
+  &quot;price&quot;: 49.99,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;IN_STOCK&quot;
+}</code></pre>
+<p>The API itself is healthy:</p>
+<pre><code>HTTP 200 ✓
+JSON valid ✓
+Pricing tests green ✓
+Deployment successful ✓</code></pre>
+<p>Checkout immediately starts failing.</p>
+<p>Why?</p>
+<p>Because the Cart Service still expects:</p>
+<pre><code>unitPrice</code></pre>
+<p>not:</p>
+<pre><code>price</code></pre>
+<p>Nothing was “wrong” with either service when tested alone.</p>
+<p>The problem existed <strong>between them</strong>.</p>
+<p>James Bach's 2025 discussion of integration testing gives us a useful
+framing: integration testing is testing motivated specifically by risks
+created when parts are combined. Those parts may come from different
+teams, have different purposes, be built at different times, and depend
+on each other in ways that are not visible when each component is
+examined independently. <a
+href="https://www.satisfice.com/blog/archives/1577?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Today's central lesson is:</p>
+<blockquote>
+<p><strong>An API working correctly is not enough. Its consumers must
+still be able to use it correctly.</strong></p>
+</blockquote>
+<p>That sounds simple, but it has important consequences for how you
+design API tests, contract tests, CI pipelines, and even conversations
+between teams.</p>
+<hr />
+<h2 id="first-understand-what-a-contract-really-is">First understand
+what a contract really is</h2>
+<p>Suppose your Pricing Service exposes this response:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;SKU-42&quot;,
+  &quot;unitPrice&quot;: 49.99,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;IN_STOCK&quot;,
+  &quot;taxRate&quot;: 0.19,
+  &quot;warehouse&quot;: &quot;HAM-2&quot;,
+  &quot;lastUpdated&quot;: &quot;2026-09-23T06:30:00Z&quot;
+}</code></pre>
+<p>The Cart Service may only care about:</p>
+<pre><code>unitPrice
+currency
+availability</code></pre>
+<p>Another consumer—the Analytics Service—may care about:</p>
+<pre><code>productId
+warehouse</code></pre>
+<p>And a Promotions Service may care about:</p>
+<pre><code>productId
+unitPrice
+currency</code></pre>
+<p>So there isn't necessarily one practical contract.</p>
+<p>Each consumer depends on a subset of the provider's behavior.</p>
+<p>Martin Fowler's microservice-testing guidance describes exactly this
+idea: different consumers form different contracts based on what each
+actually requires, and consumer contract tests can make those
+dependencies explicit. <a
+href="https://martinfowler.com/articles/microservice-testing/fallback.html?utm_source=chatgpt.com">martinfowler.com+1</a></p>
+<p>Conceptually:</p>
+<pre><code>                Pricing Service
+                /      |       \
+               /       |        \
+           Cart    Promotions   Analytics
+
+Cart depends on:
+unitPrice
+currency
+availability
+
+Promotions depends on:
+unitPrice
+currency
+productId
+
+Analytics depends on:
+productId
+warehouse</code></pre>
+<p>Now imagine Pricing removes:</p>
+<pre><code>warehouse</code></pre>
+<p>The Cart team does not care.</p>
+<p>The Promotions team does not care.</p>
+<p>Analytics breaks.</p>
+<p>This is why a statement such as:</p>
+<blockquote>
+<p>“The API change is backward compatible.”</p>
+</blockquote>
+<p>is incomplete unless you ask:</p>
+<blockquote>
+<p><strong>Compatible with which consumers?</strong></p>
+</blockquote>
+<hr />
+<h1 id="contract-testing-is-not-the-same-as-testing-the-api">Contract
+testing is not the same as “testing the API”</h1>
+<p>This distinction is important.</p>
+<p>Suppose you write API tests for the Pricing Service:</p>
+<pre><code>GET existing product → 200
+GET missing product → 404
+negative price impossible
+currency valid
+database error handled
+promotion calculated correctly</code></pre>
+<p>Those tests investigate the Pricing Service itself.</p>
+<p>A contract test asks a narrower question:</p>
+<blockquote>
+<p><strong>Does the provider still satisfy the assumptions that a
+particular consumer relies upon?</strong></p>
+</blockquote>
+<p>Ministry of Testing's API material describes consumer-provider
+communication as a functional contract involving things such as
+endpoints, parameters, request bodies, HTTP methods, status codes and
+response representations. A provider change can leave the provider
+internally healthy while causing consumers to behave incorrectly. <a
+href="https://www.ministryoftesting.com/insights/restful-api-testing-with-chakram?utm_source=chatgpt.com">Ministry
+of Testing</a></p>
+<p>So:</p>
+<pre><code>API/component tests
+→ Is Pricing behaving correctly?
+
+Contract tests
+→ Can Cart still talk to Pricing as agreed?
+
+End-to-end tests
+→ Can a shopper ultimately complete the business workflow?</code></pre>
+<p>These tests overlap, but they answer different questions.</p>
+<p>That's why replacing all integration or end-to-end testing with
+contract testing would be a mistake.</p>
+<hr />
+<h1
+id="the-contract-should-represent-what-the-consumer-actually-needs">The
+contract should represent what the consumer actually needs</h1>
+<p>Here's a common contract-testing mistake.</p>
+<p>The current provider response is:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;42&quot;,
+  &quot;name&quot;: &quot;Running Shoes&quot;,
+  &quot;unitPrice&quot;: 89.99,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;warehouse&quot;: &quot;HAM-01&quot;
+}</code></pre>
+<p>Someone creates this test:</p>
+<pre><code>expect(response).toEqual({
+  productId: &quot;42&quot;,
+  name: &quot;Running Shoes&quot;,
+  unitPrice: 89.99,
+  currency: &quot;EUR&quot;,
+  warehouse: &quot;HAM-01&quot;
+});</code></pre>
+<p>Now the provider adds:</p>
+<pre><code>{
+  &quot;discountEligible&quot;: true
+}</code></pre>
+<p>The real Cart application ignores that field perfectly.</p>
+<p>But your exact-object assertion fails.</p>
+<p>The test says:</p>
+<pre><code>BREAKING CHANGE!</code></pre>
+<p>The real consumer says:</p>
+<pre><code>I don&#39;t care.</code></pre>
+<p>You haven't protected the consumer.</p>
+<p>You've coupled your test to the provider.</p>
+<p>This is an important contract-testing principle:</p>
+<blockquote>
+<p><strong>Assert what the consumer depends on, not everything the
+provider happens to return.</strong></p>
+</blockquote>
+<p>For the Cart Service, perhaps:</p>
+<pre><code>expect(response.unitPrice).toEqual(expect.any(Number));
+expect(response.currency).toBe(&quot;EUR&quot;);
+expect(response.availability).toEqual(expect.any(String));</code></pre>
+<p>is much closer to its actual dependency.</p>
+<p>Consumer-driven contract tools such as Pact are built around this
+idea: consumers express the interactions they require, and providers
+verify that they still satisfy those expectations. Pact describes itself
+as “contract by example” rather than maintaining giant static
+descriptions of every possible provider response. <a
+href="https://docs.pact.io/faq?utm_source=chatgpt.com">Pact Docs</a></p>
+<hr />
+<h1 id="but-a-contract-can-also-be-too-weak">But a contract can also be
+too weak</h1>
+<p>Now consider:</p>
+<pre><code>{
+  &quot;unitPrice&quot;: -999999,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;BANANA&quot;
+}</code></pre>
+<p>Your contract says:</p>
+<pre><code>unitPrice is number ✓
+currency is string ✓
+availability is string ✓</code></pre>
+<p>Contract passes.</p>
+<p>Checkout might now produce:</p>
+<pre><code>Subtotal: -€999,999</code></pre>
+<p>The interface is structurally compatible.</p>
+<p>The behavior is nonsense.</p>
+<p>This gives us an important distinction:</p>
+<pre><code>Structural compatibility
+≠
+Semantic correctness</code></pre>
+<p>A schema can tell you:</p>
+<pre><code>unitPrice must be numeric</code></pre>
+<p>but your business rule may actually be:</p>
+<pre><code>unitPrice &gt;= 0</code></pre>
+<p>A schema can tell you:</p>
+<pre><code>currency is a 3-character string</code></pre>
+<p>but business behavior may require:</p>
+<pre><code>currency of returned price
+must match
+currency requested by Cart</code></pre>
+<p>A contract test is therefore not an oracle for all quality.</p>
+<p>Michael Bolton's work on testing oracles is useful here: an oracle is
+a fallible means of recognizing a potential problem. Passing one oracle
+doesn't prove that no problem exists; we need multiple ways of
+evaluating software. <a
+href="https://developsense.com/blog/2012/04/all-oracles-are-heuristic?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<p>A green schema test tells you something useful.</p>
+<p>It does not tell you:</p>
+<blockquote>
+<p>“The integration is correct in every important way.”</p>
+</blockquote>
+<hr />
+<h1
+id="heres-a-subtle-compatibility-bug-adding-something-can-break-consumers-too">Here's
+a subtle compatibility bug: adding something can break consumers
+too</h1>
+<p>Teams often learn this rule:</p>
+<pre><code>Removing field = breaking
+
+Adding field = safe</code></pre>
+<p>Usually that's a useful default.</p>
+<p>For example, GitHub's current REST API documentation classifies
+changes such as removing or renaming response fields, changing types,
+and making optional inputs required as breaking changes. Adding response
+fields or optional parameters is classified as additive/non-breaking. <a
+href="https://docs.github.com/en/rest/about-the-rest-api/breaking-changes?utm_source=chatgpt.com">GitHub-Dokumentation+1</a></p>
+<p>But treat that as a compatibility policy—not a law of physics.</p>
+<p>Suppose your consumer does this:</p>
+<pre><code>const keys = Object.keys(response);
+
+if (keys.length !== 4) {
+  throw new Error(&quot;Unexpected response&quot;);
+}</code></pre>
+<p>Provider adds:</p>
+<pre><code>promotionId</code></pre>
+<p>Provider believes:</p>
+<pre><code>non-breaking</code></pre>
+<p>Consumer crashes.</p>
+<p>Whose fault is it?</p>
+<p>You could argue the consumer was implemented too strictly.</p>
+<p>Probably true.</p>
+<p>But production is still broken.</p>
+<p>Testing should care about the actual integration, not merely who
+deserves blame.</p>
+<p>This is one reason consumer-driven contracts are valuable: they
+expose <strong>real consumer assumptions</strong>, including assumptions
+that perhaps should not exist.</p>
+<hr />
+<h1 id="new-enum-values-are-especially-interesting">New enum values are
+especially interesting</h1>
+<p>Suppose Order Service publishes:</p>
+<pre><code>{
+  &quot;orderId&quot;: &quot;9821&quot;,
+  &quot;status&quot;: &quot;PAID&quot;
+}</code></pre>
+<p>Consumer code:</p>
+<pre><code>switch (order.status) {
+  case &quot;NEW&quot;:
+    showPending();
+    break;
+
+  case &quot;PAID&quot;:
+    showPaid();
+    break;
+
+  case &quot;CANCELLED&quot;:
+    showCancelled();
+    break;
+}</code></pre>
+<p>Now the business introduces partial refunds:</p>
+<pre><code>{
+  &quot;orderId&quot;: &quot;9821&quot;,
+  &quot;status&quot;: &quot;PARTIALLY_REFUNDED&quot;
+}</code></pre>
+<p>From the provider's perspective, adding another possible enum value
+may be considered an additive change. GitHub's API compatibility policy,
+for example, treats adding enum values as non-breaking. <a
+href="https://docs.github.com/en/rest/about-the-rest-api/breaking-changes?utm_source=chatgpt.com">GitHub-Dokumentation</a></p>
+<p>But our consumer hasn't designed behavior for it.</p>
+<p>Maybe the UI displays:</p>
+<pre><code>Order status:</code></pre>
+<p>blank.</p>
+<p>Or worse, it enters the wrong branch.</p>
+<p>So when reviewing interface changes, don't ask only:</p>
+<blockquote>
+<p>“Did we remove anything?”</p>
+</blockquote>
+<p>Ask:</p>
+<blockquote>
+<p><strong>“Does this expand the set of values consumers must
+understand?”</strong></p>
+</blockquote>
+<p>That's a stronger testing question.</p>
+<hr />
+<h1 id="now-apply-the-same-thinking-to-event-driven-systems">Now apply
+the same thinking to event-driven systems</h1>
+<p>Contract risk becomes even more interesting when APIs are
+asynchronous.</p>
+<p>Imagine:</p>
+<pre><code>Order Service
+     ↓
+Kafka topic: order-events
+     ↓
+Email Service
+Analytics
+Warehouse
+Billing</code></pre>
+<p>Order Service publishes:</p>
+<pre><code>{
+  &quot;orderId&quot;: &quot;O-8001&quot;,
+  &quot;status&quot;: &quot;PAID&quot;,
+  &quot;amount&quot;: 129.90
+}</code></pre>
+<p>Warehouse expects:</p>
+<pre><code>orderId
+status</code></pre>
+<p>Billing expects:</p>
+<pre><code>orderId
+amount</code></pre>
+<p>Analytics expects all three.</p>
+<p>Now a new event version adds:</p>
+<pre><code>{
+  &quot;orderId&quot;: &quot;O-8001&quot;,
+  &quot;status&quot;: &quot;PAID&quot;,
+  &quot;amount&quot;: 129.90,
+  &quot;marketplaceSellerId&quot;: &quot;S-42&quot;
+}</code></pre>
+<p>Probably fine.</p>
+<p>But suppose instead:</p>
+<pre><code>amount</code></pre>
+<p>changes from:</p>
+<pre><code>129.90</code></pre>
+<p>to:</p>
+<pre><code>{
+  &quot;value&quot;: 12990,
+  &quot;currency&quot;: &quot;EUR&quot;
+}</code></pre>
+<p>A much richer representation.</p>
+<p>And a potentially disastrous breaking change.</p>
+<p>Schema evolution systems such as Confluent Schema Registry explicitly
+distinguish backward, forward and full compatibility because new
+producers and old consumers—or new consumers and historical events—may
+coexist. <a
+href="https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html?utm_source=chatgpt.com">Confluent
+Dokumentation+1</a></p>
+<p>That gives a tester another important question:</p>
+<blockquote>
+<p><strong>Which version is producing, and which versions might still be
+consuming?</strong></p>
+</blockquote>
+<hr />
+<h1
+id="latest-version-works-is-not-enough-in-event-driven-systems">“Latest
+version works” is not enough in event-driven systems</h1>
+<p>Suppose today you deploy:</p>
+<pre><code>Order Event Schema V3</code></pre>
+<p>Your latest consumer:</p>
+<pre><code>Warehouse V7</code></pre>
+<p>handles it correctly.</p>
+<p>Great.</p>
+<p>But maybe another consumer hasn't deployed in six months:</p>
+<pre><code>Finance V2</code></pre>
+<p>Or perhaps consumers replay old events from a Kafka topic.</p>
+<p>Now both directions matter:</p>
+<pre><code>NEW consumer
+reading
+OLD event</code></pre>
+<p>and:</p>
+<pre><code>OLD consumer
+reading
+NEW event</code></pre>
+<p>Confluent's schema-evolution documentation gives explicit meanings to
+these cases: backward compatibility concerns newer consumers reading
+older data, while forward compatibility concerns older consumers reading
+newer data; full compatibility supports both directions. <a
+href="https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html?utm_source=chatgpt.com">Confluent
+Dokumentation</a></p>
+<p>This is not just architecture trivia.</p>
+<p>It directly affects your release test strategy.</p>
+<p>Before changing an event schema, ask:</p>
+<pre><code>Which consumers exist?
+
+Which versions are deployed?
+
+Can consumers replay historical events?
+
+In which order will producers and consumers be upgraded?</code></pre>
+<p>That last question can determine whether a supposedly compatible
+deployment actually works.</p>
+<hr />
+<h1 id="dont-forget-business-semantics-when-schemas-evolve">Don't forget
+business semantics when schemas evolve</h1>
+<p>Imagine your sports-data platform publishes:</p>
+<pre><code>{
+  &quot;matchId&quot;: 718,
+  &quot;event&quot;: &quot;GOAL&quot;,
+  &quot;team&quot;: &quot;HOME&quot;
+}</code></pre>
+<p>Later you add VAR corrections:</p>
+<pre><code>{
+  &quot;matchId&quot;: 718,
+  &quot;event&quot;: &quot;GOAL_CANCELLED&quot;,
+  &quot;team&quot;: &quot;HOME&quot;
+}</code></pre>
+<p>Schema validation passes.</p>
+<p>The new event is syntactically perfect.</p>
+<p>But consider consumers:</p>
+<pre><code>Live score
+Bet settlement
+Notifications
+Statistics
+Broadcast graphics</code></pre>
+<p>A notification consumer may already have sent:</p>
+<blockquote>
+<p>GOAL! Hamburg 1–0 Berlin</p>
+</blockquote>
+<p>Now it receives:</p>
+<pre><code>GOAL_CANCELLED</code></pre>
+<p>What should it do?</p>
+<p>Delete notification?</p>
+<p>Send correction?</p>
+<p>Ignore it?</p>
+<p>The integration problem isn't:</p>
+<pre><code>Can consumer deserialize GOAL_CANCELLED?</code></pre>
+<p>It's:</p>
+<blockquote>
+<p><strong>Does the consumer have sensible business behavior for what
+this new event means?</strong></p>
+</blockquote>
+<p>This is the boundary between <strong>contract testing</strong> and
+<strong>domain testing</strong>.</p>
+<p>A contract might ensure:</p>
+<pre><code>event field exists
+value is accepted</code></pre>
+<p>A domain test investigates:</p>
+<pre><code>score corrected
+notifications corrected
+bet state reconciled
+stats updated</code></pre>
+<p>Both matter.</p>
+<hr />
+<h1
+id="contract-testing-should-reducenot-duplicateend-to-end-testing">Contract
+testing should reduce—not duplicate—end-to-end testing</h1>
+<p>Imagine a microservice system:</p>
+<pre><code>Browser
+  ↓
+Checkout
+  ↓
+Cart
+  ↓
+Pricing
+  ↓
+Inventory
+  ↓
+Payment
+  ↓
+Order
+  ↓
+Email</code></pre>
+<p>A giant end-to-end test might validate everything through the
+browser.</p>
+<p>When it fails:</p>
+<pre><code>Checkout failed</code></pre>
+<p>Why?</p>
+<p>Could be:</p>
+<pre><code>Pricing
+Inventory
+Payment
+Order
+Email
+test data
+network
+environment
+browser
+authentication</code></pre>
+<p>Diagnosis is expensive.</p>
+<p>Contract tests can move much of the interface compatibility checking
+closer to the individual services.</p>
+<p>Fowler's practical test-pyramid guidance recommends using
+consumer-driven contract testing to catch breaking interface changes
+continuously in provider builds instead of depending entirely on large
+integrated tests. <a
+href="https://martinfowler.com/articles/practical-test-pyramid.html?utm_source=chatgpt.com">martinfowler.com</a></p>
+<p>So instead of relying on:</p>
+<pre><code>1 giant E2E test</code></pre>
+<p>for all confidence, you might have:</p>
+<pre><code>Component tests
+     +
+Contract tests
+     +
+Focused integration tests
+     +
+A smaller number of business-critical E2E tests</code></pre>
+<p>Each layer answers something different.</p>
+<p>The goal isn't:</p>
+<blockquote>
+<p>“Replace E2E.”</p>
+</blockquote>
+<p>It's:</p>
+<blockquote>
+<p><strong>Use the cheapest useful test at the layer where a particular
+risk can be detected clearly.</strong></p>
+</blockquote>
+<hr />
+<h1
+id="provider-states-are-where-contract-tests-become-much-more-useful">Provider
+states are where contract tests become much more useful</h1>
+<p>Suppose Cart expects these cases:</p>
+<pre><code>Product exists
+Product missing
+Product out of stock
+Promotion active</code></pre>
+<p>A contract shouldn't depend on whatever random state happens to exist
+in a shared staging database.</p>
+<p>Consumer-driven contract approaches commonly use <strong>provider
+states</strong> to say:</p>
+<pre><code>Given product SKU-42 exists
+When GET /prices/SKU-42
+Then ...</code></pre>
+<p>or:</p>
+<pre><code>Given product SKU-42 is out of stock
+When GET /prices/SKU-42
+Then ...</code></pre>
+<p>Pact explicitly supports provider states so the same request can be
+verified against different meaningful provider conditions. <a
+href="https://pkg.go.dev/github.1git.de/pact-foundation/pact-go?utm_source=chatgpt.com">Go
+Packages+1</a></p>
+<p>That lets contracts represent actual consumer assumptions rather than
+brittle shared-environment data.</p>
+<p>This is also good testability.</p>
+<p>A provider that can deliberately establish meaningful states is much
+easier to test than one where everyone says:</p>
+<blockquote>
+<p>“Try SKU-19281. I think that one is currently out of stock.”</p>
+</blockquote>
+<hr />
+<h1 id="heres-where-contract-tests-go-wrong-organizationally">Here's
+where contract tests go wrong organizationally</h1>
+<p>Imagine Pricing Team changes:</p>
+<pre><code>unitPrice</code></pre>
+<p>to:</p>
+<pre><code>price</code></pre>
+<p>CI turns red.</p>
+<p>Cart Team says:</p>
+<blockquote>
+<p>“You broke us.”</p>
+</blockquote>
+<p>Pricing Team says:</p>
+<blockquote>
+<p>“Your code depends on an old field.”</p>
+</blockquote>
+<p>Cart Team says:</p>
+<blockquote>
+<p>“You changed the API without telling us.”</p>
+</blockquote>
+<p>Now the contract test has discovered a technical issue and created a
+social one.</p>
+<p>Michael Bolton points out that testing is socially challenging
+precisely because testers—and testing evidence—challenge people's
+beliefs about the product. Questions and failures can create friction if
+they are treated as accusations rather than information. <a
+href="https://developsense.com/blog/2023/03/testing-is-socially-challenging?utm_source=chatgpt.com">DevelopSense</a></p>
+<p>A better conversation is:</p>
+<blockquote>
+<p>“Cart currently depends on <code>unitPrice</code>. The provider build
+shows that removing it would break the Cart contract. Do we want to
+preserve it temporarily, migrate Cart first, or version the
+interface?”</p>
+</blockquote>
+<p>Notice the difference.</p>
+<p>Not:</p>
+<pre><code>YOU BROKE THE BUILD</code></pre>
+<p>but:</p>
+<pre><code>We have discovered a dependency.
+What migration strategy should we use?</code></pre>
+<p>The contract test becomes a coordination mechanism.</p>
+<hr />
+<h1 id="use-expand-and-contract-for-real-breaking-changes">Use “expand
+and contract” for real breaking changes</h1>
+<p>Sometimes you genuinely need to change:</p>
+<pre><code>unitPrice</code></pre>
+<p>to:</p>
+<pre><code>price</code></pre>
+<p>You can't preserve old interfaces forever.</p>
+<p>A safer migration is:</p>
+<pre><code>STEP 1
+
+Provider returns both:
+
+unitPrice
+price</code></pre>
+<p>Then:</p>
+<pre><code>STEP 2
+
+Consumers migrate:
+
+unitPrice → price</code></pre>
+<p>Then:</p>
+<pre><code>STEP 3
+
+Verify no active consumers depend on unitPrice</code></pre>
+<p>Finally:</p>
+<pre><code>STEP 4
+
+Remove unitPrice</code></pre>
+<p>Pact's documentation explicitly describes this
+<strong>expand-and-contract</strong> approach for making breaking
+provider changes while keeping contracts satisfied during migration. <a
+href="https://docs.pact.io/faq?utm_source=chatgpt.com">Pact Docs</a></p>
+<p>This pattern appears everywhere:</p>
+<pre><code>database migrations
+API migrations
+event schemas
+configuration changes
+feature flags</code></pre>
+<p>The principle is:</p>
+<blockquote>
+<p><strong>Don't require every dependent system to switch atomically
+unless you genuinely control them all.</strong></p>
+</blockquote>
+<p>Distributed systems rarely give you that luxury.</p>
+<hr />
+<h1 id="can-i-deploy-is-a-better-question-than-are-my-tests-green">“Can
+I deploy?” is a better question than “Are my tests green?”</h1>
+<p>Suppose the provider tests are green.</p>
+<p>The consumer tests are green.</p>
+<p>But they were run against incompatible versions.</p>
+<p>For example:</p>
+<pre><code>Cart v17
+expects Pricing v8
+
+Production currently:
+Cart v16
+Pricing v7
+
+New deployment:
+Pricing v8</code></pre>
+<p>Before deploying Pricing v8, you really want to know:</p>
+<blockquote>
+<p><strong>Does Pricing v8 satisfy the contract of the Cart version
+currently running in production?</strong></p>
+</blockquote>
+<p>Not merely:</p>
+<blockquote>
+<p>“Does Pricing v8 satisfy the newest Cart code in Git?”</p>
+</blockquote>
+<p>That distinction is crucial.</p>
+<p>Pact's tooling philosophy includes this deployment question
+explicitly: contract verification should help determine whether a
+particular consumer version and provider version are safe to deploy
+together. <a href="https://docs.pact.io/faq?utm_source=chatgpt.com">Pact
+Docs</a></p>
+<p>This is where contract testing moves beyond ordinary CI checking into
+release-risk management.</p>
+<hr />
+<h1 id="observability-should-reveal-contract-failures-too">Observability
+should reveal contract failures too</h1>
+<p>Imagine a supposedly safe API change reaches production.</p>
+<p>Your technical dashboard says:</p>
+<pre><code>Pricing Service:
+HTTP 200 = 99.99%
+CPU = 30%
+Memory = 44%
+p95 = 75 ms</code></pre>
+<p>Everything looks perfect.</p>
+<p>Meanwhile Cart logs show:</p>
+<pre><code>Cannot parse Pricing response:
+missing property unitPrice</code></pre>
+<p>The provider is healthy.</p>
+<p>The integration is failing.</p>
+<p>So observability shouldn't only be service-centered.</p>
+<p>Useful signals might include:</p>
+<pre><code>deserialization failures
+unexpected enum values
+schema validation failures
+consumer retries
+contract-version mismatches
+dead-letter queue growth</code></pre>
+<p>In event-driven systems, a dead-letter queue suddenly filling after a
+schema deployment can be much more informative than producer CPU.</p>
+<p>Again:</p>
+<blockquote>
+<p><strong>Service health and system health are not the same
+thing.</strong></p>
+</blockquote>
+<hr />
+<h1 id="a-contract-test-should-fail-for-a-meaningful-reason">A contract
+test should fail for a meaningful reason</h1>
+<p>Suppose your provider changes:</p>
+<pre><code>{
+  &quot;discount&quot;: null
+}</code></pre>
+<p>to:</p>
+<pre><code>{
+  &quot;discount&quot;: 0
+}</code></pre>
+<p>Your consumer handles both identically.</p>
+<p>Contract fails.</p>
+<p>Ask:</p>
+<blockquote>
+<p>Is this test protecting a real dependency?</p>
+</blockquote>
+<p>If not, loosen it.</p>
+<p>Now suppose:</p>
+<pre><code>currency</code></pre>
+<p>disappears.</p>
+<p>The consumer uses it to decide how to format and charge checkout
+totals.</p>
+<p>Contract fails.</p>
+<p>Excellent.</p>
+<p>The test has discovered something that matters.</p>
+<p>This is a useful quality question for every automated check:</p>
+<blockquote>
+<p><strong>What real problem is this failure supposed to warn us
+about?</strong></p>
+</blockquote>
+<p>If nobody can answer, the test may be creating noise rather than
+confidence.</p>
+<hr />
+<h1 id="the-testers-role-during-api-design">The tester's role during API
+design</h1>
+<p>You don't have to wait until implementation.</p>
+<p>Imagine the developer proposes:</p>
+<pre><code>GET /orders/{id}</code></pre>
+<p>Response:</p>
+<pre><code>{
+  &quot;status&quot;: &quot;PAID&quot;
+}</code></pre>
+<p>Ask:</p>
+<blockquote>
+<p>“What statuses can appear?”</p>
+</blockquote>
+<p>Developer:</p>
+<blockquote>
+<p>“NEW, PAID, CANCELLED.”</p>
+</blockquote>
+<p>Ask:</p>
+<blockquote>
+<p>“Are consumers expected to reject unknown future statuses or handle
+them generically?”</p>
+</blockquote>
+<p>That's an excellent compatibility question.</p>
+<p>Or suppose a new property is proposed:</p>
+<pre><code>discount</code></pre>
+<p>Ask:</p>
+<blockquote>
+<p>“Can it be absent, null, or zero? Do those mean different
+things?”</p>
+</blockquote>
+<p>Those three representations can mean very different business
+states:</p>
+<pre><code>field missing
+→ information not supplied
+
+null
+→ explicitly unknown/no value
+
+0
+→ known discount of zero</code></pre>
+<p>A schema discussion can therefore expose ambiguous business rules
+before code exists.</p>
+<p>That is prospective testing.</p>
+<hr />
+<h1 id="dont-ask-every-possible-api-question-in-refinement">Don't ask
+every possible API question in refinement</h1>
+<p>You could easily overwhelm people with:</p>
+<pre><code>Can it be null?
+Can it be missing?
+Can it be empty?
+Maximum length?
+Encoding?
+Retries?
+Timeout?
+Version?
+Unknown fields?
+Unknown enums?</code></pre>
+<p>Good testing isn't performing a ritual.</p>
+<p>Focus on the dependencies that carry risk.</p>
+<p>For a payment API:</p>
+<pre><code>idempotency
+money precision
+transaction state
+retry semantics</code></pre>
+<p>may matter enormously.</p>
+<p>For a catalog lookup:</p>
+<pre><code>unknown SKU
+locale
+cache freshness
+pagination</code></pre>
+<p>may matter more.</p>
+<p>For sports data:</p>
+<pre><code>ordering
+corrections
+timestamps
+event identity</code></pre>
+<p>may dominate.</p>
+<p>Domain knowledge tells you where interface compatibility matters
+most.</p>
+<hr />
+<h1 id="a-reusable-integration-risk-model">A reusable integration-risk
+model</h1>
+<p>When one component communicates with another, think through:</p>
+<pre><code>STRUCTURE
+Can they understand each other&#39;s messages?
+
+SEMANTICS
+Do they interpret those messages the same way?
+
+STATE
+Do both sides agree about relevant business state?
+
+TIMING
+What if messages are late, duplicated or reordered?
+
+VERSION
+Can old and new components coexist?
+
+FAILURE
+What happens when one side is unavailable?
+
+RECOVERY
+Can they reconcile after disagreement?
+
+OBSERVABILITY
+Can we tell which interface or version caused the problem?</code></pre>
+<p>A contract test is especially good at parts of:</p>
+<pre><code>STRUCTURE
+VERSION</code></pre>
+<p>and sometimes:</p>
+<pre><code>SEMANTICS</code></pre>
+<p>But don't assume it automatically handles:</p>
+<pre><code>all state
+timing
+business correctness
+recovery</code></pre>
+<p>That's where integration tests, exploratory testing, resilience
+tests, production telemetry, and domain-specific testing continue to
+matter.</p>
+<p>This matches James Bach's broader point: integration testing should
+be designed around <strong>integration risk</strong>, not around a tool
+category or test-level label. <a
+href="https://www.satisfice.com/blog/archives/1577?utm_source=chatgpt.com">Satisfice</a></p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>You own Checkout Service.</p>
+<p>It consumes Pricing Service.</p>
+<p>Current response:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;P-100&quot;,
+  &quot;unitPrice&quot;: 50,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;IN_STOCK&quot;
+}</code></pre>
+<p>The Pricing team proposes version 2:</p>
+<pre><code>{
+  &quot;productId&quot;: &quot;P-100&quot;,
+  &quot;unitPrice&quot;: 50,
+  &quot;currency&quot;: &quot;EUR&quot;,
+  &quot;availability&quot;: &quot;LOW_STOCK&quot;,
+  &quot;promotion&quot;: {
+    &quot;discount&quot;: 5
+  }
+}</code></pre>
+<p>They say:</p>
+<blockquote>
+<p>“Nothing was removed, so this is backward compatible.”</p>
+</blockquote>
+<p>Your Checkout code currently contains:</p>
+<pre><code>if (price.availability === &#39;IN_STOCK&#39;) {
+  allowCheckout();
+} else {
+  disableCheckout();
+}</code></pre>
+<p>Structurally, the new response looks harmless.</p>
+<p>Business-wise, <code>LOW_STOCK</code> should still allow the customer
+to buy.</p>
+<p>Your job is to design three things.</p>
+<p>First, write the <strong>consumer contract</strong> you would want
+Checkout to express. Do not copy the entire provider response; capture
+only Checkout's real dependencies.</p>
+<p>Second, identify which part of this proposed change a normal
+JSON-schema compatibility check could consider acceptable while Checkout
+still behaves incorrectly.</p>
+<p>Third, decide where you would test the rule:</p>
+<pre><code>LOW_STOCK → checkout allowed</code></pre>
+<p>Would you put it in:</p>
+<pre><code>contract test
+Checkout component test
+Pricing component test
+end-to-end test</code></pre>
+<p>You may choose more than one, but explain what question each test
+answers.</p>
+<p>Then answer one final question:</p>
+<blockquote>
+<p><strong>If the Pricing developer tells you, “Our API hasn't broken
+its schema, so this isn't our bug,” how would you explain the risk
+without turning it into an ownership argument?</strong></p>
+</blockquote>
+<p>A strong response would sound something like:</p>
+<blockquote>
+<p>“The new value is structurally compatible, but Checkout currently
+interprets every value except <code>IN_STOCK</code> as unavailable. So
+the interface technically parses, while the business behavior changes.
+We need to decide whether Checkout should support unknown availability
+states more defensively, whether Pricing needs a compatibility
+migration, or both.”</p>
+</blockquote>
+<p>That language matters.</p>
+<p>You aren't trying to establish guilt.</p>
+<p>You're establishing:</p>
+<pre><code>dependency
++
+evidence
++
+business consequence
++
+migration options</code></pre>
+<p>And that is today's deeper lesson:</p>
+<blockquote>
+<p><strong>Integration bugs often come from two components making
+individually reasonable assumptions that are incompatible when
+combined.</strong></p>
+</blockquote>
+<p>Contract testing gives you a powerful way to expose those assumptions
+early.</p>
+<p>But a strong quality engineer knows the limits of that tool.</p>
+<p>A green contract can tell you:</p>
+<blockquote>
+<p>“The agreed interaction still fits.”</p>
+</blockquote>
+<p>It cannot automatically tell you:</p>
+<blockquote>
+<p>“The business still works.”</p>
+</blockquote>
+<p>You still need testing judgment to answer that.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James Bach's recent integration-testing series is particularly useful
+because it frames integration testing around the <em>risks created by
+combining parts</em>, instead of trying to define it only by
+architecture or test level. Fowler's microservice testing and practical
+test-pyramid material explains consumer-driven contracts well, Pact's
+current documentation is useful for real implementation concepts such as
+provider states and expand-and-contract migrations, and Confluent's
+schema-evolution documentation gives a concrete view of compatibility in
+asynchronous systems. <a
+href="https://www.satisfice.com/blog/archives/1577?utm_source=chatgpt.com">Confluent
+Dokumentation+3Satisfice+3martinfowler.com+3</a></p>
+<p><a
+href="https://www.satisfice.com/blog/archives/1577?utm_source=chatgpt.com">James
+Bach — Reinventing Testing: What Is Integration Testing?</a></p>
+<p><a
+href="https://martinfowler.com/articles/microservice-testing/?utm_source=chatgpt.com">Martin
+Fowler — Testing Strategies in a Microservice Architecture</a></p>
+<p><a
+href="https://martinfowler.com/articles/practical-test-pyramid.html?utm_source=chatgpt.com">Martin
+Fowler — The Practical Test Pyramid</a></p>
+<p><a href="https://docs.pact.io/faq?utm_source=chatgpt.com">Pact — FAQ
+and contract-testing guidance</a></p>
+<p><a
+href="https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html?utm_source=chatgpt.com">Confluent
+— Schema Evolution and Compatibility</a></p>
+<p><a
+href="https://docs.github.com/en/rest/about-the-rest-api/breaking-changes?utm_source=chatgpt.com">GitHub
+— REST API Breaking Changes</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-12.html" rel="prev"><span>Previous</span>Accessibility Testing: “0 Axe Violations” Does Not Mean Your Checkout Is Usable</a><a href="/qa-blog/posts/qa-thinking-day-14.html" rel="next"><span>Next</span>Ad-Tech Event Integrity: An Auction Win Is Not an Impression, and a 200 OK Is Not a Conversion</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

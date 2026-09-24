@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Shop → Payment Provider ↓ Payment succeeds ↓ Provider sends response ↓ NETWORK BREAKS ↓ Shop receives timeout">
+  <meta name="color-scheme" content="light">
+  <title>Payment Testing: The Most Dangerous State Is Not “Failed” — It Is “I Don’t Know Whether It Succeeded” | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 7</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-7">QA Thinking — Day 7</h1>
+<h2
+id="payment-testing-the-most-dangerous-state-is-not-failed--it-is-i-dont-know-whether-it-succeeded">Payment
+Testing: The Most Dangerous State Is Not “Failed” — It Is “I Don’t Know
+Whether It Succeeded”</h2>
+<p>Imagine you are testing checkout.</p>
+<p>A customer clicks:</p>
+<p><strong>Pay €89.90</strong></p>
+<p>Your backend sends a payment request to the payment provider.</p>
+<p>Then this happens:</p>
+<pre><code>Shop → Payment Provider
+          ↓
+      Payment succeeds
+          ↓
+Provider sends response
+          ↓
+      NETWORK BREAKS
+          ↓
+Shop receives timeout</code></pre>
+<p>Your application sees:</p>
+<pre><code>Timeout</code></pre>
+<p>Did the payment fail?</p>
+<p><strong>No.</strong></p>
+<p>All you actually know is:</p>
+<blockquote>
+<p><strong>We did not receive the response.</strong></p>
+</blockquote>
+<p>The provider may already have charged the customer.</p>
+<p>Now imagine your application contains:</p>
+<pre><code>try {
+    await makePayment();
+} catch {
+    await makePayment();
+}</code></pre>
+<p>The second request succeeds.</p>
+<p>Customer receives:</p>
+<pre><code>Charge 1: €89.90
+Charge 2: €89.90</code></pre>
+<p>Congratulations: the application's “reliability mechanism” has
+created a financial defect.</p>
+<p>Today's lesson is therefore:</p>
+<blockquote>
+<p><strong>In distributed systems, a technical failure and a business
+failure are not the same thing.</strong></p>
+</blockquote>
+<p>Payments are one of the best domains for learning this because
+mistakes have immediate financial consequences.</p>
+<hr />
+<h1 id="first-understand-the-payment-lifecycle">First understand the
+payment lifecycle</h1>
+<p>A beginner often models card payment as:</p>
+<pre><code>Pay
+ ↓
+Success / Failed</code></pre>
+<p>Real payment systems are more complicated.</p>
+<p>A useful simplified model is:</p>
+<pre><code>Payment requested
+       ↓
+Authorization
+       ↓
+Capture
+       ↓
+Settlement</code></pre>
+<p>Let's understand the first two carefully.</p>
+<h3 id="authorization">Authorization</h3>
+<p>The customer's bank essentially says:</p>
+<blockquote>
+<p>“This payment is allowed and these funds can be reserved.”</p>
+</blockquote>
+<p>For example:</p>
+<pre><code>Customer account: €1,000
+
+Merchant requests: €100
+
+Bank authorizes €100</code></pre>
+<p>The €100 may now be reserved.</p>
+<p>But the merchant may not yet have actually collected the money.</p>
+<h3 id="capture">Capture</h3>
+<p>Capture tells the payment system:</p>
+<blockquote>
+<p>“Take the authorized amount.”</p>
+</blockquote>
+<p>Adyen's current payment lifecycle documentation describes
+authorization as the point where payment details and risk checks are
+accepted and funds are reserved. Capture is the later step that moves
+the transaction toward funds being transferred to the merchant. <a
+href="https://docs.adyen.com/account/payments-lifecycle?utm_source=chatgpt.com">Adyen
+Docs+1</a></p>
+<p>So:</p>
+<pre><code>AUTHORIZED ≠ CAPTURED</code></pre>
+<p>That distinction immediately generates useful tests.</p>
+<hr />
+<h1 id="why-would-authorization-and-capture-be-separate">Why would
+authorization and capture be separate?</h1>
+<p>Imagine an online shop.</p>
+<p>Customer orders:</p>
+<pre><code>Laptop: €1,000</code></pre>
+<p>The shop wants to ensure the customer can pay.</p>
+<p>So:</p>
+<pre><code>Authorization → €1,000</code></pre>
+<p>But the warehouse discovers that the laptop will ship tomorrow.</p>
+<p>The business may decide to capture only when shipment occurs.</p>
+<p>Conceptually:</p>
+<pre><code>Checkout
+   ↓
+Authorize €1,000
+
+Warehouse
+   ↓
+Ship item
+
+Payment system
+   ↓
+Capture €1,000</code></pre>
+<p>Other domains use this even more heavily.</p>
+<p>Hotels may authorize an estimated amount and adjust it later when
+guests add restaurant, minibar or other charges. Pre-orders and
+businesses with long fulfillment times can have similar requirements.
+Adyen documents these as real use cases for authorization adjustment. <a
+href="https://docs.adyen.com/online-payments/adjust-authorisation?utm_source=chatgpt.com">Adyen
+Docs</a></p>
+<p>Now imagine testing only:</p>
+<blockquote>
+<p>“Payment page displays success.”</p>
+</blockquote>
+<p>You could completely miss whether the business ever captured the
+payment.</p>
+<hr />
+<h1 id="your-first-important-payment-oracle-business-state">Your first
+important payment oracle: business state</h1>
+<p>Consider this sequence:</p>
+<pre><code>Order status: PAID
+Payment status: AUTHORIZED
+Capture status: FAILED</code></pre>
+<p>Something feels wrong.</p>
+<p>Why?</p>
+<p>Because the systems disagree about the business state.</p>
+<p>The UI could look perfectly healthy:</p>
+<pre><code>Thank you for your order!</code></pre>
+<p>The API could return:</p>
+<pre><code>200 OK</code></pre>
+<p>The database could contain:</p>
+<pre><code>order_created = true</code></pre>
+<p>And the merchant may still never receive the money.</p>
+<p>This is where Michael Bolton's broader idea of testing oracles
+becomes useful: testers should look for things that suggest a
+<strong>problem</strong>, rather than limiting themselves to checking
+whether a documented expected value was returned. Internal
+inconsistencies are powerful clues. <a
+href="https://developsense.com/blog/2015/09/oracles-from-the-inside-out-part-5-oracles-as-references-as-media?utm_source=chatgpt.com">DevelopSense</a></p>
+<p>So don't merely ask:</p>
+<blockquote>
+<p>“Did <code>/checkout</code> return 200?”</p>
+</blockquote>
+<p>Ask:</p>
+<blockquote>
+<p><strong>“Are the order, payment, fulfillment and accounting states
+consistent?”</strong></p>
+</blockquote>
+<hr />
+<h1 id="now-return-to-our-timeout-problem">Now return to our timeout
+problem</h1>
+<p>Suppose your backend sends:</p>
+<pre><code>POST /payments</code></pre>
+<p>with:</p>
+<pre><code>{
+  &quot;order&quot;: &quot;ORDER-7421&quot;,
+  &quot;amount&quot;: 8990,
+  &quot;currency&quot;: &quot;EUR&quot;
+}</code></pre>
+<p>The provider processes it successfully.</p>
+<p>But your connection times out before the response returns.</p>
+<p>Your application sees:</p>
+<pre><code>TIMEOUT</code></pre>
+<p>There are at least two explanations.</p>
+<h3 id="hypothesis-a">Hypothesis A</h3>
+<pre><code>Request never reached provider
+→ No payment happened</code></pre>
+<h3 id="hypothesis-b">Hypothesis B</h3>
+<pre><code>Request reached provider
+→ Payment happened
+→ Response was lost</code></pre>
+<p>From your application's perspective, both look like:</p>
+<pre><code>TIMEOUT</code></pre>
+<p>This is what makes distributed systems interesting to test.</p>
+<p>A timeout describes the <strong>communication outcome</strong>.</p>
+<p>It doesn't necessarily describe the <strong>business transaction
+outcome</strong>.</p>
+<p>AWS's Builders' Library explicitly warns about this: when a remote
+call times out, side effects may already have occurred. Blindly retrying
+operations with side effects can therefore duplicate them. <a
+href="https://aws.amazon.com/de/builders-library/timeouts-retries-and-backoff-with-jitter/?utm_source=chatgpt.com">Amazon
+Web Services, Inc.</a></p>
+<p>Payments are perhaps the easiest example to understand:</p>
+<pre><code>timeout ≠ payment failed</code></pre>
+<p>Remember that sentence.</p>
+<hr />
+<h1 id="enter-idempotency">Enter idempotency</h1>
+<p>Modern payment APIs often solve part of this problem with
+<strong>idempotency</strong>.</p>
+<p>The idea is:</p>
+<blockquote>
+<p>Repeating the same logical operation should not create the side
+effect again.</p>
+</blockquote>
+<p>You generate an identifier:</p>
+<pre><code>payment_attempt_7421</code></pre>
+<p>Send:</p>
+<pre><code>POST /payments
+Idempotency-Key: payment_attempt_7421</code></pre>
+<p>If the connection disappears, you retry:</p>
+<pre><code>POST /payments
+Idempotency-Key: payment_attempt_7421</code></pre>
+<p>The provider recognizes:</p>
+<blockquote>
+<p>“I've already processed this logical request.”</p>
+</blockquote>
+<p>Instead of creating another payment, it returns the existing
+result.</p>
+<p>Adyen currently supports idempotency on POST requests and
+specifically recommends retrying a timed-out payment using the
+<strong>same idempotency key</strong>; if the original request was
+already processed, the previous result can be returned rather than
+creating the operation again. <a
+href="https://docs.adyen.com/development-resources/api-idempotency?utm_source=chatgpt.com">Adyen
+Docs</a></p>
+<p>AWS describes essentially the same reliability pattern: clients send
+a unique request identifier so that retrying the same intent can produce
+a semantically equivalent result rather than repeating the side effect.
+<a
+href="https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/?utm_source=chatgpt.com">Amazon
+Web Services, Inc.</a></p>
+<hr />
+<h1 id="but-dont-write-one-idempotency-test-and-declare-victory">But
+don't write one idempotency test and declare victory</h1>
+<p>A weak test might be:</p>
+<pre><code>Send request
+Send same request again
+Expect one payment
+
+PASS</code></pre>
+<p>Useful—but insufficient.</p>
+<p>Think like a tester.</p>
+<p>What variables matter?</p>
+<hr />
+<h2 id="experiment-1--same-key-same-request">Experiment 1 — Same key,
+same request</h2>
+<pre><code>Key: ABC123
+Amount: €100
+
+send
+send
+send
+send</code></pre>
+<p>Expected business result:</p>
+<pre><code>one payment</code></pre>
+<p>Good.</p>
+<hr />
+<h2 id="experiment-2--same-key-modified-request">Experiment 2 — Same
+key, modified request</h2>
+<p>Now:</p>
+<pre><code>Request 1
+Key: ABC123
+Amount: €100</code></pre>
+<p>then:</p>
+<pre><code>Request 2
+Key: ABC123
+Amount: €1,000</code></pre>
+<p>What should happen?</p>
+<p>This is not obviously the same intent anymore.</p>
+<p>Your system should not silently say:</p>
+<pre><code>Sure, €1,000.</code></pre>
+<p>A well-designed idempotency mechanism needs rules around
+<strong>semantic equivalence</strong>, not merely duplicate strings.
+AWS's Builders' Library explicitly discusses this distinction when
+describing safe retries. <a
+href="https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/?utm_source=chatgpt.com">Amazon
+Web Services, Inc.</a></p>
+<p>A tester should therefore investigate:</p>
+<pre><code>Which request fields are compared?
+
+What happens if payload changes?
+
+What identifies &quot;the same payment intent&quot;?</code></pre>
+<hr />
+<h1 id="experiment-3--different-key-same-order">Experiment 3 — Different
+key, same order</h1>
+<p>This one is even more interesting.</p>
+<pre><code>POST /payments
+Order: 7421
+Idempotency-Key: A</code></pre>
+<p>Then:</p>
+<pre><code>POST /payments
+Order: 7421
+Idempotency-Key: B</code></pre>
+<p>The payment provider may quite legitimately create:</p>
+<pre><code>Payment 1
+Payment 2</code></pre>
+<p>because from its perspective those are two separate intents.</p>
+<p>But your <strong>business system</strong> may know:</p>
+<blockquote>
+<p>Order 7421 should only be paid once.</p>
+</blockquote>
+<p>This exposes an important difference:</p>
+<pre><code>Payment-provider idempotency
+
+≠
+
+Business-level duplicate prevention</code></pre>
+<p>The provider protects:</p>
+<pre><code>same request being retried</code></pre>
+<p>Your application may also need to protect:</p>
+<pre><code>same order accidentally being paid twice</code></pre>
+<p>Those are related but different problems.</p>
+<p>That is precisely the kind of distinction strong API testers learn to
+look for.</p>
+<hr />
+<h1 id="think-about-the-customer-double-clicking">Think about the
+customer double-clicking</h1>
+<p>Users create retry scenarios too.</p>
+<p>Imagine this:</p>
+<pre><code>Customer clicks PAY</code></pre>
+<p>Button remains enabled for 600 ms.</p>
+<p>Customer becomes impatient.</p>
+<pre><code>CLICK
+CLICK
+CLICK</code></pre>
+<p>Your frontend sends:</p>
+<pre><code>Payment request A
+Payment request B
+Payment request C</code></pre>
+<p>You could fix the UI:</p>
+<pre><code>disable button after click</code></pre>
+<p>Good UX improvement.</p>
+<p>But is that sufficient protection?</p>
+<p>No.</p>
+<p>A user can still:</p>
+<pre><code>call your API directly
+refresh
+use another tab
+experience browser retry
+experience proxy retry
+use two devices</code></pre>
+<p>So the correct question is not:</p>
+<blockquote>
+<p>“Did we disable the button?”</p>
+</blockquote>
+<p>It is:</p>
+<blockquote>
+<p><strong>“What prevents the business transaction from happening
+twice?”</strong></p>
+</blockquote>
+<p>UI prevention is helpful.</p>
+<p>Server-side protection is essential.</p>
+<p>This mirrors yesterday's authorization lesson:</p>
+<pre><code>Hidden button ≠ security
+
+Disabled payment button ≠ duplicate-payment protection</code></pre>
+<hr />
+<h1 id="retry-testing-should-deliberately-create-uncertainty">Retry
+testing should deliberately create uncertainty</h1>
+<p>Most automated payment tests create clean states:</p>
+<pre><code>Provider success</code></pre>
+<p>or:</p>
+<pre><code>Provider failure</code></pre>
+<p>Production gives you much uglier states.</p>
+<p>Try injecting faults at specific points.</p>
+<p>For example:</p>
+<pre><code>Shop
+ |
+ | POST payment
+ v
+Provider receives payment
+ |
+ | payment created
+ X ← connection cut here</code></pre>
+<p>This is a dramatically better test than simply mocking:</p>
+<pre><code>500 Internal Server Error</code></pre>
+<p>because you're testing the difficult question:</p>
+<blockquote>
+<p><strong>The side effect occurred, but the caller doesn't know it.
+What happens next?</strong></p>
+</blockquote>
+<p>Other useful fault points:</p>
+<pre><code>connection lost before provider receives request
+
+connection lost after provider receives request
+
+provider processes request slowly
+
+provider returns 500 before processing
+
+provider returns 500 after partial processing
+
+client timeout occurs before provider timeout
+
+database update fails after successful payment
+
+order creation succeeds but payment-event persistence fails</code></pre>
+<p>Now your testing starts resembling production failure modes instead
+of idealized API examples.</p>
+<hr />
+<h1 id="retry-logic-itself-can-create-outages">Retry logic itself can
+create outages</h1>
+<p>Suppose the payment provider becomes slow.</p>
+<p>You have:</p>
+<pre><code>10,000 checkout requests</code></pre>
+<p>All requests timeout.</p>
+<p>Your code immediately retries every one.</p>
+<p>Now the provider receives:</p>
+<pre><code>original 10,000 requests
++
+10,000 retries</code></pre>
+<p>Some timeout again.</p>
+<p>Another retry:</p>
+<pre><code>+10,000</code></pre>
+<p>Your recovery mechanism is now attacking the struggling
+dependency.</p>
+<p>AWS warns explicitly that retries consume additional backend capacity
+and can worsen overloaded systems. In layered systems, retries can
+multiply dramatically; AWS gives an example where three retries across a
+five-layer call chain can increase database load by <strong>243
+times</strong>. <a
+href="https://aws.amazon.com/de/builders-library/timeouts-retries-and-backoff-with-jitter/?utm_source=chatgpt.com">Amazon
+Web Services, Inc.</a></p>
+<p>That's why mature retry strategies often include:</p>
+<pre><code>maximum attempts
+exponential backoff
+jitter
+retryable-error classification</code></pre>
+<p>AWS currently recommends exactly these protections and specifically
+advises teams to create and exercise retry test scenarios rather than
+simply assuming an SDK's defaults are appropriate. <a
+href="https://docs.aws.amazon.com/de_de/wellarchitected/latest/framework/rel_mitigate_interaction_failure_limit_retries.html?utm_source=chatgpt.com">AWS
+Dokumentation</a></p>
+<p>So performance testing isn't separate from functional payment
+testing.</p>
+<p>Retry behavior affects both.</p>
+<hr />
+<h1 id="what-is-exponential-backoff">What is exponential backoff?</h1>
+<p>Suppose a payment dependency is unavailable.</p>
+<p>Bad retry:</p>
+<pre><code>Attempt 1 → 0 ms
+Attempt 2 → 0 ms
+Attempt 3 → 0 ms
+Attempt 4 → 0 ms</code></pre>
+<p>Better:</p>
+<pre><code>Attempt 1
+
+wait ~1 sec
+
+Attempt 2
+
+wait ~2 sec
+
+Attempt 3
+
+wait ~4 sec
+
+Attempt 4</code></pre>
+<p>That's the basic idea of exponential backoff.</p>
+<p>But imagine one million clients all retrying exactly at:</p>
+<pre><code>1 sec
+2 sec
+4 sec</code></pre>
+<p>You create traffic spikes.</p>
+<p>So systems often add <strong>jitter</strong>—some randomness to
+spread those retries across time. AWS explains that backoff plus jitter
+helps prevent synchronized retry bursts from repeatedly overwhelming a
+recovering service. <a
+href="https://aws.amazon.com/de/builders-library/timeouts-retries-and-backoff-with-jitter/?utm_source=chatgpt.com">Amazon
+Web Services, Inc.</a></p>
+<p>For a tester, that suggests experiments like:</p>
+<pre><code>kill payment dependency
+
+generate 5,000 concurrent transactions
+
+restore dependency
+
+observe retry distribution</code></pre>
+<p>You're asking:</p>
+<blockquote>
+<p>Does the system recover gracefully?</p>
+</blockquote>
+<p>not simply:</p>
+<blockquote>
+<p>Does retry work?</p>
+</blockquote>
+<hr />
+<h1 id="payment-testing-should-include-webhooks">Payment testing should
+include webhooks</h1>
+<p>Now we add another layer.</p>
+<p>Many payment flows are asynchronous.</p>
+<p>You send a request.</p>
+<p>The initial response may tell you:</p>
+<pre><code>request received</code></pre>
+<p>but later a webhook tells you:</p>
+<pre><code>payment authorized
+
+or
+
+capture succeeded
+
+or
+
+capture failed</code></pre>
+<p>Adyen's manual-capture flow is a concrete example. A capture API
+request returns a status indicating that the request was received, while
+the eventual outcome comes asynchronously through capture-related
+webhooks. <a
+href="https://docs.adyen.com/online-payments/capture?utm_source=chatgpt.com">Adyen
+Docs</a></p>
+<p>That gives us another important tester rule:</p>
+<blockquote>
+<p><strong>API acknowledgement is not necessarily business
+completion.</strong></p>
+</blockquote>
+<p>For example:</p>
+<pre><code>POST /capture
+
+HTTP 200</code></pre>
+<p>doesn't automatically mean:</p>
+<pre><code>merchant got money</code></pre>
+<p>You must understand what that response means in the domain.</p>
+<hr />
+<h1 id="it-gets-even-more-interesting-success-can-later-change">It gets
+even more interesting: success can later change</h1>
+<p>Here is a payment behavior that many testers would initially find
+surprising.</p>
+<p>Adyen documents that, in rare situations, a capture may later receive
+a <code>CAPTURE_FAILED</code> event <strong>even after a previous
+capture webhook indicated success</strong>, because the card scheme or
+issuing bank can reject the capture later. <a
+href="https://docs.adyen.com/online-payments/capture?utm_source=chatgpt.com">Adyen
+Docs</a></p>
+<p>Think about what that means for your application.</p>
+<p>Perhaps:</p>
+<pre><code>10:00:00
+CAPTURE success</code></pre>
+<p>Your system changes:</p>
+<pre><code>Order → PAID</code></pre>
+<p>Warehouse begins fulfillment.</p>
+<p>Then:</p>
+<pre><code>10:04:00
+CAPTURE_FAILED</code></pre>
+<p>What happens?</p>
+<p>Possible systems involved:</p>
+<pre><code>Order service
+Payment service
+Inventory
+Warehouse
+Email
+Invoice
+ERP
+Analytics
+Customer account</code></pre>
+<p>This isn't just:</p>
+<blockquote>
+<p>“Handle webhook.”</p>
+</blockquote>
+<p>It is a <strong>state reconciliation problem</strong>.</p>
+<hr />
+<h1 id="duplicate-webhooks-are-a-fantastic-test">Duplicate webhooks are
+a fantastic test</h1>
+<p>Suppose your payment system receives:</p>
+<pre><code>CAPTURE_SUCCESS</code></pre>
+<p>and processes:</p>
+<pre><code>Order → PAID
+Send invoice
+Add accounting record
+Send warehouse command
+Send confirmation email</code></pre>
+<p>Then the same webhook arrives again.</p>
+<p>What happens?</p>
+<p>Bad implementation:</p>
+<pre><code>Invoice 1
+Invoice 2
+
+Warehouse order 1
+Warehouse order 2
+
+Email 1
+Email 2</code></pre>
+<p>Potentially much worse if financial side effects exist.</p>
+<p>Your webhook consumer should usually tolerate duplicate delivery
+appropriately.</p>
+<p>This is again idempotency—but on the <strong>event consumer</strong>
+side.</p>
+<p>Today's useful pattern is therefore:</p>
+<pre><code>API retries
+        ↓
+idempotency needed
+
+Webhook retries
+        ↓
+idempotency needed</code></pre>
+<p>The pattern keeps reappearing.</p>
+<hr />
+<h1 id="now-reuse-our-event-testing-model">Now reuse our event-testing
+model</h1>
+<p>When we discussed sports and ad tech, we used:</p>
+<pre><code>Missing
+Duplicate
+Late
+Reordered
+Corrected</code></pre>
+<p>Apply it to payment webhooks.</p>
+<h3 id="missing">Missing</h3>
+<pre><code>PAYMENT_CAPTURED never arrives</code></pre>
+<p>How does your system discover this?</p>
+<hr />
+<h3 id="duplicate">Duplicate</h3>
+<pre><code>PAYMENT_CAPTURED
+PAYMENT_CAPTURED</code></pre>
+<p>Does anything happen twice?</p>
+<hr />
+<h3 id="late">Late</h3>
+<pre><code>payment succeeds
+
+webhook arrives 20 minutes later</code></pre>
+<p>What does the customer see during those 20 minutes?</p>
+<hr />
+<h3 id="reordered">Reordered</h3>
+<p>Perhaps you observe:</p>
+<pre><code>CAPTURE event</code></pre>
+<p>before some internal event your application expected first.</p>
+<p>Does the consumer crash?</p>
+<p>Buffer?</p>
+<p>Reconcile?</p>
+<hr />
+<h3 id="corrected--later-failure">Corrected / later failure</h3>
+<pre><code>capture appears successful
+
+later:
+CAPTURE_FAILED</code></pre>
+<p>Can the system recover its business state?</p>
+<p>Same testing model.</p>
+<p>Different domain.</p>
+<p>This transferability is something I want you to notice.</p>
+<p>You're gradually building reusable <strong>mental models</strong>,
+not memorizing industry checklists.</p>
+<hr />
+<h1 id="the-biggest-payment-bug-might-happen-after-checkout">The biggest
+payment bug might happen after checkout</h1>
+<p>Imagine your browser test says:</p>
+<pre><code>Add product
+Checkout
+Enter card
+Success page appears
+
+PASS</code></pre>
+<p>Everything looks excellent.</p>
+<p>But production data contains:</p>
+<pre><code>10,000 successful checkout pages
+9,997 orders
+9,991 authorized payments
+9,950 captures</code></pre>
+<p>Where did the transactions disappear?</p>
+<p>This is where <strong>reconciliation</strong> becomes one of your
+strongest quality tools.</p>
+<p>A healthy payment system often needs ways to compare:</p>
+<pre><code>Checkout attempts
+        ↓
+Orders created
+        ↓
+Payment intents
+        ↓
+Authorizations
+        ↓
+Captures
+        ↓
+Refunds
+        ↓
+Accounting / settlement</code></pre>
+<p>These numbers don't necessarily have to match exactly.</p>
+<p>For example, some authorizations legitimately fail.</p>
+<p>But unexplained divergence tells you where to investigate.</p>
+<hr />
+<h1 id="build-business-invariants">Build business invariants</h1>
+<p>Instead of thinking only in individual test cases, create rules that
+should generally remain true.</p>
+<p>For example:</p>
+<blockquote>
+<p>A successfully captured payment should be associated with exactly one
+known merchant order.</p>
+</blockquote>
+<p>Another:</p>
+<blockquote>
+<p>Total refunded amount should not exceed captured amount unless the
+payment method explicitly supports a different business rule.</p>
+</blockquote>
+<p>Interestingly, Adyen's current idempotency documentation describes
+platform-level safeguards around modification operations—for example,
+refund totals are normally prevented from exceeding captured value, and
+capture amounts are constrained by authorization rules. <a
+href="https://docs.adyen.com/development-resources/api-idempotency?utm_source=chatgpt.com">Adyen
+Docs</a></p>
+<p>Other possible invariants:</p>
+<pre><code>Captured amount ≤ authorized amount</code></pre>
+<p>or for systems supporting partial capture:</p>
+<pre><code>sum(captures) ≤ authorized amount</code></pre>
+<p>or:</p>
+<pre><code>order marked PAID
+→ must have valid payment evidence</code></pre>
+<p>or:</p>
+<pre><code>refund success
+→ corresponding capture must exist</code></pre>
+<p>You can automate these as API/integration/data-level checks.</p>
+<p>That's often much more powerful than another browser scenario.</p>
+<hr />
+<h1 id="dont-mock-away-the-thing-you-need-to-learn-about">Don't mock
+away the thing you need to learn about</h1>
+<p>Suppose your payment tests do:</p>
+<pre><code>paymentProvider.mockSuccess()</code></pre>
+<p>for every test.</p>
+<p>That's useful for testing checkout logic.</p>
+<p>But you're not testing:</p>
+<pre><code>timeouts
+duplicates
+slow responses
+provider errors
+webhook retries
+out-of-order events
+idempotency
+capture failures</code></pre>
+<p>Ministry of Testing's recent discussion of “shift-down” testing makes
+a useful point: testing core business behavior directly—below the UI—can
+provide faster, more reliable feedback than trying to drive everything
+through browser automation. <a
+href="https://www.ministryoftesting.com/insights/testing-software-smarter-not-harder-the-shift-down-strategy?utm_source=chatgpt.com">Ministry
+of Testing</a></p>
+<p>A good payment strategy might therefore contain several levels:</p>
+<pre><code>UI
+↓
+Does checkout behave correctly for the shopper?
+
+API / integration
+↓
+Are payment requests and business rules correct?
+
+Component
+↓
+Does our payment orchestration handle failures?
+
+Contract
+↓
+Can we consume provider responses/webhooks?
+
+Resilience tests
+↓
+What happens during timeout/retry/duplicate/delay?
+
+Production reconciliation
+↓
+Do real business states remain consistent?</code></pre>
+<p>No single layer tells the whole story.</p>
+<hr />
+<h1
+id="james-bachs-requirement-question-becomes-very-important-here">James
+Bach's requirement question becomes very important here</h1>
+<p>Suppose the requirement says:</p>
+<blockquote>
+<p>“Retry payment when the provider times out.”</p>
+</blockquote>
+<p>If you implement that literally, you might create duplicate
+payments.</p>
+<p>James Bach's classic point about requirements-based testing is
+relevant: knowing <strong>what</strong> the requirement says isn't
+enough. Testers need to understand <strong>why the requirement
+exists</strong>. <a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Why does the PO want retries?</p>
+<p>Probably not:</p>
+<blockquote>
+<p>“We love sending HTTP requests repeatedly.”</p>
+</blockquote>
+<p>The underlying goal is more like:</p>
+<blockquote>
+<p><strong>Temporary infrastructure problems should not cause customers
+to lose legitimate purchases.</strong></p>
+</blockquote>
+<p>Once you understand the goal, better questions appear:</p>
+<pre><code>Which errors are safe to retry?
+
+How do we know whether the original operation happened?
+
+Do we reuse the same idempotency key?
+
+How many retries?
+
+Who performs the retry?
+
+What does the customer see?
+
+When do we stop?
+
+How do we reconcile uncertain outcomes?</code></pre>
+<p>Now you're testing the <strong>business objective</strong>, not
+merely the requirement sentence.</p>
+<hr />
+<h1 id="soft-skill-how-to-report-an-ambiguous-payment-problem">Soft
+skill: how to report an ambiguous payment problem</h1>
+<p>Imagine you discover this:</p>
+<pre><code>Checkout request timed out.
+
+Payment provider shows:
+AUTHORIZED €99
+
+Our database shows:
+PAYMENT_FAILED
+
+Customer account shows:
+Order cancelled</code></pre>
+<p>Don't immediately write:</p>
+<blockquote>
+<p><strong>CRITICAL — PAYMENT BROKEN</strong></p>
+</blockquote>
+<p>Nor:</p>
+<blockquote>
+<p>“Provider is buggy.”</p>
+</blockquote>
+<p>A stronger report might say:</p>
+<blockquote>
+<p>During a simulated timeout after the provider processed the request,
+the provider recorded an €99 authorization while our payment record
+changed to FAILED and the order was cancelled. The customer could
+therefore believe the payment failed while funds are still reserved. I
+haven't yet confirmed whether our timeout handler retries with the same
+payment identifier. I think the main risk is inconsistent
+customer/payment state and possible duplicate authorization if the
+shopper retries.</p>
+</blockquote>
+<p>Look at the structure:</p>
+<pre><code>Observation
+
+↓
+
+Evidence
+
+↓
+
+What remains unknown
+
+↓
+
+Customer/business consequence
+
+↓
+
+Next useful investigation</code></pre>
+<p>Michael Bolton describes testing as socially challenging partly
+because testers challenge people's beliefs about how the product
+behaves. His recommendation is essentially to discover and communicate
+facts diligently rather than turning the situation into interpersonal
+conflict. <a
+href="https://developsense.com/blog/2023/03/testing-is-socially-challenging?utm_source=chatgpt.com">DevelopSense</a></p>
+<p>That style makes developers want to investigate with you.</p>
+<hr />
+<h1
+id="a-developer-says-but-this-can-happen-only-when-the-network-drops-at-exactly-the-right-moment">A
+developer says: “But this can happen only when the network drops at
+exactly the right moment”</h1>
+<p>Don't immediately argue.</p>
+<p>Ask:</p>
+<blockquote>
+<p><strong>How often do payment requests happen?</strong></p>
+</blockquote>
+<p>Imagine:</p>
+<pre><code>1 payment per month</code></pre>
+<p>Then perhaps the risk is tiny.</p>
+<p>But suppose:</p>
+<pre><code>2 million payments per month</code></pre>
+<p>Even a rare timing window can matter.</p>
+<p>Risk depends on things like:</p>
+<pre><code>probability
+exposure
+impact
+detectability
+recoverability</code></pre>
+<p>A double charge may be rare.</p>
+<p>Its consequences could still include:</p>
+<pre><code>customer complaints
+refund processing
+chargebacks
+support cost
+lost trust
+payment-provider penalties
+accounting reconciliation</code></pre>
+<p>This is why James Bach's risk-focused material emphasizes telling a
+compelling <strong>risk story</strong> rather than pretending that risk
+is captured by a simplistic numeric severity label. <a
+href="https://www.satisfice.com/rapid-software-testing-focused-risk?utm_source=chatgpt.com">Satisfice</a></p>
+<hr />
+<h1 id="a-practical-payment-testing-model">A practical payment testing
+model</h1>
+<p>When you work on a payment feature, don't begin with:</p>
+<blockquote>
+<p>“Which endpoint should I automate?”</p>
+</blockquote>
+<p>Begin here:</p>
+<h3 id="1-intent">1. Intent</h3>
+<p>What is the customer/business trying to accomplish?</p>
+<pre><code>Pay for order 7421</code></pre>
+<h3 id="2-identity">2. Identity</h3>
+<p>How is that business intent uniquely represented?</p>
+<pre><code>order ID
+payment ID
+idempotency key
+provider reference</code></pre>
+<h3 id="3-state">3. State</h3>
+<p>What states can the payment enter?</p>
+<pre><code>CREATED
+AUTHORIZED
+CAPTURED
+FAILED
+CANCELLED
+REFUNDED</code></pre>
+<h3 id="4-transitions">4. Transitions</h3>
+<p>Which state changes are legal?</p>
+<pre><code>AUTHORIZED → CAPTURED
+AUTHORIZED → CANCELLED
+
+CAPTURED → REFUNDED</code></pre>
+<h3 id="5-side-effects">5. Side effects</h3>
+<p>What else happens?</p>
+<pre><code>order status
+inventory
+invoice
+email
+shipment
+accounting
+analytics</code></pre>
+<h3 id="6-failure-points">6. Failure points</h3>
+<p>Where can communication or processing fail?</p>
+<pre><code>before provider
+inside provider
+after provider
+database
+event bus
+webhook
+downstream service</code></pre>
+<h3 id="7-retry-behavior">7. Retry behavior</h3>
+<p>Which operations can safely be repeated?</p>
+<h3 id="8-reconciliation">8. Reconciliation</h3>
+<p>How do we discover that two systems disagree?</p>
+<p>That is already the skeleton of a serious payment test strategy.</p>
+<hr />
+<h1 id="what-i-would-automate-first">What I would automate first</h1>
+<p>Suppose you join a team tomorrow and discover that payment tests
+currently contain only:</p>
+<pre><code>Successful card
+Declined card</code></pre>
+<p>I would not immediately add 30 payment-method UI cases.</p>
+<p>I would first investigate whether these business-critical scenarios
+are covered:</p>
+<pre><code>timeout before known result
+
+same request retried with same idempotency key
+
+duplicate payment request with different key
+
+duplicate webhook
+
+delayed webhook
+
+provider success + local database failure
+
+authorization success + capture failure
+
+partial capture
+
+duplicate capture attempt
+
+refund after partial capture</code></pre>
+<p>Why?</p>
+<p>Because these scenarios threaten <strong>transaction
+integrity</strong>.</p>
+<p>If Visa works but the Mastercard logo is slightly misaligned, that's
+annoying.</p>
+<p>If one customer can be charged twice, that's a different class of
+risk.</p>
+<p>Testing effort should reflect that.</p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>Your shop receives an order:</p>
+<pre><code>Order: #9501
+Amount: €120</code></pre>
+<p>Timeline:</p>
+<pre><code>10:00:00
+Shop → POST /payments
+Idempotency-Key: K1
+
+10:00:02
+Payment provider authorizes €120.
+
+10:00:03
+Network connection breaks.
+
+10:00:05
+Shop records:
+PAYMENT_TIMEOUT
+
+10:00:06
+Backend retries:
+POST /payments
+Idempotency-Key: K2
+
+10:00:08
+Provider authorizes another €120.
+
+10:00:10
+First payment webhook arrives:
+AUTHORIZED €120
+
+10:00:11
+Second payment webhook arrives:
+AUTHORIZED €120</code></pre>
+<p>Customer now has:</p>
+<pre><code>Authorization A: €120
+Authorization B: €120</code></pre>
+<p>Your task is <strong>not</strong> merely to say:</p>
+<blockquote>
+<p>“They should reuse K1.”</p>
+</blockquote>
+<p>Think deeper.</p>
+<p>Identify:</p>
+<ol type="1">
+<li><p><strong>The technical defect.</strong></p></li>
+<li><p><strong>The business defect.</strong></p></li>
+<li><p><strong>Which system should prevent the
+duplicate.</strong></p></li>
+<li><p><strong>What data would let you correlate both authorizations to
+Order #9501.</strong></p></li>
+<li><p><strong>What the customer should see while the first payment
+outcome is unknown.</strong></p></li>
+<li><p><strong>How monitoring could automatically detect that one order
+has multiple successful payment authorizations.</strong></p></li>
+</ol>
+<p>Then design only <strong>three experiments</strong>.</p>
+<p>Choose the three that would give you the most confidence that this
+entire class of defect cannot easily reach production.</p>
+<p>That restriction is deliberate.</p>
+<p>A good tester can generate 100 cases.</p>
+<p>A strong tester can explain:</p>
+<blockquote>
+<p><strong>Why these three deserve to run first.</strong></p>
+</blockquote>
+<p>And that is today's core lesson:</p>
+<blockquote>
+<p><strong>Payment testing is not primarily about entering credit-card
+numbers. It is about preserving transaction integrity when systems fail,
+retry, disagree, and recover.</strong></p>
+</blockquote>
+<p>Once you begin thinking this way, you are no longer merely testing
+checkout.</p>
+<p>You are testing a <strong>distributed financial
+workflow</strong>.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James Bach's short paper on risk and requirements is worth revisiting
+because payment requirements often describe the happy business rule
+while leaving failure semantics implicit. AWS's Builders' Library
+articles are excellent practitioner material for understanding why
+retries, timeouts, backoff and idempotency require deliberate design.
+Adyen's payment documentation is useful as a real-world payment domain
+reference rather than as something to memorize. <a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing?utm_source=chatgpt.com">Adyen
+Docs+3Satisfice+3Amazon Web Services, Inc.+3</a></p>
+<p><a
+href="https://www.satisfice.com/download/risk-and-requirements-based-testing?utm_source=chatgpt.com">James
+Bach — Risk and Requirements-Based Testing</a></p>
+<p><a
+href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/?utm_source=chatgpt.com">AWS
+Builders' Library — Timeouts, retries and backoff with jitter</a></p>
+<p><a
+href="https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/?utm_source=chatgpt.com">AWS
+Builders' Library — Making retries safe with idempotent APIs</a></p>
+<p><a
+href="https://docs.adyen.com/development-resources/api-idempotency?utm_source=chatgpt.com">Adyen
+— API idempotency</a></p>
+<p><a
+href="https://docs.adyen.com/account/payments-lifecycle?utm_source=chatgpt.com">Adyen
+— Payments lifecycle</a></p>
+<p><a
+href="https://docs.adyen.com/online-payments/capture?utm_source=chatgpt.com">Adyen
+— Capturing payments</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-06.html" rel="prev"><span>Previous</span>SaaS Authorization Testing: Hiding the Button Is Not Security</a><a href="/qa-blog/posts/qa-thinking-day-08.html" rel="next"><span>Next</span>Marketplace Refunds: Follow the Money, Not the Status</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

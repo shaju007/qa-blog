@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most functional test cases for &quot;add to cart&quot; and &quot;checkout&quot; are written as if time doesn&#39;t exist. Step 1: check stock. Step 2: reserve stock. Step 3: charge card. Step 4: confirm order. Each step passes in isol">
+  <meta name="color-scheme" content="light">
+  <title>Overselling Isn&#39;t a Bug in the Code — It&#39;s a Bug in the Timeline | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 15</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-15">QA Thinking — Day 15</h1>
+<h2
+id="overselling-isnt-a-bug-in-the-code--its-a-bug-in-the-timeline">Overselling
+Isn't a Bug in the Code — It's a Bug in the Timeline</h2>
+<p>Most functional test cases for "add to cart" and "checkout" are
+written as if time doesn't exist. Step 1: check stock. Step 2: reserve
+stock. Step 3: charge card. Step 4: confirm order. Each step passes in
+isolation, in a single-threaded mental model, and the ticket gets
+closed.</p>
+<p>But e-commerce systems don't run one customer at a time. During a
+flash sale, a restock drop, or just a popular product on a normal
+Tuesday, dozens of "last item in stock" journeys can be executing
+concurrently. The bug isn't in any single request — it's in the
+<em>gap</em> between the moment stock is checked and the moment stock is
+decremented. If two requests both read "1 in stock" before either one
+writes back "0 in stock," you've sold the same unit twice. Nobody wrote
+broken code; they wrote code that's correct for one customer and wrong
+for two customers at the same instant.</p>
+<p>This matters for testers specifically because sequential, happy-path
+scripts are structurally incapable of finding this class of bug. You
+need a different mental model, not just more test cases.</p>
+<h3 id="the-gap-youre-actually-testing">The gap you're actually
+testing</h3>
+<p>Break the "buy" flow into its real states, not its UI steps:</p>
+<ul>
+<li><strong>Available</strong> → stock exists and is unclaimed</li>
+<li><strong>Reserved</strong> → a customer has started checkout and
+stock is provisionally held</li>
+<li><strong>Committed</strong> → payment succeeded and the reservation
+became a real sale</li>
+<li><strong>Released</strong> → the reservation expired or the customer
+abandoned checkout, stock returns to available</li>
+</ul>
+<p>The dangerous question isn't "does the stock count go down when I buy
+something?" It's: <strong>what happens to a unit that is simultaneously
+"reserved" by two different carts before either one commits?</strong>
+Good implementations answer this with atomic check-and-decrement,
+database row locking (<code>SELECT ... FOR UPDATE</code>), or a
+reservation system with TTL expiry so a unit can never be both sold and
+available at once. Weak implementations answer it with "check stock,
+then separately update stock" — two operations that look atomic in a
+diagram but aren't atomic in the database. One recent write-up on this
+exact failure mode is worth reading closely for the mechanics: <a
+href="https://dev.to/iurii_rogulia/preventing-overselling-inventory-locks-under-concurrent-checkouts-3m7e">Preventing
+Overselling: Inventory Locks Under Concurrent Checkouts</a>. It's
+engineering-focused, but as a tester you should be reading it for the
+<em>interleavings</em>, not the code — where exactly can two requests
+land between read and write.</p>
+<p>For a broader technique on designing tests that deliberately force
+these interleavings instead of hoping to catch them by luck, see <a
+href="https://qaskills.sh/blog/concurrency-testing-race-conditions-guide">Race
+Condition Testing: Interleavings That Reproduce Shared-State Bugs</a> —
+it frames the core skill correctly: you're not looking for a flaky bug,
+you're constructing the specific ordering that reproduces a real one,
+reliably, on demand.</p>
+<h3
+id="how-to-actually-test-for-it-without-a-chaos-engineering-team">How to
+actually test for it (without a chaos engineering team)</h3>
+<p>You don't need distributed systems expertise to start finding these
+bugs. You need to stop testing serially.</p>
+<p>Michael Bolton's <a
+href="https://developsense.com/blog/2012/07/few-hiccupps">FEW
+HICCUPPS</a> offers a useful way to decide whether the result is
+actually a problem: compare the product's behavior with its claims,
+purpose, and other parts of the system. Ask the Product Owner whether
+backorders are allowed. If they are not, compare successful orders and
+active reservations with sellable inventory; two successful
+<em>add-to-cart</em> responses alone do not prove overselling.</p>
+<ol type="1">
+<li><strong>Set stock to exactly 1</strong>, then fire two (or ten)
+concurrent add-to-cart-and-checkout requests at the same SKU. A simple
+script with parallel HTTP calls, or a tool like JMeter/k6 with a
+synchronized start, is enough. Count how many succeeded. If more than 1
+order succeeds when backorders are forbidden, investigate where
+inventory was reserved.</li>
+<li><strong>Test the abandonment path under load.</strong> What happens
+to a reservation when a user closes the tab mid-checkout? Does it expire
+and release stock, or does it silently hold inventory hostage until a
+background job cleans it up an hour later? That's a real, common failure
+mode that looks like "we're out of stock" when the warehouse is actually
+full.</li>
+<li><strong>Test the boundary, not the middle.</strong> Stock = 1 with 2
+concurrent buyers is the interesting case. Stock = 1000 with 2 buyers
+tells you nothing.</li>
+<li><strong>Ask engineering directly: "is check-and-decrement atomic, or
+two separate operations?"</strong> This is a design question, not an
+implementation detail, and it's a legitimate thing for a tester to ask
+in refinement — before the race condition exists in production. If the
+answer is "we check the count, then update it in a separate call,"
+that's a risk to flag before a single test is run.</li>
+</ol>
+<h3 id="the-business-framing-that-gets-this-prioritized">The business
+framing that gets this prioritized</h3>
+<p>Engineers will sometimes deprioritize this as an edge case ("how
+often does that really happen?"). Reframe it in terms a product owner or
+business stakeholder immediately understands: overselling during your
+highest-traffic moment — a flash sale, a limited drop, a restock
+announcement — creates the worst possible customer experience (charged
+for something you don't get), damages trust exactly when you have the
+most new customers watching, and generates support/refund cost
+proportional to how well the campaign worked. The failure rate scales
+<em>with success</em>, which is precisely why it's easy to miss in
+normal-load testing and expensive to discover in production.</p>
+<h3 id="challenge">Challenge</h3>
+<p>Pick a "add to cart" or checkout flow you test regularly (or a demo
+e-commerce app if you don't have write access to a real one). Set
+inventory to exactly 1 for a test SKU, then fire 5 concurrent checkout
+requests using a script or a load tool with a synchronized start.
+Record: how many succeeded, what the final stock count shows, and
+whether the system's response to the "losing" requests is honest (a
+clear "no longer available") or misleading (a fake success that fails
+later). Write down the specific line of the system — is
+check-and-reserve atomic or two steps — that you'd now ask an engineer
+to confirm.</p>
+<p><strong>Sources:</strong></p>
+<ul>
+<li><a href="https://developsense.com/blog/2012/07/few-hiccupps">Michael
+Bolton — FEW HICCUPPS</a></li>
+<li><a
+href="https://dev.to/iurii_rogulia/preventing-overselling-inventory-locks-under-concurrent-checkouts-3m7e">Preventing
+Overselling: Inventory Locks Under Concurrent Checkouts –
+dev.to</a></li>
+<li><a
+href="https://qaskills.sh/blog/concurrency-testing-race-conditions-guide">Race
+Condition Testing: Interleavings That Reproduce Shared-State Bugs –
+QASkills.sh</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-14.html" rel="prev"><span>Previous</span>Ad-Tech Event Integrity: An Auction Win Is Not an Impression, and a 200 OK Is Not a Conversion</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

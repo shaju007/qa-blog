@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Buy 3 get 20% off Category discounts Customer-segment pricing Voucher stacking rules Country-specific campaigns">
+  <meta name="color-scheme" content="light">
+  <title>Feature Flags Change What “the Version” Means | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 11</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-11">QA Thinking — Day 11</h1>
+<h2 id="feature-flags-change-what-the-version-means">Feature Flags
+Change What “the Version” Means</h2>
+<p>Imagine your e-commerce team has built a new promotion engine.</p>
+<p>The old engine calculates discounts like this:</p>
+<pre><code>Cart
+  ↓
+Old promotion service
+  ↓
+Final price</code></pre>
+<p>The new engine supports more advanced rules:</p>
+<pre><code>Buy 3 get 20% off
+Category discounts
+Customer-segment pricing
+Voucher stacking rules
+Country-specific campaigns</code></pre>
+<p>The developers deploy the new code to production, but keep it behind
+a feature flag:</p>
+<pre><code>new-promotion-engine = OFF</code></pre>
+<p>Everyone feels safe.</p>
+<p>The Product Owner says:</p>
+<blockquote>
+<p>“It is deployed, but nobody is using it yet.”</p>
+</blockquote>
+<p>QA tested the new engine in staging.</p>
+<p>CI is green.</p>
+<p>Tomorrow the team plans to enable it for 5% of customers.</p>
+<p>This looks like a good release strategy.</p>
+<p>But the important testing question is not:</p>
+<blockquote>
+<p>“Does the feature work when the flag is ON?”</p>
+</blockquote>
+<p>It is:</p>
+<blockquote>
+<p><strong>What different states can this system now enter, and what
+risks appear when it moves between them?</strong></p>
+</blockquote>
+<p>Feature flags change the meaning of a software release. Once flags
+exist, the code deployed to production is no longer necessarily the
+behavior every user receives.</p>
+<p>A useful model becomes:</p>
+<pre><code>DEPLOYMENT
+      ≠
+RELEASE
+      ≠
+EXPOSURE</code></pre>
+<p>The code may be deployed today, exposed to your QA account today,
+released to 5% tomorrow, increased to 50% next week, and disabled again
+five minutes later.</p>
+<p>Ministry of Testing's April 2026 practitioner article on feature
+flags describes exactly this change: once flags entered the author's
+system, behavior stopped being binary and became conditional on flag
+state, user group, partial rollout, and interaction with other flags.
+Tests passing under one configuration no longer guaranteed the behavior
+of another.</p>
+<p>That makes feature flags a very good subject for learning
+<strong>test strategy, testability, observability, risk analysis,
+collaboration, and production testing</strong> at the same time.</p>
+<hr />
+<h2 id="a-feature-flag-is-not-simply-on-or-off">A feature flag is not
+simply ON or OFF</h2>
+<p>At first glance, this looks binary:</p>
+<pre><code>OFF → old behavior
+ON  → new behavior</code></pre>
+<p>But production may actually look like this:</p>
+<pre><code>Code deployed
+     |
+     +→ Flag OFF for normal users
+     |
+     +→ Flag ON for QA users
+     |
+     +→ Flag ON for employees
+     |
+     +→ Flag ON for 5% of customers
+     |
+     +→ Flag ON for customers in Germany
+     |
+     +→ Flag ON for Premium tenants only
+     |
+     +→ Fallback value if flag evaluation fails</code></pre>
+<p>LaunchDarkly's current documentation describes flags as contextual
+decisions: the application supplies information about a user or
+organization, targeting rules determine which variation that context
+receives, and different customers can therefore receive different
+behavior from the same deployed artifact.</p>
+<p>That changes your testing question.</p>
+<p>Instead of:</p>
+<blockquote>
+<p>“Which version are we testing?”</p>
+</blockquote>
+<p>you may need to ask:</p>
+<blockquote>
+<p><strong>“Which deployed code, flag configuration, user context, data
+state, and rollout stage are we testing?”</strong></p>
+</blockquote>
+<p>That's much closer to the real system.</p>
+<hr />
+<h1 id="the-most-dangerous-assumption-off-means-inactive">The most
+dangerous assumption: OFF means inactive</h1>
+<p>Suppose the flag is:</p>
+<pre><code>new-promotion-engine = OFF</code></pre>
+<p>The UI still uses the old pricing engine.</p>
+<p>You might conclude that the new feature cannot affect customers.</p>
+<p>But imagine the implementation looks like:</p>
+<pre><code>Cart change
+       ↓
+Old pricing engine → shown to customer
+
+       +
+       ↓
+
+New promotion worker
+       ↓
+Processes cart in background
+       ↓
+Writes promotion metadata</code></pre>
+<p>The new output isn't shown.</p>
+<p>But new code is still running.</p>
+<p>The Ministry of Testing practitioner article describes a real case
+where testing behind a disabled flag looked safe, but a background
+process associated with the feature was still active. The problem became
+visible only when the flag was enabled. The team's mistaken assumption
+was effectively:</p>
+<pre><code>disabled = inactive</code></pre>
+<p>when the architecture didn't actually guarantee that.</p>
+<p>That is a very important testing lesson.</p>
+<p>When someone tells you:</p>
+<blockquote>
+<p>“Don't worry, the feature is off.”</p>
+</blockquote>
+<p>ask:</p>
+<blockquote>
+<p><strong>“What exactly becomes inactive when the feature is
+off?”</strong></p>
+</blockquote>
+<p>The answer might be:</p>
+<pre><code>UI only</code></pre>
+<p>or:</p>
+<pre><code>UI + API route</code></pre>
+<p>or:</p>
+<pre><code>entire business workflow</code></pre>
+<p>Those are very different systems.</p>
+<hr />
+<h1 id="test-the-flag-boundary-not-only-the-feature">Test the flag
+boundary, not only the feature</h1>
+<p>Suppose you test:</p>
+<pre><code>Flag OFF
+Old engine gives €80
+✓
+
+Flag ON
+New engine gives €80
+✓</code></pre>
+<p>Good.</p>
+<p>Now consider the transition:</p>
+<pre><code>Customer starts checkout
+Flag OFF
+       ↓
+Cart calculated by old engine
+       ↓
+Product Owner changes rollout
+       ↓
+Flag becomes ON
+       ↓
+Customer changes quantity
+       ↓
+Cart recalculated by new engine</code></pre>
+<p>What happens?</p>
+<p>Perhaps the old engine stored:</p>
+<pre><code>{
+  &quot;discount&quot;: 20
+}</code></pre>
+<p>while the new engine stores:</p>
+<pre><code>{
+  &quot;promotion&quot;: {
+    &quot;campaignId&quot;: 789,
+    &quot;discountLines&quot;: [...]
+  }
+}</code></pre>
+<p>Can the cart survive switching engines halfway through its
+lifetime?</p>
+<p>Stable states might both work:</p>
+<pre><code>OFF → works
+ON  → works</code></pre>
+<p>while the transition:</p>
+<pre><code>OFF → ON</code></pre>
+<p>fails.</p>
+<p>The same applies to rollback:</p>
+<pre><code>ON → OFF</code></pre>
+<p>That rollback path can be even more important.</p>
+<hr />
+<h1 id="a-kill-switch-is-useful-only-if-turning-it-off-is-safe">A kill
+switch is useful only if turning it off is safe</h1>
+<p>Teams often say:</p>
+<blockquote>
+<p>“If anything goes wrong, we'll just disable the flag.”</p>
+</blockquote>
+<p>That sounds excellent.</p>
+<p>But let's test that assumption.</p>
+<p>Imagine the new promotion engine has already processed 20,000
+carts.</p>
+<p>It wrote new promotion records:</p>
+<pre><code>promotion_v2</code></pre>
+<p>The old system knows only:</p>
+<pre><code>promotion_v1</code></pre>
+<p>Now monitoring shows elevated checkout errors.</p>
+<p>Operations switches:</p>
+<pre><code>new-promotion-engine = OFF</code></pre>
+<p>The old code becomes active again.</p>
+<p>What happens when it encounters carts written by the new engine?</p>
+<p>Perhaps:</p>
+<pre><code>500 Internal Server Error</code></pre>
+<p>Your emergency rollback mechanism has just created another
+incident.</p>
+<p>This is why I would explicitly test:</p>
+<pre><code>old → new
+new → old</code></pre>
+<p>using data created on both sides of the transition.</p>
+<p>Feature flags give teams operational control, including rapid
+disabling and gradual rollout, but that control is valuable only when
+both the forward and fallback paths are actually viable. Martin Fowler's
+feature-toggle guidance has long emphasized keeping fallback behavior
+viable and testing the production configuration as well as the intended
+upcoming configuration.</p>
+<hr />
+<h1 id="dont-test-every-combination-of-every-flag">Don't test every
+combination of every flag</h1>
+<p>Now imagine your application has:</p>
+<pre><code>Flag A
+Flag B
+Flag C
+Flag D
+Flag E
+...</code></pre>
+<p>With ten Boolean flags:</p>
+<pre><code>2¹⁰ = 1024 configurations</code></pre>
+<p>Twenty flags:</p>
+<pre><code>2²⁰ = 1,048,576 configurations</code></pre>
+<p>Trying to exhaustively test them is hopeless.</p>
+<p>Fortunately, exhaustive testing is usually unnecessary.</p>
+<p>Fowler's feature-toggle guidance recommends focusing on
+configurations that matter, particularly the current production
+configuration, the configuration intended for the next release, and
+useful fallback configurations rather than blindly enumerating every
+combination.</p>
+<p>LaunchDarkly's current testing guide makes the same practical point.
+It recommends prioritizing the current production state, upcoming
+intended state, and fallback values rather than falling into a
+combinatorial-explosion mindset.</p>
+<p>This is where testing judgment matters.</p>
+<p>Suppose you have:</p>
+<pre><code>new-checkout
+new-search
+new-recommendations
+new-promotion-engine</code></pre>
+<p>You probably don't need all sixteen combinations.</p>
+<p>But if:</p>
+<pre><code>new-checkout</code></pre>
+<p>and:</p>
+<pre><code>new-promotion-engine</code></pre>
+<p>both modify how the final price is calculated, their interaction is
+interesting.</p>
+<p>Meanwhile:</p>
+<pre><code>new-search</code></pre>
+<p>may have no meaningful interaction with either.</p>
+<p>So instead of asking:</p>
+<blockquote>
+<p>“How many flag combinations exist?”</p>
+</blockquote>
+<p>ask:</p>
+<blockquote>
+<p><strong>“Which flags influence the same business state or downstream
+system?”</strong></p>
+</blockquote>
+<p>That gives you a much better basis for selecting combinations.</p>
+<hr />
+<h1 id="use-domain-knowledge-to-identify-interacting-flags">Use domain
+knowledge to identify interacting flags</h1>
+<p>Consider this e-commerce configuration:</p>
+<pre><code>Flag A: new voucher engine
+Flag B: new tax engine
+Flag C: new shipping engine</code></pre>
+<p>At first these look like separate features.</p>
+<p>But checkout total might be calculated as:</p>
+<pre><code>Product subtotal
+      ↓
+Voucher
+      ↓
+Taxable amount
+      ↓
+Tax
+      ↓
+Shipping eligibility
+      ↓
+Final total</code></pre>
+<p>Now the flags clearly interact.</p>
+<p>A defect in:</p>
+<pre><code>voucher × tax</code></pre>
+<p>may produce the wrong VAT.</p>
+<p>A defect in:</p>
+<pre><code>voucher × shipping</code></pre>
+<p>may grant free shipping incorrectly.</p>
+<p>A defect in:</p>
+<pre><code>tax × shipping</code></pre>
+<p>may affect countries where shipping itself is taxable.</p>
+<p>Flag interaction is therefore not primarily a mathematical
+question.</p>
+<p>It is a <strong>business-rule interaction question</strong>.</p>
+<p>Understanding the domain helps you select the combinations that
+deserve attention.</p>
+<hr />
+<h1
+id="feature-flags-improve-testability--when-testers-can-control-them">Feature
+flags improve testability — when testers can control them</h1>
+<p>Michael Bolton describes testability partly in terms of
+<strong>observability and controllability</strong>: to test effectively,
+testers need ways to reach meaningful states, control relevant
+conditions, and observe what the product actually does.</p>
+<p>Feature flags can provide excellent controllability.</p>
+<p>Imagine that instead of deploying a separate build, you can say:</p>
+<pre><code>QA-user-123
+→ new engine ON
+
+everyone else
+→ new engine OFF</code></pre>
+<p>Now you can test production infrastructure without exposing the
+feature to normal customers.</p>
+<p>LaunchDarkly's current testing guidance explicitly describes targeted
+production testing as one use of flags: teams can expose a feature to
+designated test contexts before increasing rollout to ordinary
+users.</p>
+<p>That can dramatically shorten feedback loops.</p>
+<p>But there's an important requirement:</p>
+<blockquote>
+<p><strong>QA needs to know which variation they are actually
+receiving.</strong></p>
+</blockquote>
+<p>Imagine the screen looks wrong.</p>
+<p>You ask:</p>
+<blockquote>
+<p>“Am I on the new checkout?”</p>
+</blockquote>
+<p>Nobody knows.</p>
+<p>Now you must inspect:</p>
+<pre><code>browser storage
+cookies
+logs
+flag dashboard
+network calls</code></pre>
+<p>That's poor testability.</p>
+<p>A much better system might expose diagnostic information such as:</p>
+<pre><code>User: QA-742
+checkout-v2: ON
+pricing-engine-v2: OFF
+shipping-v3: ON</code></pre>
+<p>perhaps in an internal debug panel or structured logs.</p>
+<p>That small feature can save enormous testing time.</p>
+<p>A tester should therefore sometimes request <strong>testability
+features</strong>, not simply test product features.</p>
+<p>James Bach's updated <em>Heuristics of Software Testability</em>
+explicitly treats testability as something that can be analyzed and
+improved, not merely accepted as a fixed property of the product.</p>
+<hr />
+<h1 id="progressive-rollout-is-a-testing-opportunity">Progressive
+rollout is a testing opportunity</h1>
+<p>Suppose you've tested the new promotion engine.</p>
+<p>Instead of:</p>
+<pre><code>0% → 100%</code></pre>
+<p>the team plans:</p>
+<pre><code>QA users
+    ↓
+1%
+    ↓
+5%
+    ↓
+25%
+    ↓
+50%
+    ↓
+100%</code></pre>
+<p>That is not merely a release mechanism.</p>
+<p>It can be part of your testing strategy.</p>
+<p>At 1%, you might learn whether production data contains promotion
+combinations your test environment never contained.</p>
+<p>At 5%, you might discover country-specific rules.</p>
+<p>At 25%, you might begin seeing meaningful load effects.</p>
+<p>At 50%, you might expose interactions with unusual customer
+segments.</p>
+<p>Current feature-flag platforms explicitly support progressive and
+guarded rollouts; LaunchDarkly, for example, can increase exposure
+gradually while monitoring selected metrics for regressions.</p>
+<p>The important principle isn't the vendor.</p>
+<p>It is this:</p>
+<blockquote>
+<p><strong>Exposure can be increased as evidence increases.</strong></p>
+</blockquote>
+<p>That is a risk-management strategy.</p>
+<hr />
+<h1 id="but-no-errors-is-not-enough-evidence">But “no errors” is not
+enough evidence</h1>
+<p>Imagine the 5% rollout starts.</p>
+<p>Monitoring shows:</p>
+<pre><code>HTTP 5xx      unchanged
+CPU           unchanged
+Memory        unchanged
+Latency       unchanged</code></pre>
+<p>Looks safe.</p>
+<p>But then:</p>
+<pre><code>Average discount before rollout:  €7.80
+Average discount new variation:   €13.90</code></pre>
+<p>Is that correct?</p>
+<p>Maybe.</p>
+<p>Perhaps the new engine intentionally gives better promotions.</p>
+<p>Or perhaps it is stacking vouchers incorrectly.</p>
+<p>Technical health alone doesn't tell you whether the <strong>business
+behavior</strong> is correct.</p>
+<p>For our promotion-engine rollout, useful signals might include:</p>
+<pre><code>pricing calculation errors
+checkout failures
+voucher rejection rate
+average discount amount
+free-shipping rate
+order conversion
+orders with negative totals
+orders where UI total ≠ payment total</code></pre>
+<p>LaunchDarkly's current feature-monitoring tooling illustrates the
+broader principle by correlating flag variations with errors, logs,
+traces, and sessions so teams can compare health between variations.</p>
+<p>For a quality engineer, I would add:</p>
+<blockquote>
+<p><strong>Which domain metrics tell us the feature is behaving
+sensibly?</strong></p>
+</blockquote>
+<p>because technical observability and business observability answer
+different questions.</p>
+<hr />
+<h1 id="use-the-flag-itself-as-an-observability-dimension">Use the flag
+itself as an observability dimension</h1>
+<p>Imagine an error dashboard says:</p>
+<pre><code>Checkout error rate: 2.1%</code></pre>
+<p>That's interesting.</p>
+<p>Now separate by variation:</p>
+<pre><code>old-promotion-engine:
+0.3%
+
+new-promotion-engine:
+7.8%</code></pre>
+<p>That's much more useful.</p>
+<p>Or imagine global latency appears normal:</p>
+<pre><code>Checkout p95 = 700 ms</code></pre>
+<p>but:</p>
+<pre><code>flag OFF → p95 430 ms
+flag ON  → p95 1.8 sec</code></pre>
+<p>Without the flag dimension, the 5% rollout may be diluted inside the
+95% healthy population.</p>
+<p>This is an important observability principle:</p>
+<blockquote>
+<p><strong>When behavior differs by configuration, telemetry should let
+you distinguish those configurations.</strong></p>
+</blockquote>
+<p>Otherwise gradual rollout can hide the very regression it is supposed
+to limit.</p>
+<hr />
+<h1 id="shadow-testing-can-reduce-rollout-risk-further">Shadow testing
+can reduce rollout risk further</h1>
+<p>Suppose the old pricing engine is trusted.</p>
+<p>Instead of immediately letting the new engine determine customer
+prices, you can sometimes run:</p>
+<pre><code>Incoming cart
+     |
+     +→ OLD ENGINE → customer receives this result
+     |
+     +→ NEW ENGINE → result recorded only for comparison</code></pre>
+<p>Now you can compare:</p>
+<pre><code>old total = €78
+new total = €78
+✓</code></pre>
+<p>or:</p>
+<pre><code>old total = €78
+new total = €68
+?</code></pre>
+<p>Ministry of Testing describes this pattern as <strong>shadow
+testing</strong>: a new implementation receives real traffic or data
+alongside the live implementation, but its output isn't allowed to
+affect the real customer. This makes old/new comparisons possible under
+production-like conditions.</p>
+<p>This can be extremely powerful for:</p>
+<pre><code>pricing engines
+recommendation systems
+fraud detection
+tax calculation
+search algorithms
+ad-ranking systems
+sports-data processing</code></pre>
+<p>But there is a trap.</p>
+<hr />
+<h1 id="shadow-mode-must-not-create-real-side-effects">Shadow mode must
+not create real side effects</h1>
+<p>Imagine the new promotion engine does:</p>
+<pre><code>Calculate voucher
+      ↓
+Mark voucher as redeemed</code></pre>
+<p>Running it in shadow mode could cause:</p>
+<pre><code>OLD engine
+→ redeems voucher
+
+NEW shadow engine
+→ also redeems voucher</code></pre>
+<p>Now a test mechanism has changed production state.</p>
+<p>The same concern exists with payment systems.</p>
+<p>You can safely shadow:</p>
+<pre><code>fraud score calculation</code></pre>
+<p>perhaps.</p>
+<p>You cannot blindly shadow:</p>
+<pre><code>capture payment</code></pre>
+<p>because two executions could charge the customer twice.</p>
+<p>Whenever someone proposes shadow testing, ask:</p>
+<blockquote>
+<p><strong>“Is this operation pure computation, or does it create side
+effects?”</strong></p>
+</blockquote>
+<p>That one question can prevent serious incidents.</p>
+<hr />
+<h1 id="rollout-percentage-itself-deserves-testing">Rollout percentage
+itself deserves testing</h1>
+<p>Suppose:</p>
+<pre><code>5% rollout</code></pre>
+<p>Does this mean every request has a 5% random chance of receiving the
+feature?</p>
+<p>That could produce this customer experience:</p>
+<pre><code>Page 1 → old checkout
+Page 2 → new checkout
+Page 3 → old checkout</code></pre>
+<p>Probably undesirable.</p>
+<p>Usually you want a stable assignment based on something like:</p>
+<pre><code>customer ID
+tenant ID
+device ID</code></pre>
+<p>so the same person receives a consistent experience.</p>
+<p>Now SaaS makes this more interesting.</p>
+<p>Imagine a B2B platform.</p>
+<p>A tenant has 100 employees.</p>
+<p>Do you roll out:</p>
+<pre><code>5% of individual users</code></pre>
+<p>or:</p>
+<pre><code>5% of tenant organizations</code></pre>
+<p>If permissions, workflows or shared data differ between versions,
+putting half an organization on the new feature and half on the old
+feature may create confusion or incompatible data.</p>
+<p>That is a product decision, not merely an implementation detail.</p>
+<p>A good tester might raise it during refinement:</p>
+<blockquote>
+<p>“Should rollout stickiness be per user or per organization? If two
+users from the same customer account work on the same order while
+receiving different versions, can they produce conflicting state?”</p>
+</blockquote>
+<p>That's a high-value QA question.</p>
+<hr />
+<h1 id="fallback-behavior-deserves-explicit-testing">Fallback behavior
+deserves explicit testing</h1>
+<p>Suppose your application asks the flag system:</p>
+<pre><code>Should checkout-v2 be enabled?</code></pre>
+<p>But the flag service is unavailable.</p>
+<p>What happens?</p>
+<p>Maybe:</p>
+<pre><code>timeout</code></pre>
+<p>Maybe:</p>
+<pre><code>false</code></pre>
+<p>Maybe:</p>
+<pre><code>cached value</code></pre>
+<p>Maybe:</p>
+<pre><code>last known configuration</code></pre>
+<p>Maybe:</p>
+<pre><code>application fails</code></pre>
+<p>LaunchDarkly's current testing guide specifically recommends testing
+the <strong>fallback value</strong> used when flag evaluation cannot
+complete normally.</p>
+<p>That deserves attention because feature flags are supposed to reduce
+release risk.</p>
+<p>If losing the flag service can disable checkout entirely, the control
+mechanism has become another critical dependency.</p>
+<p>For each important flag, I want to understand:</p>
+<pre><code>What is the fallback?
+
+Why is that fallback safe?
+
+How long can cached configuration live?
+
+What happens during recovery?</code></pre>
+<hr />
+<h1 id="a-tester-should-participate-in-rollout-design">A tester should
+participate in rollout design</h1>
+<p>Imagine the PO says:</p>
+<blockquote>
+<p>“We'll release to 10% tomorrow.”</p>
+</blockquote>
+<p>A tester could simply say:</p>
+<blockquote>
+<p>“Okay.”</p>
+</blockquote>
+<p>A stronger quality engineer might ask:</p>
+<blockquote>
+<p>“What would make us increase from 10% to 50%, and what would make us
+stop?”</p>
+</blockquote>
+<p>That question forces the team to define evidence
+<strong>before</strong> seeing the results.</p>
+<p>For example:</p>
+<pre><code>Continue rollout if:
+
+checkout error rate remains within baseline
+pricing mismatches remain zero
+p95 latency does not materially regress
+no unexplained increase in support contacts</code></pre>
+<p>And perhaps:</p>
+<pre><code>Stop rollout if:
+
+payment/cart totals diverge
+error rate exceeds agreed threshold
+new-engine latency materially exceeds old
+unexpected voucher stacking appears</code></pre>
+<p>Without pre-agreed criteria, rollout discussions easily become:</p>
+<p>Developer:</p>
+<blockquote>
+<p>“Looks fine.”</p>
+</blockquote>
+<p>Tester:</p>
+<blockquote>
+<p>“I'm still worried.”</p>
+</blockquote>
+<p>Product:</p>
+<blockquote>
+<p>“Can we just ship?”</p>
+</blockquote>
+<p>Now the decision is largely emotional.</p>
+<p>With agreed signals, the discussion becomes evidence-based.</p>
+<p>That is QA influence without authority.</p>
+<p>You don't decide whether 50% goes live.</p>
+<p>You help the team define <strong>what information should drive that
+decision</strong>.</p>
+<hr />
+<h1 id="dont-say-i-am-not-comfortable-releasing-this">Don't say “I am
+not comfortable releasing this”</h1>
+<p>Sometimes that is useful shorthand inside a trusted team.</p>
+<p>But it is weak as the entire argument.</p>
+<p>Try:</p>
+<blockquote>
+<p>“At 10% rollout we've seen six pricing mismatches from 1,400
+new-engine checkouts, while none appeared in the control group. Four
+involve stacked vouchers. I don't yet understand whether the mismatch is
+display-only or reaches payment. I recommend holding at 10% while we
+trace those orders.”</p>
+</blockquote>
+<p>Now your position is understandable.</p>
+<p>It contains:</p>
+<pre><code>observation
+comparison
+scope
+uncertainty
+risk
+proposed action</code></pre>
+<p>That is much more persuasive than:</p>
+<blockquote>
+<p>“QA says no.”</p>
+</blockquote>
+<p>Good testers influence releases through evidence, not authority.</p>
+<hr />
+<h1 id="feature-flags-can-become-technical-debt">Feature flags can
+become technical debt</h1>
+<p>Feature flags are very useful when temporary.</p>
+<p>They become dangerous when nobody remembers why they exist.</p>
+<p>Imagine code like:</p>
+<pre><code>if (flagA) {
+  if (!flagB &amp;&amp; flagC) {
+     ...
+  }
+}</code></pre>
+<p>Three years later:</p>
+<pre><code>Who owns flagA?
+Unknown.
+
+Can flagB still be OFF?
+Nobody knows.
+
+Is flagC used by anyone?
+Maybe.</code></pre>
+<p>Now every change requires reasoning about historical paths.</p>
+<p>Fowler's guidance recommends retiring release flags once they have
+served their purpose because accumulated toggles increase
+complexity.</p>
+<p>The 2026 Ministry of Testing practitioner article reports the same
+lesson from experience: persistent flags expanded the test surface and
+became technical debt, leading the team to introduce ownership and
+deprecation tracking.</p>
+<p>So feature-flag lifecycle itself becomes a quality concern:</p>
+<pre><code>create
+  ↓
+test
+  ↓
+roll out
+  ↓
+100%
+  ↓
+stabilize
+  ↓
+remove flag
+  ↓
+remove dead path</code></pre>
+<p>Removing the flag matters.</p>
+<p>Otherwise you're permanently paying complexity for a rollout that
+ended months ago.</p>
+<hr />
+<h1 id="the-test-strategy-i-would-use">The test strategy I would
+use</h1>
+<p>For an important flagged feature, I would reason about six distinct
+situations:</p>
+<pre><code>CURRENT
+What does production do with the flag OFF?
+
+NEW
+Does the intended feature work ON?
+
+TARGETING
+Do the right users/tenants receive it?
+
+TRANSITION
+What happens OFF → ON and ON → OFF?
+
+FAILURE
+What happens if flag evaluation fails?
+
+ROLLOUT
+Can we observe correctness and risk as exposure increases?</code></pre>
+<p>I would then ask whether the feature leaves lasting state.</p>
+<p>If the answer is <strong>yes</strong>, I become especially interested
+in rollback compatibility.</p>
+<p>Consider:</p>
+<pre><code>pricing calculation</code></pre>
+<p>Perhaps mostly ephemeral.</p>
+<p>But:</p>
+<pre><code>new order schema
+new account permissions
+database migration
+payment state</code></pre>
+<p>can survive long after the flag changes.</p>
+<p>Those require deeper transition testing.</p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>Your team introduces:</p>
+<pre><code>Flag:
+checkout-v2</code></pre>
+<p>The rollout plan is:</p>
+<pre><code>QA accounts
+    ↓
+5%
+    ↓
+25%
+    ↓
+100%</code></pre>
+<p>The new checkout introduces:</p>
+<pre><code>new address form
+new shipping selection
+new promotion calculation</code></pre>
+<p>and writes a new field to orders:</p>
+<pre><code>{
+  &quot;checkoutVersion&quot;: 2
+}</code></pre>
+<p>The team says:</p>
+<blockquote>
+<p>“Don't worry. If anything goes wrong we'll turn the flag off.”</p>
+</blockquote>
+<p>Your job is not to create 50 test cases.</p>
+<p>Design <strong>four experiments</strong> that would give you the
+strongest evidence about whether the flag is genuinely a safe rollback
+mechanism.</p>
+<p>At least one experiment should test:</p>
+<pre><code>OFF → ON</code></pre>
+<p>one should test:</p>
+<pre><code>ON → OFF</code></pre>
+<p>and one should involve an order or cart created while V2 was active
+and then accessed after V2 has been disabled.</p>
+<p>For the fourth, choose the risk you consider most important.</p>
+<p>Maybe it is:</p>
+<pre><code>flag service unavailable</code></pre>
+<p>Maybe:</p>
+<pre><code>same customer assigned inconsistently</code></pre>
+<p>Maybe:</p>
+<pre><code>new promotion × old checkout</code></pre>
+<p>Maybe:</p>
+<pre><code>background side effects while flag OFF</code></pre>
+<p>But don't merely state the experiment.</p>
+<p>For each one, answer:</p>
+<blockquote>
+<p><strong>What failure would this experiment reveal that a simple “flag
+ON / feature works” test would miss?</strong></p>
+</blockquote>
+<p>That is the skill I want you to practice.</p>
+<p>Because today's deeper lesson isn't really about feature flags.</p>
+<p>It is this:</p>
+<blockquote>
+<p><strong>Whenever software can change behavior without changing the
+deployed code, configuration becomes part of the product state—and
+therefore part of your test strategy.</strong></p>
+</blockquote>
+<p>A weak tester sees:</p>
+<pre><code>Feature OFF
+Feature ON</code></pre>
+<p>A stronger tester sees:</p>
+<pre><code>targeting
+transitions
+fallback
+side effects
+persistent data
+rollback
+observability
+flag interaction
+rollout criteria
+cleanup</code></pre>
+<p>And a quality engineer asks one step further:</p>
+<blockquote>
+<p><strong>“How will we know, with evidence, that it is safe to expose
+this behavior to more people?”</strong></p>
+</blockquote>
+<p>That question connects testing, observability, product risk,
+deployment strategy, and collaboration.</p>
+<p>That is quality engineering.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>James Bach's updated <em>Heuristics of Software Testability</em> is
+useful for thinking about how products can be made easier to control and
+observe during testing. The April 2026 Ministry of Testing feature-flag
+article is particularly valuable because it is not theoretical—it
+describes what changed in a real testing strategy when conditional
+behavior, invisible background processing and stale flags entered the
+system. Fowler's feature-toggle article remains useful for flag
+lifecycle and configuration strategy, while LaunchDarkly's current
+testing and monitoring documentation provides concrete examples of
+targeted testing, fallback states and variation-aware observability.</p>
+<p><a
+href="https://www.satisfice.com/download/heuristics-of-software-testability?utm_source=chatgpt.com">James
+Bach — Heuristics of Software Testability</a></p>
+<p><a
+href="https://www.ministryoftesting.com/insights/testing-with-feature-flags-what-we-expected-and-what-actually-happened?utm_source=chatgpt.com">Ministry
+of Testing — Testing with feature flags: what we expected and what
+actually happened</a></p>
+<p><a
+href="https://www.ministryoftesting.com/software-testing-glossary/shadow-testing?utm_source=chatgpt.com">Ministry
+of Testing — Shadow Testing</a></p>
+<p><a
+href="https://martinfowler.com/articles/feature-toggles.html?utm_source=chatgpt.com">Martin
+Fowler — Feature Toggles</a></p>
+<p><a
+href="https://launchdarkly.com/docs/guides/flags/testing-code?utm_source=chatgpt.com">LaunchDarkly
+— Testing code that uses feature flags</a></p>
+<p><a
+href="https://launchdarkly.com/docs/home/releases/feature-monitoring?utm_source=chatgpt.com">LaunchDarkly
+— Feature monitoring</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-10.html" rel="prev"><span>Previous</span>Performance Testing: Stop Asking “How Many Users Can It Handle?”</a><a href="/qa-blog/posts/qa-thinking-day-12.html" rel="next"><span>Next</span>Accessibility Testing: “0 Axe Violations” Does Not Mean Your Checkout Is Usable</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Michael Bolton describes testing as learning about a product through experiencing, exploring, experimenting, investigation, risk analysis, critical thinking, and reporting. The purpose is to reveal useful infor">
+  <meta name="color-scheme" content="light">
+  <title>A Good Tester Does Not Just Verify Requirements | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 1</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-1">QA Thinking — Day 1</h1>
+<h2 id="a-good-tester-does-not-just-verify-requirements">A Good Tester
+Does Not Just Verify Requirements</h2>
+<p>A common mistake in software testing is to think:</p>
+<blockquote>
+<p>“The requirement says X. I tested X. X works. Therefore testing is
+finished.”</p>
+</blockquote>
+<p>That is checking, but it is only one small part of skilled
+testing.</p>
+<p>Michael Bolton describes testing as learning about a product through
+<strong>experiencing, exploring, experimenting, investigation, risk
+analysis, critical thinking, and reporting</strong>. The purpose is to
+reveal useful information about the actual state of the product—not
+simply to confirm expected outputs.</p>
+<p>This distinction changes how you approach almost every ticket.</p>
+<p>Imagine the requirement:</p>
+<p><strong>“A customer can change the quantity of a cart item from 1 to
+10.”</strong></p>
+<p>A basic tester might create these tests:</p>
+<ul>
+<li><p>quantity = 1</p></li>
+<li><p>quantity = 5</p></li>
+<li><p>quantity = 10</p></li>
+<li><p>quantity = 0</p></li>
+<li><p>quantity = 11</p></li>
+</ul>
+<p>Useful, but a strong tester immediately starts asking questions.</p>
+<h3 id="what-does-110-actually-mean">What does “1–10” actually
+mean?</h3>
+<p>Why is 10 the maximum?</p>
+<p>Is 10:</p>
+<ul>
+<li><p>a UI restriction?</p></li>
+<li><p>a business restriction?</p></li>
+<li><p>an inventory restriction?</p></li>
+<li><p>a restriction per product?</p></li>
+<li><p>a restriction per cart?</p></li>
+<li><p>a restriction per customer?</p></li>
+<li><p>a restriction per order?</p></li>
+</ul>
+<p>Those are completely different rules.</p>
+<p>Suppose the UI prevents entering 11.</p>
+<p>What happens if someone calls the API directly with:</p>
+<p><code>quantity: 11</code></p>
+<p>If the backend accepts it, then your UI test passed while the
+<strong>business rule failed</strong>.</p>
+<p>That is an important difference between testing an interface and
+testing a system.</p>
+<hr />
+<h2 id="follow-the-consequences">Follow the consequences</h2>
+<p>Now suppose quantity changes from:</p>
+<p><code>2 → 5</code></p>
+<p>Don't only ask:</p>
+<p><strong>Did the quantity become 5?</strong></p>
+<p>Ask what else should change because of it.</p>
+<p>For example:</p>
+<p><code>quantity</code><br />
+→ item subtotal<br />
+→ cart subtotal<br />
+→ discounts<br />
+→ tax<br />
+→ shipping threshold<br />
+→ inventory reservation<br />
+→ checkout total<br />
+→ payment amount</p>
+<p>A defect somewhere downstream can be much more serious than the
+quantity field itself.</p>
+<p>For example:</p>
+<p>Quantity changes:</p>
+<p><code>2 → 5</code></p>
+<p>but price remains:</p>
+<p><code>€20</code></p>
+<p>instead of:</p>
+<p><code>€50</code></p>
+<p>The quantity feature technically works.</p>
+<p>The business, however, could lose money.</p>
+<p>This is why risk is so important in testing. Rapid Software Testing
+explicitly treats risk analysis and strategy as central testing skills,
+rather than treating testing as executing predefined cases.</p>
+<hr />
+<h1 id="think-in-relationships-not-individual-fields">Think in
+relationships, not individual fields</h1>
+<p>A powerful habit is:</p>
+<p><strong>Whenever something changes, ask what else depends on
+it.</strong></p>
+<p>For an e-commerce cart:</p>
+<p><code>Quantity</code><br />
+↓<br />
+<code>Stock</code><br />
+↓<br />
+<code>Price</code><br />
+↓<br />
+<code>Discount</code><br />
+↓<br />
+<code>Tax</code><br />
+↓<br />
+<code>Shipping</code><br />
+↓<br />
+<code>Payment</code><br />
+↓<br />
+<code>Order</code></p>
+<p>Each connection gives you possible tests.</p>
+<p>For example:</p>
+<h3 id="quantity--inventory">Quantity ↔︎ Inventory</h3>
+<p>Stock available = 4.</p>
+<p>Customer requests 5.</p>
+<p>What happens?</p>
+<p>Possible expected behaviours:</p>
+<ul>
+<li><p>reject quantity 5</p></li>
+<li><p>automatically reduce it to 4</p></li>
+<li><p>show “Only 4 available”</p></li>
+<li><p>allow backordering</p></li>
+</ul>
+<p>The tester should not invent the expected behaviour.</p>
+<p>Instead, recognize:</p>
+<p><strong>There is an unanswered business question.</strong></p>
+<p>That question should go to the Product Owner/domain expert.</p>
+<p>Finding unclear requirements <strong>before development or
+release</strong> is valuable testing work.</p>
+<hr />
+<h1 id="james-bach-dont-blindly-follow-best-practices">James Bach: Don't
+blindly follow “best practices”</h1>
+<p>James Bach's Context-Driven Testing work argues against assuming that
+one testing practice is universally “best”. What is appropriate depends
+on the project, product, risks, people, constraints, and
+circumstances.</p>
+<p>This means:</p>
+<blockquote>
+<p>“Always test these 20 cart cases”</p>
+</blockquote>
+<p>is weaker thinking than:</p>
+<blockquote>
+<p>“What problems matter for THIS cart?”</p>
+</blockquote>
+<p>Consider two products.</p>
+<h3 id="shop-a">Shop A</h3>
+<p>Sells downloadable €5 ebooks.</p>
+<h3 id="shop-b">Shop B</h3>
+<p>Sells €8,000 industrial machinery.</p>
+<p>Both have a quantity field.</p>
+<p>Should their test strategy be identical?</p>
+<p>Of course not.</p>
+<p>For Shop B you might care much more about:</p>
+<ul>
+<li><p>authorization</p></li>
+<li><p>maximum order value</p></li>
+<li><p>quotation rules</p></li>
+<li><p>fraud</p></li>
+<li><p>payment limits</p></li>
+<li><p>contractual pricing</p></li>
+<li><p>inventory allocation</p></li>
+</ul>
+<p>The feature looks identical.</p>
+<p>The <strong>risk context is completely different</strong>.</p>
+<p>That is Context-Driven Testing.</p>
+<hr />
+<h1 id="a-useful-model-product--risk--test">A useful model: Product →
+Risk → Test</h1>
+<p>When you receive a feature, don't start with test cases.</p>
+<p>Start here:</p>
+<h3 id="1-understand-the-product">1. Understand the product</h3>
+<p>What is this feature supposed to accomplish?</p>
+<h3 id="2-understand-the-business">2. Understand the business</h3>
+<p>Why does the company need it?</p>
+<h3 id="3-identify-failure-possibilities">3. Identify failure
+possibilities</h3>
+<p>What could go wrong?</p>
+<h3 id="4-ask-who-would-care">4. Ask who would care</h3>
+<p>Customer?</p>
+<p>Merchant?</p>
+<p>Finance?</p>
+<p>Support?</p>
+<p>Operations?</p>
+<p>Security?</p>
+<h3 id="5-estimate-impact">5. Estimate impact</h3>
+<p>If this fails, how bad is it?</p>
+<h3 id="6-design-experiments">6. Design experiments</h3>
+<p>What tests would expose those failures?</p>
+<p>Only then start thinking about:</p>
+<ul>
+<li><p>Playwright</p></li>
+<li><p>Cypress</p></li>
+<li><p>Postman</p></li>
+<li><p>API automation</p></li>
+<li><p>test cases</p></li>
+</ul>
+<p>Automation comes <strong>after thinking</strong>.</p>
+<hr />
+<h1 id="todays-tester-exercise">Today's tester exercise</h1>
+<p>You have this requirement:</p>
+<blockquote>
+<p>“A logged-in customer receives free shipping when the cart total
+reaches €50.”</p>
+</blockquote>
+<p>Do <strong>not</strong> immediately write test cases.</p>
+<p>First write at least <strong>10 questions</strong>.</p>
+<p>Think about things like:</p>
+<ul>
+<li><p>exactly €50</p></li>
+<li><p>€49.99</p></li>
+<li><p>€50.01</p></li>
+<li><p>discounts</p></li>
+<li><p>coupons</p></li>
+<li><p>tax</p></li>
+<li><p>shipping country</p></li>
+<li><p>multiple currencies</p></li>
+<li><p>removing an item</p></li>
+<li><p>refunds</p></li>
+<li><p>guest → login transition</p></li>
+<li><p>persisted carts</p></li>
+<li><p>multiple browser tabs</p></li>
+<li><p>API manipulation</p></li>
+</ul>
+<p>But don't just copy those.</p>
+<p>Ask questions that you believe could expose a <strong>real business
+problem</strong>.</p>
+<p>Tomorrow's lesson will build on this and show how a good tester turns
+those questions into:</p>
+<p><strong>Business Rule → Risk → Test Condition → Concrete Test →
+Automation decision.</strong></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-02.html" rel="next"><span>Next</span>Bug Advocacy: A Strong Tester Doesn’t “Win” the Bug Argument — They Help the Team Make a Better Decision</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

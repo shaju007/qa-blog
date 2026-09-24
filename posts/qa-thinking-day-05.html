@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Bid ↓ Win ↓ Ad delivered ↓ Impression ↓ Billable impression ↓ Click ↓ Conversion">
+  <meta name="color-scheme" content="light">
+  <title>Testing Ad Tech: A “Win” Is Not an Impression, and a `200 OK` Can Still Lose Money | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 5</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-5">QA Thinking — Day 5</h1>
+<h2
+id="testing-ad-tech-a-win-is-not-an-impression-and-a-200-ok-can-still-lose-money">Testing
+Ad Tech: A “Win” Is Not an Impression, and a <code>200 OK</code> Can
+Still Lose Money</h2>
+<p>Imagine you are testing a programmatic advertising platform.</p>
+<p>Your bidder receives an auction request, evaluates it, submits a bid,
+and later receives a notification saying:</p>
+<pre><code>Auction won
+Campaign: 741
+Creative: 92
+Bid price: €4.20 CPM</code></pre>
+<p>Your API returned <code>200</code>. The logs contain no exceptions.
+Grafana is green.</p>
+<p>Would you say the ad transaction worked?</p>
+<p>Not yet.</p>
+<p>In ad tech, this distinction matters enormously:</p>
+<pre><code>Bid
+   ↓
+Win
+   ↓
+Ad delivered
+   ↓
+Impression
+   ↓
+Billable impression
+   ↓
+Click
+   ↓
+Conversion</code></pre>
+<p>Those are <strong>different business events</strong>.</p>
+<p>A platform can process every HTTP request successfully and still
+charge an advertiser incorrectly, spend a campaign budget too quickly,
+fail to pay a publisher, count an impression twice, or report
+conversions against the wrong campaign.</p>
+<p>That makes ad tech an excellent domain for learning a broader QA
+skill:</p>
+<blockquote>
+<p><strong>Don't test only whether individual services work. Test
+whether the business event lifecycle remains internally
+consistent.</strong></p>
+</blockquote>
+<p>The OpenRTB specification makes this distinction explicit. A win
+notice tells a bidder that it won an auction; it does
+<strong>not</strong> necessarily mean that the ad was delivered, viewed,
+or became billable. OpenRTB has a separate billing notice specifically
+for the point at which spend should actually be applied. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md?utm_source=chatgpt.com">GitHub+1</a></p>
+<p>That one domain rule can completely change your test strategy.</p>
+<hr />
+<h2 id="first-understand-what-is-actually-being-bought">First understand
+what is actually being bought</h2>
+<p>A simplified programmatic advertising flow looks roughly like:</p>
+<pre><code>User opens website
+       ↓
+Publisher has an available ad slot
+       ↓
+SSP / Exchange creates bid request
+       ↓
+DSPs evaluate opportunity
+       ↓
+Several advertisers bid
+       ↓
+Auction selects winner
+       ↓
+Winning creative may be delivered
+       ↓
+Ad may actually become an impression
+       ↓
+Billing / reporting / attribution follow</code></pre>
+<p>Some useful terminology:</p>
+<p><strong>Publisher</strong> owns the website/app inventory.</p>
+<p><strong>SSP — Supply-Side Platform</strong> helps publishers sell
+that inventory.</p>
+<p><strong>DSP — Demand-Side Platform</strong> buys inventory on behalf
+of advertisers.</p>
+<p><strong>Bid request</strong> describes the advertising
+opportunity.</p>
+<p><strong>Bid response</strong> says how much a bidder is willing to
+pay and usually references the impression opportunity.</p>
+<p><strong>Win</strong> means that bid won an auction.</p>
+<p><strong>Impression</strong> generally means the advertising content
+reached the defined impression condition.</p>
+<p><strong>Billable event</strong> is the event under the platform's
+commercial policy that actually causes spend to be recorded.</p>
+<p>OpenRTB itself describes RTB as an auction in which an individual ad
+impression is offered for bidding in real time. <a
+href="https://iabtechlab.com/standards/openrtb/">IAB Tech Lab</a></p>
+<p>Notice what happened already: we had to understand the business
+before discussing Cypress, Playwright, Postman, Kafka, or automated
+assertions.</p>
+<p>That is why <strong>domain knowledge is part of testing
+skill</strong>.</p>
+<hr />
+<h1
+id="the-dangerous-test-we-received-the-win-callback-so-everything-is-good">The
+dangerous test: “We received the win callback, so everything is
+good”</h1>
+<p>Suppose your DSP submits:</p>
+<pre><code>{
+  &quot;impid&quot;: &quot;imp-8271&quot;,
+  &quot;price&quot;: 4.20,
+  &quot;nurl&quot;: &quot;https://dsp.example/win/8271&quot;,
+  &quot;burl&quot;: &quot;https://dsp.example/billing/8271&quot;
+}</code></pre>
+<p>In OpenRTB, the bid <code>price</code> is expressed as
+<strong>CPM</strong>, even though the actual transaction represents an
+individual impression. <code>nurl</code> can be used for the win notice;
+<code>burl</code> can be called when the win becomes billable according
+to the exchange's policy. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md?utm_source=chatgpt.com">GitHub</a></p>
+<p>Now imagine your automated integration test does this:</p>
+<pre><code>submit bid
+→ receive nurl
+→ assert campaign spend increased
+→ PASS</code></pre>
+<p>That test may actually be validating the wrong business
+behaviour.</p>
+<p>OpenRTB specifically warns that winning does not guarantee delivery.
+Its implementation guidance says a win notice should
+<strong>not</strong> be used to count impressions because a won auction
+can still fail to become an actual impression. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/implementation.md?utm_source=chatgpt.com">GitHub</a></p>
+<p>Your automation is green.</p>
+<p>Your business rule is wrong.</p>
+<p>This is why I repeatedly tell you:</p>
+<blockquote>
+<p><strong>Automation does not compensate for a wrong model of the
+product.</strong></p>
+</blockquote>
+<p>You can automate a misunderstanding perfectly.</p>
+<hr />
+<h1 id="think-in-state-transitions">Think in state transitions</h1>
+<p>James Bach's current Heuristic Test Strategy Model explicitly
+emphasizes state-based testing and boundaries. The model is intended as
+a collection of heuristics for thinking about test strategy rather than
+a prescribed list of cases. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Ad tech is a perfect place to use that thinking.</p>
+<p>Instead of thinking:</p>
+<pre><code>POST /bid → expect 200</code></pre>
+<p>model an advertising opportunity as state:</p>
+<pre><code>AVAILABLE
+   ↓
+BID_REQUESTED
+   ↓
+BID_SUBMITTED
+   ↓
+WON
+   ↓
+DELIVERED
+   ↓
+IMPRESSION_RECORDED
+   ↓
+BILLABLE</code></pre>
+<p>But the happy path isn't enough.</p>
+<p>Maybe:</p>
+<pre><code>BID_SUBMITTED
+   ↓
+LOST</code></pre>
+<p>or:</p>
+<pre><code>WON
+   ↓
+CREATIVE_FAILED
+   ↓
+NOT_BILLABLE</code></pre>
+<p>or:</p>
+<pre><code>WON
+   ↓
+PAGE CLOSED
+   ↓
+NO IMPRESSION</code></pre>
+<p>Now interesting testing questions emerge naturally.</p>
+<p>What transitions are legal?</p>
+<p>Which transitions are irreversible?</p>
+<p>Can <code>BILLABLE</code> happen without <code>WON</code>?</p>
+<p>Can a transaction become billable twice?</p>
+<p>What happens if <code>BILLABLE</code> arrives before your internal
+<code>IMPRESSION_RECORDED</code> event because two pipelines have
+different latency?</p>
+<p>What happens when a duplicate notification arrives?</p>
+<p>Those questions are much more valuable than:</p>
+<blockquote>
+<p>“Does <code>/billing</code> return 200?”</p>
+</blockquote>
+<hr />
+<h1
+id="the-five-event-failures-you-learned-from-sports-testing-appear-again">The
+five event failures you learned from sports testing appear again</h1>
+<p>Yesterday's sports-data lesson used:</p>
+<pre><code>Missing
+Duplicate
+Late
+Reordered
+Corrected</code></pre>
+<p>The same model applies beautifully to ad tech.</p>
+<p>Imagine a billing event.</p>
+<p><strong>Missing:</strong> advertiser won and impression occurred, but
+billing event never arrives.</p>
+<p><strong>Duplicate:</strong> billing callback is processed twice.</p>
+<p><strong>Late:</strong> billing arrives twenty minutes after reporting
+already aggregated the campaign.</p>
+<p><strong>Reordered:</strong> billing arrives before another internal
+event that your system expects first.</p>
+<p><strong>Corrected/reconciled:</strong> partner later sends an
+adjustment because initial accounting was wrong.</p>
+<p>Now you can see something important about learning domains.</p>
+<p>You aren't learning isolated tricks.</p>
+<p>You're building <strong>testing models that transfer between
+industries</strong>.</p>
+<p>Sports:</p>
+<pre><code>Goal event</code></pre>
+<p>Ad tech:</p>
+<pre><code>Impression event</code></pre>
+<p>Payments:</p>
+<pre><code>Payment captured</code></pre>
+<p>E-commerce:</p>
+<pre><code>Order created</code></pre>
+<p>All can suffer from missing, duplicate, late and reordered
+events.</p>
+<p>That's the beginning of systems thinking.</p>
+<hr />
+<h1 id="the-most-dangerous-bug-may-not-produce-an-error">The most
+dangerous bug may not produce an error</h1>
+<p>Suppose this happens:</p>
+<pre><code>Bid requests received: healthy
+Bid responses: healthy
+HTTP errors: zero
+CPU: normal
+Queue: normal
+Database: normal</code></pre>
+<p>Everything appears operational.</p>
+<p>But there is a logic error causing:</p>
+<pre><code>Win
+→ counted as impression
+→ campaign budget deducted</code></pre>
+<p>even when the ad never rendered.</p>
+<p>Your technical monitoring may remain perfectly green.</p>
+<p>Your advertiser can still be overcharged.</p>
+<p>Ministry of Testing recently made exactly the broader
+quality-engineering point that monitoring, observability and alerting
+belong inside quality work rather than being something considered only
+after CI/CD. The article argues that teams should engineer systems so
+that quality problems become visible in production. <a
+href="https://www.ministryoftesting.com/insights/the-forgotten-part-of-quality-paying-attention-to-production?utm_source=chatgpt.com">Ministry
+of Testing</a></p>
+<p>For an ad platform, I would therefore want to see a business funnel
+such as:</p>
+<pre><code>Bid Requests
+      ↓
+Bids
+      ↓
+Wins
+      ↓
+Delivered Ads
+      ↓
+Impressions
+      ↓
+Billable Impressions
+      ↓
+Clicks
+      ↓
+Conversions</code></pre>
+<p>Not because every percentage must remain fixed.</p>
+<p>Traffic changes.</p>
+<p>Campaigns change.</p>
+<p>Inventory changes.</p>
+<p>But unexpected movement between stages can reveal business failures
+that an uptime dashboard cannot.</p>
+<hr />
+<h1
+id="reconciliation-is-a-qa-superpower-in-transaction-systems">Reconciliation
+is a QA superpower in transaction systems</h1>
+<p>Imagine your system says:</p>
+<pre><code>10,000 billable impressions</code></pre>
+<p>while your exchange partner says:</p>
+<pre><code>9,420 billable impressions</code></pre>
+<p>The weakest reaction is:</p>
+<blockquote>
+<p>“Our tests passed.”</p>
+</blockquote>
+<p>A much stronger testing question is:</p>
+<blockquote>
+<p><strong>Where does the count begin to diverge?</strong></p>
+</blockquote>
+<p>Compare:</p>
+<pre><code>Requests
+Bids
+Wins
+Impressions
+Billable impressions</code></pre>
+<p>Maybe both platforms agree on:</p>
+<pre><code>Requests ✓
+Bids ✓
+Wins ✓</code></pre>
+<p>but disagree at:</p>
+<pre><code>Impressions ✗</code></pre>
+<p>You've just dramatically reduced the investigation space.</p>
+<p>Maybe both agree on impressions but disagree on:</p>
+<pre><code>Billable impressions ✗</code></pre>
+<p>Now investigate billing policy and billing-event processing rather
+than auction logic.</p>
+<p>This type of reconciliation thinking is valuable far beyond ad
+tech.</p>
+<p>In payments:</p>
+<pre><code>orders
+vs
+payment authorizations
+vs
+captures
+vs
+refunds</code></pre>
+<p>In e-commerce:</p>
+<pre><code>checkout success
+vs
+orders
+vs
+payment transactions
+vs
+invoices</code></pre>
+<p>In sports:</p>
+<pre><code>provider events
+vs
+processed events
+vs
+displayed events</code></pre>
+<p>A strong QA engineer looks for <strong>invariants across
+systems</strong>.</p>
+<hr />
+<h1 id="an-invariant-is-often-more-useful-than-a-test-case">An invariant
+is often more useful than a test case</h1>
+<p>Consider this possible invariant:</p>
+<blockquote>
+<p>Every billable impression must be traceable to one advertising
+opportunity and the corresponding transaction context.</p>
+</blockquote>
+<p>That suggests tests around identifiers.</p>
+<p>OpenRTB's <code>Bid</code> object includes identifiers such as the
+bidder-generated bid ID and <code>impid</code>, which ties the bid to a
+specific impression object in the original request. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md?utm_source=chatgpt.com">GitHub</a></p>
+<p>Now imagine:</p>
+<pre><code>Request:
+impid = A782
+
+Response:
+impid = B991</code></pre>
+<p>Your JSON is perfectly valid.</p>
+<p>HTTP is <code>200</code>.</p>
+<p>But semantically the bid may no longer refer to the opportunity that
+was offered.</p>
+<p>That is a <strong>contract/business-integrity test</strong>, not
+merely schema validation.</p>
+<p>You should learn to distinguish:</p>
+<pre><code>Syntax validation:
+&quot;Is this JSON structurally legal?&quot;
+
+Semantic validation:
+&quot;Does this JSON make sense for this transaction?&quot;</code></pre>
+<p>Senior-level API testing increasingly lives in the second
+category.</p>
+<hr />
+<h1 id="be-careful-with-strict-contract-tests">Be careful with strict
+contract tests</h1>
+<p>Here's another realistic integration risk.</p>
+<p>OpenRTB 2.6's repository states that the specification can receive
+non-breaking improvements roughly monthly, including new fields,
+objects, and enumeration values; breaking changes would cause a version
+change. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x?utm_source=chatgpt.com">GitHub</a></p>
+<p>Imagine your test says:</p>
+<pre><code>expect(Object.keys(bidRequest)).toEqual([
+  &quot;id&quot;,
+  &quot;imp&quot;,
+  &quot;site&quot;,
+  &quot;device&quot;
+]);</code></pre>
+<p>Your partner legally introduces:</p>
+<pre><code>{
+  &quot;newOptionalField&quot;: &quot;...&quot;
+}</code></pre>
+<p>Your application parser rejects the payload.</p>
+<p>Your contract test also fails.</p>
+<p>Did the partner break the contract?</p>
+<p>Potentially not.</p>
+<p><strong>You may have implemented the contract too
+strictly.</strong></p>
+<p>A better integration strategy usually distinguishes between:</p>
+<pre><code>unknown optional field</code></pre>
+<p>and:</p>
+<pre><code>missing required field</code></pre>
+<p>Those are different risks.</p>
+<p>This is another example where “more strict” does not automatically
+mean “better quality.”</p>
+<p>Context decides.</p>
+<hr />
+<h1 id="now-add-the-ad-tech-supply-chain">Now add the ad-tech supply
+chain</h1>
+<p>Programmatic advertising can contain several intermediaries between a
+publisher and advertiser.</p>
+<p>That creates questions such as:</p>
+<blockquote>
+<p>Who actually has permission to sell this inventory?</p>
+</blockquote>
+<p>Industry mechanisms such as <strong>ads.txt</strong>,
+<strong>sellers.json</strong>, and OpenRTB's <strong>SupplyChain
+object</strong> exist partly to make these relationships more
+transparent. IAB Tech Lab says ads.txt lets publishers publicly declare
+authorized sellers, while sellers.json and the SupplyChain object help
+buyers identify entities participating in selling or reselling a bid
+request. <a
+href="https://iabtechlab.com/ads-txt/?utm_source=chatgpt.com">IAB Tech
+Lab+1</a></p>
+<p>This gives a tester another useful lesson:</p>
+<p><strong>Valid files do not automatically mean valid
+relationships.</strong></p>
+<p>Imagine:</p>
+<pre><code>publisher ads.txt
+     ↓
+Seller X = authorized</code></pre>
+<p>but:</p>
+<pre><code>Seller X sellers.json
+     ↓
+publisher account relationship inconsistent</code></pre>
+<p>Each file might parse correctly.</p>
+<p>Together they contradict each other.</p>
+<p>Interestingly, IAB Tech Lab's own supply-chain validation product
+explicitly checks not only technical conformance but also
+inconsistencies between ads.txt and sellers.json. <a
+href="https://iabtechlab.com/software/supply-chain-validation/?utm_source=chatgpt.com">IAB
+Tech Lab</a></p>
+<p>That is essentially an industry example of a testing principle:</p>
+<blockquote>
+<p><strong>Many important bugs live between individually valid
+components.</strong></p>
+</blockquote>
+<p>This is why integration testing matters.</p>
+<hr />
+<h1 id="soft-skill-dont-say-the-tracking-is-broken">Soft skill: don't
+say “the tracking is broken”</h1>
+<p>Now imagine Ad Operations reports:</p>
+<blockquote>
+<p>“Campaign 912 spent too much yesterday.”</p>
+</blockquote>
+<p>Developer says:</p>
+<blockquote>
+<p>“Our billing endpoint is fine.”</p>
+</blockquote>
+<p>Data team says:</p>
+<blockquote>
+<p>“The dashboard query is fine.”</p>
+</blockquote>
+<p>Partner says:</p>
+<blockquote>
+<p>“Our reports are correct.”</p>
+</blockquote>
+<p>This is where QA communication becomes extremely important.</p>
+<p>Saying:</p>
+<blockquote>
+<p>“Tracking is broken.”</p>
+</blockquote>
+<p>helps almost nobody.</p>
+<p>Instead, structure the conversation around evidence.</p>
+<p>For example:</p>
+<blockquote>
+<p>For Campaign 912, our win count and the exchange's count remain
+close, but our billable-impression count begins diverging after 14:20. I
+sampled five transactions in the divergent window and found that two
+billing event IDs appear twice in our ledger. I haven't yet confirmed
+whether the duplicate originates from the partner or our retry handling.
+I think the next useful step is tracing those event IDs through
+ingestion and ledger processing.</p>
+</blockquote>
+<p>Look carefully at that communication.</p>
+<p>You didn't accuse the exchange.</p>
+<p>You didn't accuse the developer.</p>
+<p>You didn't pretend you knew the root cause.</p>
+<p>You stated:</p>
+<pre><code>what is known
+where divergence begins
+what evidence exists
+what remains unknown
+what investigation would reduce uncertainty</code></pre>
+<p>That's excellent QA communication.</p>
+<p>The objective isn't winning an argument.</p>
+<p>The objective is moving the investigation forward.</p>
+<hr />
+<h1
+id="ad-tech-testing-requires-business-questions-not-just-technical-questions">Ad-tech
+testing requires business questions, not just technical questions</h1>
+<p>Suppose a campaign has:</p>
+<pre><code>Daily budget
+Target audience
+Country targeting
+Frequency cap
+Bid strategy
+Start/end time
+Creative restrictions</code></pre>
+<p>Now imagine a tester writes excellent API tests for:</p>
+<pre><code>POST /campaign
+GET /campaign
+PUT /campaign
+DELETE /campaign</code></pre>
+<p>The endpoints all work.</p>
+<p>But important questions remain.</p>
+<p>What happens when the campaign reaches its daily budget while
+thousands of auctions are already concurrently being processed?</p>
+<p>What happens around midnight when the budget resets?</p>
+<p>Whose timezone defines midnight?</p>
+<p>What happens if a user's frequency-cap event arrives late?</p>
+<p>Can two bidder instances simultaneously believe there is sufficient
+campaign budget?</p>
+<p>Does changing targeting affect already-issued bid requests?</p>
+<p>What happens to reporting when a campaign is paused while events are
+still arriving?</p>
+<p>Those questions come from understanding:</p>
+<p><strong>campaign lifecycle + concurrency + distributed state +
+money.</strong></p>
+<p>Not from knowing HTTP verbs.</p>
+<hr />
+<h1 id="a-useful-ad-tech-test-strategy-model">A useful ad-tech test
+strategy model</h1>
+<p>When you encounter an ad-tech feature, I suggest thinking through
+this chain:</p>
+<pre><code>Business rule
+      ↓
+Business event
+      ↓
+Identity
+      ↓
+State transition
+      ↓
+Money consequence
+      ↓
+Reporting consequence
+      ↓
+Failure/recovery behavior</code></pre>
+<p>Take:</p>
+<blockquote>
+<p>“Advertiser is charged for billable impressions.”</p>
+</blockquote>
+<p>Ask:</p>
+<p><strong>Business event:</strong> what precisely makes an impression
+billable?</p>
+<p><strong>Identity:</strong> what uniquely identifies it?</p>
+<p><strong>State:</strong> what must happen before billing?</p>
+<p><strong>Money:</strong> how is cost calculated?</p>
+<p><strong>Reporting:</strong> when does reporting reflect it?</p>
+<p><strong>Failure:</strong> what if the notification fails?</p>
+<p><strong>Retry:</strong> can it arrive again?</p>
+<p><strong>Reconciliation:</strong> how do we detect disagreement with
+the partner?</p>
+<p>That one model could generate dozens of valuable experiments.</p>
+<p>More importantly, it generates them for a reason.</p>
+<hr />
+<h1 id="todays-exercise">Today's exercise</h1>
+<p>You're testing a DSP.</p>
+<p>You see this production-like test run:</p>
+<pre><code>100,000 bid requests
+12,000 bids
+2,800 wins
+2,100 recorded impressions
+2,350 billable events</code></pre>
+<p>Don't immediately assume there is a bug.</p>
+<p>The interesting observation is:</p>
+<pre><code>billable events &gt; recorded impressions</code></pre>
+<p>Your task is to produce <strong>three plausible hypotheses</strong>
+before looking at the code.</p>
+<p>For example, perhaps your definition of “recorded impression” differs
+from the exchange's billable event policy. Perhaps duplicate billing
+events are being processed. Perhaps your own impression-tracking
+pipeline is losing events.</p>
+<p>Then decide what evidence would distinguish those hypotheses.</p>
+<p>Look at:</p>
+<pre><code>transaction IDs
+timestamps
+partner logs
+retry attempts
+duplicate identifiers
+campaign IDs
+event ordering
+billing policy</code></pre>
+<p>The exercise is not:</p>
+<blockquote>
+<p>“Find the bug.”</p>
+</blockquote>
+<p>The skill is:</p>
+<blockquote>
+<p><strong>Turn a suspicious business signal into competing
+explanations, then design tests that eliminate explanations one by
+one.</strong></p>
+</blockquote>
+<p>That is scientific thinking.</p>
+<p>And excellent testing is much closer to investigation than to
+checking boxes.</p>
+<p>The deeper lesson today is therefore not just about advertising.</p>
+<p>It is this:</p>
+<blockquote>
+<p><strong>Whenever software represents a real business process, learn
+the meaning of the events before testing the APIs that transport
+them.</strong></p>
+</blockquote>
+<p>A <code>200 OK</code> tells you that a technical interaction
+succeeded.</p>
+<p>It does <strong>not</strong> tell you that the business transaction
+was correct.</p>
+<p>That distinction is one of the biggest steps from API automation
+toward quality engineering. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md?utm_source=chatgpt.com">GitHub+1</a></p>
+<p>For deeper reading:</p>
+<p><a
+href="https://iabtechlab.com/standards/openrtb/?utm_source=chatgpt.com">IAB
+Tech Lab — OpenRTB specification and resources</a></p>
+<p><a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md?utm_source=chatgpt.com">OpenRTB
+2.6 — transaction and notification semantics</a></p>
+<p><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">James
+Bach — Heuristic Test Strategy Model</a></p>
+<p><a
+href="https://www.ministryoftesting.com/insights/the-forgotten-part-of-quality-paying-attention-to-production?utm_source=chatgpt.com">Ministry
+of Testing — Paying attention to production and observability</a></p>
+<p><a href="https://iabtechlab.com/ads-txt/?utm_source=chatgpt.com">IAB
+Tech Lab — ads.txt and authorized sellers</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-04.html" rel="prev"><span>Previous</span>Testing Live Sports Data: When the “Correct” Answer Keeps Changing</a><a href="/qa-blog/posts/qa-thinking-day-06.html" rel="next"><span>Next</span>SaaS Authorization Testing: Hiding the Button Is Not Security</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

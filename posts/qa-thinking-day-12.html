@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Michael Bolton and James Bach&#39;s distinction between testing and algorithmic checking is useful here. Automated checks can be valuable parts of a test strategy, but the tester still has to decide what matters, i">
+  <meta name="color-scheme" content="light">
+  <title>Accessibility Testing: “0 Axe Violations” Does Not Mean Your Checkout Is Usable | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 12</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-12">QA Thinking — Day 12</h1>
+<h2
+id="accessibility-testing-0-axe-violations-does-not-mean-your-checkout-is-usable">Accessibility
+Testing: “0 Axe Violations” Does Not Mean Your Checkout Is Usable</h2>
+<p>Imagine your CI pipeline contains this check:</p>
+<pre><code>Checkout accessibility scan
+Violations: 0
+
+PASS</code></pre>
+<p>The team is happy.</p>
+<p>Then you try to buy something without touching the mouse.</p>
+<p>You press <code>Tab</code> through the checkout.</p>
+<pre><code>Email        ✓
+First name   ✓
+Last name    ✓
+Street       ✓
+City         ✓
+Country      ✓</code></pre>
+<p>The country selector receives focus.</p>
+<p>You press:</p>
+<pre><code>Enter
+Space
+Arrow Down</code></pre>
+<p>Nothing happens.</p>
+<p>The control is a custom dropdown that works beautifully with a mouse
+but cannot be operated from the keyboard.</p>
+<p>Because country is required, you cannot continue to shipping.</p>
+<p>Your automated accessibility check was completely green.</p>
+<p>Your checkout is inaccessible.</p>
+<p>Neither observation contradicts the other.</p>
+<p>The automated tool answered something like:</p>
+<blockquote>
+<p>“Did I detect any accessibility problems covered by my rules?”</p>
+</blockquote>
+<p>Your actual testing question was:</p>
+<blockquote>
+<p><strong>“Can a customer who does not use a mouse successfully buy
+something?”</strong></p>
+</blockquote>
+<p>Those are different questions.</p>
+<p>Michael Bolton and James Bach's distinction between testing and
+algorithmic checking is useful here. Automated checks can be valuable
+parts of a test strategy, but the tester still has to decide what
+matters, investigate the product, observe behavior, model users and
+interpret the results. Michael explicitly warns against treating
+automated checking as though it represented the entirety of testing. <a
+href="https://developsense.com/blog/2016/04/you-are-not-checking?utm_source=chatgpt.com">DevelopSense+1</a></p>
+<p>Accessibility is one of the clearest places to see that
+distinction.</p>
+<hr />
+<h2
+id="first-automated-accessibility-testing-is-extremely-useful">First:
+automated accessibility testing is extremely useful</h2>
+<p>I don't want you to leave today's lesson thinking:</p>
+<blockquote>
+<p>“Axe is useless.”</p>
+</blockquote>
+<p>Quite the opposite.</p>
+<p>Automation can detect large numbers of problems cheaply and
+consistently.</p>
+<p>For example:</p>
+<pre><code>missing form labels
+invalid ARIA relationships
+some contrast problems
+missing document language
+invalid accessible names
+certain structural problems</code></pre>
+<p>Deque analyzed more than 13,000 page/page states containing nearly
+300,000 accessibility issues from first-time audits. In that dataset,
+its axe-core-powered automated testing identified 57.38% of the total
+recorded issues. That is substantial value for something that can run
+continuously in CI. <a
+href="https://www.deque.com/automated-accessibility-coverage-report/?utm_source=chatgpt.com">Deque</a></p>
+<p>The mistake is making this jump:</p>
+<pre><code>axe found no issues
+        ↓
+page is accessible</code></pre>
+<p>The evidence does not support that conclusion.</p>
+<p>In the same Deque dataset, automated checks found
+<strong>none</strong> of the recorded issues categorized as Focus Order
+or Focus Visible, and only a very small share of the Keyboard issues.
+Those were overwhelmingly found manually. <a
+href="https://www.deque.com/automated-accessibility-coverage-report/?utm_source=chatgpt.com">Deque</a></p>
+<p>That is exactly the type of problem our broken country selector
+represents.</p>
+<p>So a better model is:</p>
+<pre><code>Automation
+    ↓
+cheap repeatable accessibility checks
+
++
+
+Human investigation
+    ↓
+actual interaction and usability
+
++
+
+Assistive technology
+    ↓
+how information and controls are exposed
+
+=
+
+much stronger accessibility testing</code></pre>
+<hr />
+<h1 id="dont-test-accessibility-as-a-separate-page-inspection">Don't
+test accessibility as a separate page inspection</h1>
+<p>Suppose somebody tells you:</p>
+<blockquote>
+<p>“Please accessibility-test checkout.”</p>
+</blockquote>
+<p>A weak approach might be:</p>
+<pre><code>Open checkout
+Run axe
+Check contrast
+Check labels
+Done</code></pre>
+<p>I would instead start from the <strong>business journey</strong>.</p>
+<p>For an e-commerce product, the mission might be:</p>
+<blockquote>
+<p><strong>Can a customer complete a purchase without relying on a mouse
+or visual-only information?</strong></p>
+</blockquote>
+<p>Now the journey becomes something like:</p>
+<pre><code>Find product
+      ↓
+Choose variant
+      ↓
+Add to cart
+      ↓
+Change quantity
+      ↓
+Apply voucher
+      ↓
+Start checkout
+      ↓
+Enter address
+      ↓
+Select shipping
+      ↓
+Enter payment
+      ↓
+Handle validation errors
+      ↓
+Place order
+      ↓
+Understand confirmation</code></pre>
+<p>Accessibility failures anywhere in that chain can become commercial
+failures.</p>
+<p>W3C's current forms guidance explicitly uses purchasing as one of the
+major form use cases and notes that forms can be visually and
+cognitively complex. It recommends clear labels, meaningful grouping,
+instructions and understandable feedback, while also noting that
+unnecessary complexity can contribute to abandonment. <a
+href="https://www.w3.org/WAI/tutorials/forms/?utm_source=chatgpt.com">W3C</a></p>
+<p>This is therefore not merely:</p>
+<blockquote>
+<p>“Check whether labels have <code>for</code> attributes.”</p>
+</blockquote>
+<p>The meaningful product question is:</p>
+<blockquote>
+<p><strong>Can the user accomplish the transaction?</strong></p>
+</blockquote>
+<hr />
+<h1
+id="start-with-the-cheapest-manual-accessibility-test-you-have-put-the-mouse-away">Start
+with the cheapest manual accessibility test you have: put the mouse
+away</h1>
+<p>Ministry of Testing recommends a remarkably simple exercise:</p>
+<blockquote>
+<p>navigate the product using only the keyboard.</p>
+</blockquote>
+<p>You don't need expensive accessibility tooling for this first
+experiment. Keyboard-only exploration can reveal problems with
+operability, focus visibility and navigation very quickly. <a
+href="https://www.ministryoftesting.com/insights/simple-tests-for-accessibility-every-tester-should-know?utm_source=chatgpt.com">Ministry
+of Testing</a></p>
+<p>On a typical web application, experiment with:</p>
+<pre><code>Tab
+Shift + Tab
+Enter
+Space
+Arrow keys
+Escape</code></pre>
+<p>But don't merely ask:</p>
+<blockquote>
+<p>“Can every control receive focus?”</p>
+</blockquote>
+<p>That's too shallow.</p>
+<p>Ask:</p>
+<blockquote>
+<p><strong>Can I understand where I am and complete the
+workflow?</strong></p>
+</blockquote>
+<p>Consider this checkout.</p>
+<p>You tab through:</p>
+<pre><code>Email
+First name
+Last name
+Street
+City
+Country
+Continue</code></pre>
+<p>That sounds good.</p>
+<p>But perhaps the visible focus indicator looks like this:</p>
+<pre><code>normal field:
+┌────────────────────────┐
+│ Germany                │
+└────────────────────────┘
+
+focused field:
+┌────────────────────────┐
+│ Germany                │
+└────────────────────────┘</code></pre>
+<p>Nothing visually changes.</p>
+<p>Technically, keyboard focus exists.</p>
+<p>Practically, a sighted keyboard user cannot tell where it is.</p>
+<p>That's why WCAG distinguishes keyboard operability from visible
+focus. <a
+href="https://www.w3.org/WAI/WCAG22/Understanding/?utm_source=chatgpt.com">W3C+1</a></p>
+<hr />
+<h1
+id="now-look-for-the-bug-between-focus-exists-and-focus-is-useful">Now
+look for the bug between “focus exists” and “focus is useful”</h1>
+<p>Imagine checkout has a sticky order summary:</p>
+<pre><code>┌────────────────────────────┐
+│ Address fields             │
+│                            │
+│                            │
+│                            │
+│                            │
+├────────────────────────────┤
+│ TOTAL €87   PLACE ORDER    │ ← sticky footer
+└────────────────────────────┘</code></pre>
+<p>You tab downward.</p>
+<p>Eventually focus reaches:</p>
+<pre><code>Terms and conditions checkbox</code></pre>
+<p>But that checkbox sits underneath the sticky footer.</p>
+<p>So technically:</p>
+<pre><code>focused = true</code></pre>
+<p>Yet the customer cannot see it.</p>
+<p>WCAG 2.2 introduced <strong>Focus Not Obscured (Minimum)</strong> at
+Level AA specifically for this kind of problem: when a component
+receives keyboard focus, author-created content should not completely
+hide it. W3C gives sticky headers, footers and overlapping content as
+typical examples. <a
+href="https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/?utm_source=chatgpt.com">W3C+1</a></p>
+<p>Notice what happened.</p>
+<p>A DOM assertion might say:</p>
+<pre><code>expect(element).toBeFocused();</code></pre>
+<p>and pass.</p>
+<p>The actual user experience is still broken.</p>
+<p>That distinction should become familiar:</p>
+<pre><code>technical state
+≠
+usable state</code></pre>
+<hr />
+<h1 id="dynamic-components-deserve-special-attention">Dynamic components
+deserve special attention</h1>
+<p>Modern e-commerce sites contain lots of custom components:</p>
+<pre><code>country combobox
+size selector
+date picker
+voucher drawer
+cart side panel
+address autocomplete
+payment widget
+confirmation modal</code></pre>
+<p>These are often much riskier than plain HTML controls.</p>
+<p>Imagine clicking:</p>
+<pre><code>Apply voucher</code></pre>
+<p>opens:</p>
+<pre><code>┌────────────────────┐
+│ Apply voucher      │
+│                    │
+│ Code: [________]   │
+│                    │
+│ [Apply]       [X]  │
+└────────────────────┘</code></pre>
+<p>With the mouse, everything works.</p>
+<p>Now use the keyboard.</p>
+<p>You press Enter on <strong>Apply voucher</strong>.</p>
+<p>The dialog appears.</p>
+<p>But focus remains on the button behind it.</p>
+<p>Then <code>Tab</code> moves through:</p>
+<pre><code>Cart
+Checkout
+Header links
+Footer links</code></pre>
+<p>while the modal remains visually open.</p>
+<p>That is a serious interaction problem.</p>
+<p>Your accessibility test should ask things such as:</p>
+<pre><code>Where does focus go when the dialog opens?
+
+Can I navigate only inside the active dialog?
+
+Can I close it using the keyboard?
+
+Where does focus return when it closes?</code></pre>
+<p>These questions are difficult to reduce to a generic static scanner
+because they concern <strong>state transitions and interaction
+behavior</strong>.</p>
+<p>This connects beautifully with the state-based testing we've
+practiced throughout this series.</p>
+<p>Don't test only:</p>
+<pre><code>Voucher dialog closed</code></pre>
+<p>and:</p>
+<pre><code>Voucher dialog open</code></pre>
+<p>Investigate:</p>
+<pre><code>closed
+  ↓
+opening
+  ↓
+open
+  ↓
+validation error
+  ↓
+success
+  ↓
+closing
+  ↓
+return focus</code></pre>
+<p>Bugs often live in those transitions.</p>
+<hr />
+<h1
+id="accessibility-testing-is-also-apistate-testing-in-disguise">Accessibility
+testing is also API/state testing in disguise</h1>
+<p>Suppose a customer enters an invalid postcode.</p>
+<p>Checkout sends:</p>
+<pre><code>POST /checkout/address</code></pre>
+<p>Backend responds:</p>
+<pre><code>{
+  &quot;errors&quot;: {
+    &quot;postcode&quot;: &quot;Invalid postcode&quot;
+  }
+}</code></pre>
+<p>The frontend renders a red border.</p>
+<p>A sighted mouse user sees:</p>
+<pre><code>Postcode
+[123]    ← red border</code></pre>
+<p>But nothing else happens.</p>
+<p>The API is correct.</p>
+<p>The visual UI displays the error.</p>
+<p>Yet a screen-reader user may receive no useful notification of what
+changed.</p>
+<p>W3C's forms guidance recommends making errors understandable,
+associating them with the corresponding field and ensuring dynamic error
+feedback is programmatically exposed. Its examples include connecting
+error text with fields and making dynamic summary messages available to
+assistive technologies. <a
+href="https://www.w3.org/WAI/tutorials/forms/notifications/?utm_source=chatgpt.com">W3C+1</a></p>
+<p>Again, don't reduce the test to:</p>
+<pre><code>Error appears ✓</code></pre>
+<p>Ask:</p>
+<blockquote>
+<p><strong>Can the affected user discover the error, understand it and
+recover from it?</strong></p>
+</blockquote>
+<p>That is a much stronger oracle.</p>
+<hr />
+<h1 id="error-recovery-matters-more-than-error-presence">Error recovery
+matters more than error presence</h1>
+<p>Suppose checkout contains six fields.</p>
+<p>Three are invalid.</p>
+<p>After clicking:</p>
+<pre><code>Continue</code></pre>
+<p>you see:</p>
+<pre><code>3 errors</code></pre>
+<p>Good.</p>
+<p>Now imagine using the keyboard.</p>
+<p>Focus remains on:</p>
+<pre><code>Continue</code></pre>
+<p>The errors are 800 pixels above.</p>
+<p>You don't know which fields failed.</p>
+<p>You begin tabbing.</p>
+<p>Eventually you discover:</p>
+<pre><code>Street → okay
+City → error
+Postcode → error
+Country → error</code></pre>
+<p>That may technically expose all required information somewhere on the
+page.</p>
+<p>But the recovery experience is poor.</p>
+<p>W3C's current guidance says error notifications should be clear,
+identify the relevant field and provide useful information about how the
+mistake can be corrected. It also describes moving focus to an erroneous
+field as a useful pattern in appropriate cases. <a
+href="https://www.w3.org/WAI/tutorials/forms/notifications/?utm_source=chatgpt.com">W3C+1</a></p>
+<p>For a QA engineer, that suggests a better test mission:</p>
+<blockquote>
+<p><strong>After making realistic mistakes, can I efficiently recover
+without needing to rediscover the whole form?</strong></p>
+</blockquote>
+<p>That's very different from checking:</p>
+<pre><code>error div exists</code></pre>
+<hr />
+<h1 id="labels-are-more-than-visible-text">Labels are more than visible
+text</h1>
+<p>You see:</p>
+<pre><code>Email address
+[________________]</code></pre>
+<p>So you conclude:</p>
+<blockquote>
+<p>“It has a label.”</p>
+</blockquote>
+<p>But inspect how the markup works.</p>
+<p>Maybe:</p>
+<pre><code>&lt;div&gt;Email address&lt;/div&gt;
+&lt;input type=&quot;text&quot;&gt;</code></pre>
+<p>Visually, that looks perfectly reasonable.</p>
+<p>Programmatically, the input may have no associated accessible
+label.</p>
+<p>W3C recommends explicitly associating labels with form controls,
+commonly using:</p>
+<pre><code>&lt;label for=&quot;email&quot;&gt;Email address&lt;/label&gt;
+&lt;input id=&quot;email&quot;&gt;</code></pre>
+<p>because that relationship helps assistive technologies identify the
+control and also increases the clickable area for users who may have
+difficulty selecting small targets. <a
+href="https://www.w3.org/WAI/tutorials/forms/labels/?utm_source=chatgpt.com">W3C</a></p>
+<p>Automated tools are often excellent at finding this kind of
+issue.</p>
+<p>This is precisely where automation shines.</p>
+<p>So your strategy should not be:</p>
+<pre><code>manual OR automation</code></pre>
+<p>It should be:</p>
+<pre><code>automation finds cheap structural problems
+
+human testing finds behavioral problems
+
+assistive technology exposes interaction/meaning problems</code></pre>
+<p>Different techniques attack different risks.</p>
+<hr />
+<h1
+id="accessibility-automation-belongs-in-ci--but-use-it-as-a-guardrail">Accessibility
+automation belongs in CI — but use it as a guardrail</h1>
+<p>Suppose you're using Playwright.</p>
+<p>Running axe against important pages is sensible.</p>
+<p>Conceptually:</p>
+<pre><code>test(&#39;checkout has no automatically detectable violations&#39;, async ({ page }) =&gt; {
+  await page.goto(&#39;/checkout&#39;);
+
+  const results = await scanAccessibility(page);
+
+  expect(results.violations).toEqual([]);
+});</code></pre>
+<p>That's valuable because developers get quick feedback when somebody
+introduces:</p>
+<pre><code>missing label
+bad ARIA
+contrast regression
+invalid structural relationship</code></pre>
+<p>But notice how I would name the check:</p>
+<blockquote>
+<p><strong>no automatically detectable violations</strong></p>
+</blockquote>
+<p>not:</p>
+<blockquote>
+<p><strong>checkout is accessible</strong></p>
+</blockquote>
+<p>The first statement reflects what the evidence actually tells us.</p>
+<p>That wording may feel pedantic, but precision matters in QA.</p>
+<p>A test report should not claim more confidence than the test actually
+provides.</p>
+<hr />
+<h1 id="dont-run-accessibility-automation-only-on-page-load">Don't run
+accessibility automation only on page load</h1>
+<p>Here's another subtle mistake.</p>
+<p>Imagine checkout initially contains:</p>
+<pre><code>Address
+Shipping
+Payment</code></pre>
+<p>You scan it.</p>
+<p>Everything passes.</p>
+<p>Then clicking:</p>
+<pre><code>Apply voucher</code></pre>
+<p>loads a modal containing a missing label.</p>
+<p>Clicking:</p>
+<pre><code>Pay by credit card</code></pre>
+<p>loads a payment iframe.</p>
+<p>Submitting an invalid address creates new error content.</p>
+<p>The page now has states that never existed during the initial
+scan.</p>
+<p>Deque recommends thinking in terms of page <strong>states</strong>
+and user flows rather than assuming one scan of the initial DOM covers
+an interactive application. Its accessibility testing guidance
+explicitly discusses testing critical user flows such as retail
+add-to-cart and similar interactions. <a
+href="https://www.deque.com/blog/scripted-user-flow-testing-vs-end-to-end-testing-for-accessibility/?utm_source=chatgpt.com">Deque+1</a></p>
+<p>So your automated checks may need to scan after meaningful
+transitions:</p>
+<pre><code>checkout loaded
+
+voucher modal open
+
+validation errors displayed
+
+shipping option selected
+
+payment UI loaded</code></pre>
+<p>That is state-based accessibility testing.</p>
+<hr />
+<h1
+id="accessibility-is-another-reason-to-think-in-critical-journeys">Accessibility
+is another reason to think in critical journeys</h1>
+<p>Suppose your application has 3,000 pages.</p>
+<p>Scanning all of them sounds impressive.</p>
+<p>But customers make money-generating transactions through perhaps a
+handful of flows.</p>
+<p>For an e-commerce platform, I would prioritize:</p>
+<pre><code>Product discovery → cart → checkout → payment
+
+Login → account → order history
+
+Return/refund request
+
+Customer-service contact</code></pre>
+<p>That doesn't mean ignore everything else.</p>
+<p>It means risk guides depth.</p>
+<p>James Bach's Heuristic Test Strategy Model encourages exactly this
+kind of contextual reasoning: testing effort should be influenced by
+product factors, quality criteria and project risk rather than by
+mechanical enumeration. <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">Satisfice</a></p>
+<p>Accessibility becomes much more manageable when you ask:</p>
+<blockquote>
+<p><strong>Which user journeys would cause the greatest harm if somebody
+couldn't complete them?</strong></p>
+</blockquote>
+<p>That's a better starting point than:</p>
+<blockquote>
+<p>“How many WCAG criteria do we have?”</p>
+</blockquote>
+<hr />
+<h1 id="now-use-a-screen-reader--but-have-a-mission">Now use a screen
+reader — but have a mission</h1>
+<p>Eventually you should investigate with assistive technology such
+as:</p>
+<pre><code>NVDA + browser
+
+VoiceOver + Safari</code></pre>
+<p>But don't open a screen reader and randomly tab around.</p>
+<p>Pick a mission.</p>
+<p>For example:</p>
+<blockquote>
+<p><strong>Complete guest checkout and investigate whether every
+required control, state change, validation error and transaction result
+is understandable without relying on visual presentation.</strong></p>
+</blockquote>
+<p>Then listen critically.</p>
+<p>Imagine the visible button says:</p>
+<pre><code>Place order — €82.40</code></pre>
+<p>but the screen reader announces:</p>
+<pre><code>Button</code></pre>
+<p>That's a problem.</p>
+<p>Perhaps another control says:</p>
+<pre><code>Remove</code></pre>
+<p>three times:</p>
+<pre><code>Remove
+Remove
+Remove</code></pre>
+<p>A sighted user knows which item each belongs to because of
+layout.</p>
+<p>Someone navigating through the accessibility tree may lack that
+context.</p>
+<p>Testing accessibility requires asking:</p>
+<blockquote>
+<p><strong>What information did the visual design communicate
+implicitly, and is that meaning available through another
+representation?</strong></p>
+</blockquote>
+<p>That's deeper than standards memorization.</p>
+<p>It's a product-modeling skill.</p>
+<hr />
+<h1
+id="touch-targets-show-why-accessibility-often-improves-general-usability">Touch
+targets show why accessibility often improves general usability</h1>
+<p>WCAG 2.2 added a Level AA minimum target-size requirement. In
+general, pointer targets should be at least 24 × 24 CSS pixels or have
+enough spacing to avoid accidental activation, subject to specified
+exceptions. W3C explains that the goal is to help people who have
+difficulty with fine motor control avoid activating adjacent targets by
+mistake. <a
+href="https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum?utm_source=chatgpt.com">W3C</a></p>
+<p>Think about a mobile cart:</p>
+<pre><code>Quantity
+
+[-][1][+]
+
+Remove ×</code></pre>
+<p>Tiny controls packed together may be particularly difficult for
+someone with motor impairment.</p>
+<p>But they can also be annoying when you're:</p>
+<pre><code>on a moving train
+holding a baby
+using the phone one-handed
+wearing gloves
+tired</code></pre>
+<p>This is a useful mindset:</p>
+<blockquote>
+<p>Accessibility is not a collection of weird special cases.</p>
+</blockquote>
+<p>Many accessibility improvements increase robustness for a much
+broader range of real-world use.</p>
+<hr />
+<h1 id="dont-become-the-wcag-police">Don't become the “WCAG police”</h1>
+<p>This is where soft skills matter.</p>
+<p>Suppose you find that the voucher modal cannot be operated with the
+keyboard.</p>
+<p>You tell the developer:</p>
+<blockquote>
+<p>“This violates WCAG 2.1.1.”</p>
+</blockquote>
+<p>Developer responds:</p>
+<blockquote>
+<p>“Okay, but we have release blockers already.”</p>
+</blockquote>
+<p>You repeat:</p>
+<blockquote>
+<p>“But WCAG says it has to work.”</p>
+</blockquote>
+<p>The conversation can quickly become adversarial.</p>
+<p>Try communicating the <strong>product problem</strong> first:</p>
+<blockquote>
+<p>“When checkout opens the voucher dialog, keyboard focus stays on the
+page behind it. A keyboard-only customer can't reliably interact with
+the dialog or close it. I reproduced it in Chrome and Firefox. Mouse
+interaction works. Because this occurs during checkout, it can block
+customers who don't use a mouse from completing the purchase.”</p>
+</blockquote>
+<p>Then add:</p>
+<blockquote>
+<p>“It also maps to WCAG keyboard-access requirements.”</p>
+</blockquote>
+<p>Now the standard supports your evidence.</p>
+<p>It isn't substituting for the explanation.</p>
+<p>That's the same bug-advocacy principle we learned earlier:</p>
+<pre><code>observation
+    ↓
+user consequence
+    ↓
+evidence
+    ↓
+relevant standard</code></pre>
+<p>rather than:</p>
+<pre><code>standard
+    ↓
+therefore fix it</code></pre>
+<p>You are helping the team understand risk rather than merely quoting
+rules.</p>
+<hr />
+<h1 id="what-if-the-developer-says-axe-passes">What if the developer
+says “axe passes”?</h1>
+<p>Don't argue about the tool.</p>
+<p>Agree with the evidence.</p>
+<p>You can say:</p>
+<blockquote>
+<p>“Yes, the automated scan passes. The failure appears during
+interaction: after the modal opens, keyboard focus remains behind it.
+Automated scans are useful for structural issues, but this one is about
+focus behavior. I can reproduce it with the keyboard in about ten
+seconds.”</p>
+</blockquote>
+<p>That's persuasive because you are not saying:</p>
+<pre><code>tool bad</code></pre>
+<p>You're saying:</p>
+<pre><code>tool answered one question
+our experiment answered another</code></pre>
+<p>Deque's own data is useful supporting evidence here: many
+focus-order, visible-focus and keyboard issues in its audit dataset
+required manual detection even though automated checks found many other
+accessibility problems. <a
+href="https://www.deque.com/automated-accessibility-coverage-report/?utm_source=chatgpt.com">Deque</a></p>
+<p>This is a mature QA conversation.</p>
+<hr />
+<h1 id="a-useful-accessibility-test-strategy">A useful accessibility
+test strategy</h1>
+<p>I would think about a critical journey through several complementary
+lenses.</p>
+<p>First, use automated tooling continuously to catch cheap structural
+regressions.</p>
+<p>Then perform keyboard-only exploration of the complete workflow.</p>
+<p>Inspect dynamic state transitions:</p>
+<pre><code>modal opens
+validation appears
+loading starts
+results update
+form succeeds</code></pre>
+<p>Then use a screen reader on the most important journeys and
+components.</p>
+<p>Investigate zoom/reflow and responsive behavior where relevant.</p>
+<p>Use real mistakes rather than pristine test data so you exercise
+error recovery.</p>
+<p>And most importantly, don't stop at:</p>
+<pre><code>Can I activate this control?</code></pre>
+<p>Ask:</p>
+<pre><code>Can I understand it?
+
+Can I discover what happened?
+
+Can I recover from mistakes?
+
+Can I complete the business goal?</code></pre>
+<p>That final question keeps accessibility testing grounded in product
+quality rather than checklist compliance.</p>
+<hr />
+<h1 id="a-current-standards-note">A current standards note</h1>
+<p>As of September 2026, W3C continues to encourage teams to use
+<strong>WCAG 2.2</strong> as the latest finalized WCAG 2 standard. WCAG
+2.2 includes criteria such as Focus Not Obscured and Target Size
+(Minimum). <a
+href="https://www.w3.org/WAI/standards-guidelines/wcag/?utm_source=chatgpt.com">W3C+1</a></p>
+<p>You may also see discussion of <strong>WCAG 3.0</strong>. W3C
+published an updated Working Draft on September 10, 2026, but it remains
+a draft under development. Don't treat WCAG 3 as though it has already
+replaced WCAG 2.2. <a
+href="https://www.w3.org/TR/2026/WD-wcag-3.0-20260910/?utm_source=chatgpt.com">W3C</a></p>
+<p>For day-to-day testing now, WCAG 2.2 plus strong user-focused
+investigation is the practical place to work.</p>
+<hr />
+<h1 id="todays-challenge">Today's challenge</h1>
+<p>You are testing checkout.</p>
+<p>Your automated axe scan reports:</p>
+<pre><code>0 violations</code></pre>
+<p>Now perform this thought experiment.</p>
+<p>The checkout contains:</p>
+<pre><code>Address form
+
+Country combobox
+
+Apply voucher modal
+
+Sticky order-summary footer
+
+Place order button</code></pre>
+<p>You discover three things.</p>
+<p>When the voucher modal opens:</p>
+<pre><code>focus remains behind the modal</code></pre>
+<p>When address validation fails:</p>
+<pre><code>three fields turn red</code></pre>
+<p>but no obvious error summary or focus movement occurs.</p>
+<p>And while tabbing near the bottom of checkout:</p>
+<pre><code>the sticky order summary completely covers
+the currently focused Terms checkbox</code></pre>
+<p>Don't create three tickets immediately.</p>
+<p>Your exercise is to design <strong>three investigations</strong>.</p>
+<p>For each one, identify:</p>
+<pre><code>the user task
+
+the failure condition
+
+what evidence you would collect
+
+the business consequence
+
+what part is worth automating afterward</code></pre>
+<p>For example, with the voucher modal, your mission might be:</p>
+<blockquote>
+<p>Open and use the voucher workflow using keyboard only, including
+invalid voucher, successful voucher and closing the dialog, while
+observing focus movement at every state transition.</p>
+</blockquote>
+<p>Then ask:</p>
+<blockquote>
+<p><strong>What would this teach me that the initial axe scan could
+not?</strong></p>
+</blockquote>
+<p>That's the important question.</p>
+<p>Because today's central lesson is not:</p>
+<blockquote>
+<p>“Do manual accessibility testing.”</p>
+</blockquote>
+<p>It is:</p>
+<blockquote>
+<p><strong>Understand what information each testing technique can and
+cannot give you.</strong></p>
+</blockquote>
+<p>Automated accessibility checks are powerful.</p>
+<p>Keyboard testing is powerful.</p>
+<p>Screen-reader testing is powerful.</p>
+<p>Standards are useful.</p>
+<p>None of them alone tells you:</p>
+<blockquote>
+<p><strong>Can this person successfully accomplish what the product
+exists to let them do?</strong></p>
+</blockquote>
+<p>Answering that requires testing judgment.</p>
+<p>And when the product is an e-commerce checkout, that judgment
+connects directly to accessibility, customer experience, conversion,
+technical correctness and business risk.</p>
+<p>That is quality engineering.</p>
+<h3 id="recommended-reading">Recommended reading</h3>
+<p>W3C's Forms Tutorial is one of the most useful practical
+accessibility references for testers because it connects labels,
+validation, feedback and assistive-technology behavior directly to
+workflows such as purchasing. Ministry of Testing's keyboard-testing
+article is an excellent low-cost technique you can use immediately.
+Deque's accessibility coverage study is useful for understanding both
+the power and the limitations of automated checks, while Michael
+Bolton's testing/checking work explains why those checks should sit
+inside a larger investigative testing strategy. <a
+href="https://www.w3.org/WAI/tutorials/forms/?utm_source=chatgpt.com">DevelopSense+3W3C+3Ministry
+of Testing+3</a></p>
+<p><a
+href="https://www.w3.org/WAI/tutorials/forms/?utm_source=chatgpt.com">W3C
+— Forms Accessibility Tutorial</a></p>
+<p><a
+href="https://www.w3.org/WAI/WCAG22/Understanding/?utm_source=chatgpt.com">W3C
+— Understanding WCAG 2.2</a></p>
+<p><a
+href="https://www.ministryoftesting.com/insights/simple-tests-for-accessibility-every-tester-should-know?utm_source=chatgpt.com">Ministry
+of Testing — Simple Tests for Accessibility Every Tester Should
+Know</a></p>
+<p><a
+href="https://www.deque.com/automated-accessibility-coverage-report/?utm_source=chatgpt.com">Deque
+— Automated Accessibility Coverage Report</a></p>
+<p><a
+href="https://developsense.com/blog/2025/04/checking-is-inside-testing?utm_source=chatgpt.com">Michael
+Bolton — Checking Is Inside Testing</a></p>
+<p><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model?utm_source=chatgpt.com">James
+Bach — Heuristic Test Strategy Model</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-11.html" rel="prev"><span>Previous</span>Feature Flags Change What “the Version” Means</a><a href="/qa-blog/posts/qa-thinking-day-13.html" rel="next"><span>Next</span>Contract Testing: A Green Schema Test Can Still Break the Consumer</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
