@@ -1,0 +1,53 @@
+name: Publish QA Field Notes
+
+on:
+  push:
+    branches: [qa-blog-initial-publish]
+    paths:
+      - 'qa-thinking-day-*.md'
+      - 'qa-interview-day-*.md'
+      - '.github/workflows/publish-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qa-blog-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out posts
+        uses: actions/checkout@v4
+        with:
+          ref: qa-blog-initial-publish
+
+      - name: Check out reading site
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: .site-build
+
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Render posts
+        env:
+          QA_BLOG_DIR: ${{ github.workspace }}
+          QA_SITE_DIR: ${{ github.workspace }}/.site-build
+        run: node .site-build/.site-source/build-site.mjs
+
+      - name: Publish site
+        run: |
+          git -C .site-build add -- index.html posts assets
+          if ! git -C .site-build diff --cached --quiet; then
+            git -C .site-build config user.name 'github-actions[bot]'
+            git -C .site-build config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C .site-build commit -m 'Publish latest QA posts'
+            git -C .site-build push origin HEAD:gh-pages
+          fi
