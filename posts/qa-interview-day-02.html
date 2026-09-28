@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="This question is really testing two separate skills: how a tester structures exploration under time pressure, and how they handle the ambiguity of an intermittent bug when the clock is against them. Weak candid">
+  <meta name="color-scheme" content="light">
+  <title>You get a new feature dropped on your desk with no test plan and 90 minutes before the release freeze. Fifteen minutes before the deadline you find a bug you can&#39;t reliably reproduce. What do you do? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 2</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-2">QA Interview Q&amp;A — Day 2</h1>
+<h2
+id="question-you-get-a-new-feature-dropped-on-your-desk-with-no-test-plan-and-90-minutes-before-the-release-freeze-fifteen-minutes-before-the-deadline-you-find-a-bug-you-cant-reliably-reproduce-what-do-you-do">Question:
+You get a new feature dropped on your desk with no test plan and 90
+minutes before the release freeze. Fifteen minutes before the deadline
+you find a bug you can't reliably reproduce. What do you do?</h2>
+<h2 id="answer">Answer</h2>
+<p>This question is really testing two separate skills: how a tester
+structures exploration under time pressure, and how they handle the
+ambiguity of an intermittent bug when the clock is against them. Weak
+candidates answer only the first half and then say "I'd write a bug
+report" as if reproducibility were a formality.</p>
+<p><strong>Structuring the 90 minutes</strong></p>
+<p>An experienced tester doesn't start clicking randomly. They spend the
+first five minutes turning "test this feature" into a charter — a short,
+written mission statement that says what they're exploring, with what
+techniques, and why. This is straight from Session-Based Test
+Management, which James Bach developed specifically to make exploratory
+testing accountable without forcing it into scripted steps beforehand
+(<a
+href="https://www.satisfice.com/blog/archives/1509">satisfice.com</a>).
+A charter for, say, a new "apply promo code" field in a marketplace
+checkout might read: "Explore promo code entry with boundary and
+malformed inputs, focusing on interaction with existing cart discounts
+and currency conversion."</p>
+<p>From there they'd use a heuristic like Bach's SFDPOT (Structure,
+Function, Data, Platform, Operations, Time) to decide where to spend the
+limited minutes, rather than testing everything shallowly. Given 90
+minutes, that usually means: 20 minutes on the obvious happy path and
+functional coverage, 40 minutes on data variation and edge cases (empty
+codes, expired codes, codes stacked with existing discounts, codes with
+unicode or trailing whitespace), 20 minutes on interaction with other
+features (does the promo survive a currency switch, a saved-cart reload,
+a guest-to-login conversion), and 10 minutes held in reserve for
+whatever the first hour turns up. The reserve matters — exploratory
+testing is adaptive, and the point of not scripting it upfront is that
+what you learn in minute 30 should change what you do in minute 60.
+Michael Bolton's writing on exploratory testing emphasizes exactly this:
+testing and learning happen simultaneously, and a rigid plan defeats the
+purpose (<a
+href="https://developsense.com/blog/category/test-framing/exploratory-testing">developsense.com</a>).</p>
+<p><strong>The unreproducible bug at minute 75</strong></p>
+<p>This is the part candidates fumble. The instinct is either to burn
+the remaining time chasing repro steps (and miss the freeze deadline
+with nothing to show), or to drop it because "I can't prove it." Both
+are wrong.</p>
+<p>Cem Kaner's framing of testing as an investigative discipline is
+useful here: your job is not to produce a perfectly reproducible bug
+report, it's to produce evidence that informs a risk decision. An
+intermittent bug found during a real exploration session, on a feature
+nobody has tested yet, is itself a signal — even without a deterministic
+repro, it tells you something about the feature's reliability under
+conditions you haven't fully characterized yet (timing, network latency,
+state from a previous action, race conditions in async calls).</p>
+<p>What I'd actually do:</p>
+<ul>
+<li>Capture everything I have immediately: screenshot or screen
+recording if one was running, console/network logs, exact timestamp,
+browser/device, and the rough sequence of actions leading up to it —
+even if I can't say which step caused it.</li>
+<li>Note what I was doing in the surrounding minutes, since intermittent
+bugs in checkout/promo flows are very often timing- or state-dependent
+(e.g., cart total recalculating asynchronously while the promo code POST
+is in flight — common in marketplace and payments contexts).</li>
+<li>Write it up explicitly as "observed once, not yet reproducible"
+rather than silently omitting it or overstating it as confirmed.
+Precision about certainty is part of the report's credibility.</li>
+<li>Flag it live, not in a ticket queue: go to whoever owns the release
+decision and say something like, "I found something that looked like a
+discount being applied twice on one attempt, I couldn't reproduce it in
+the time I had, here's what I captured — I don't have enough to block
+the release on my own authority, but I think it's worth either a fast
+pairing session with the engineer who built this or accepting the risk
+with eyes open."</li>
+</ul>
+<p>That last sentence matters for the "navigating disagreement without
+claiming authority you don't have" angle interviewers are often probing
+for. A tester's job is to surface risk with evidence and let the person
+accountable for the release make the call — not to unilaterally block or
+unilaterally wave it through. If the PM or engineering lead decides to
+ship anyway, that's a legitimate call as long as it's made with the
+information in front of them, not in ignorance of it.</p>
+<p><strong>Common weak answers</strong></p>
+<ul>
+<li>"I'd retest it a few more times to try to reproduce it" — reasonable
+in isolation, but at minute 75 of 90 this is often the wrong tradeoff;
+you'd be trading coverage of the rest of the feature for one bug of
+uncertain severity.</li>
+<li>"I'd log it as a bug and move on" without capturing context — loses
+the evidence that makes it actionable later.</li>
+<li>"If I can't reproduce it, it's not worth mentioning" — throws away a
+real signal; intermittent bugs are frequently the ones that matter most
+in production because they're exactly the class that automated checks
+(which run the same deterministic path every time) are bad at
+catching.</li>
+</ul>
+<h2 id="follow-ups">Follow-ups</h2>
+<ul>
+<li>How would this change if the feature touched payment capture instead
+of a promo code — does a lower bar for evidence become acceptable, or a
+higher one?</li>
+<li>If the same intermittent bug reappeared in the next three releases
+from three different testers, how would you push for it to be
+prioritized differently than a fresh one-off report?</li>
+</ul>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://www.satisfice.com/blog/archives/1509">Exploratory
+Testing 3.0 — James Bach, Satisfice</a> — Bach's own account of how
+session-based/charter-driven exploratory testing has evolved, used here
+for the charter and SFDPOT-style heuristic approach to structuring
+limited testing time.</li>
+<li><a
+href="https://developsense.com/blog/category/test-framing/exploratory-testing">Exploratory
+Testing — DevelopSense (Michael Bolton)</a> — Bolton's writing on
+exploratory testing as simultaneous learning, design, and execution,
+used to justify the adaptive/reserve-time structure rather than a fixed
+script.</li>
+<li><a href="https://satisfice.us/articles/et-article.pdf">Exploratory
+Testing Explained, James Bach (PDF)</a> — foundational article on
+treating exploration as a disciplined, accountable activity rather than
+unstructured ad hoc testing.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-01.html" rel="prev"><span>Previous</span>Your team just shipped a checkout redesign. The automation suite is green, but a support ticket says customers in Germany can&#39;t complete a purchase with a saved SEPA mandate. How does this happen with &quot;full coverage,&quot; and what do you change?</a><a href="/qa-blog/posts/qa-interview-day-03.html" rel="next"><span>Next</span>A platform team proposes refreshing your shared staging environment every night with a full copy of production data, &quot;so QA always tests against realistic data.&quot; As the QA lead, what do you say in the planning meeting?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

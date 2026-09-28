@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A recurring trap for testers: someone asks you to &quot;sign off&quot; on a release, or a PM says &quot;QA approved it, so we&#39;re good to ship.&quot; It feels like power, but it&#39;s a trap — it puts accountability for a business deci">
+  <meta name="color-scheme" content="light">
+  <title>Influence Without Authority: You Don&#39;t Assure Quality, You Assure That Decision-Makers Aren&#39;t Guessing | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 17</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-17">QA Thinking — Day 17</h1>
+<h2
+id="influence-without-authority-you-dont-assure-quality-you-assure-that-decision-makers-arent-guessing">Influence
+Without Authority: You Don't Assure Quality, You Assure That
+Decision-Makers Aren't Guessing</h2>
+<p>A recurring trap for testers: someone asks you to "sign off" on a
+release, or a PM says "QA approved it, so we're good to ship." It feels
+like power, but it's a trap — it puts accountability for a business
+decision on the person with the least authority to make it, and it
+quietly turns "quality assistance" into "quality assurance," a job no
+tester can actually do.</p>
+<p>Michael Bolton makes this distinction sharply in an old but
+still-load-bearing DevelopSense post: testers can't assure quality
+because they don't control the code, the schedule, or the budget — only
+the people who do can "assure" anything. What testers <em>can</em> do is
+supply "valuable, timely information about the actual state of the
+product and the project" so the people with authority decide with open
+eyes instead of closed ones (<a
+href="https://developsense.com/blog/2010/05/testers-get-out-of-the-quality-assurance-business">DevelopSense,
+"Testers: Get Out of the Quality Assurance Business"</a>).</p>
+<p>That reframe is where your actual influence comes from. You don't get
+leverage by insisting harder that a bug is bad. You get it by making the
+<em>cost of ignoring your information</em> visible and specific enough
+that the decision-maker can't pretend they didn't know.</p>
+<h3 id="why-i-found-bugs-doesnt-move-anyone">Why "I found bugs" doesn't
+move anyone</h3>
+<p>Most testers' influence problem isn't a communication-style problem,
+it's an information-shape problem. "I found 12 bugs, 3 are high
+severity" tells a PM nothing about what they're actually deciding
+between. Compare:</p>
+<ul>
+<li>Weak: "There's a bug where seller payouts can double-trigger under
+retry."</li>
+<li>Strong: "If a payment gateway retries during a network blip, a
+seller can be paid twice for one order with no reconciliation flag. I
+reproduced it 3 times in 20 attempts. If this ships and we process 5,000
+orders/day, that's a plausible pattern for real money loss with no alert
+to catch it. I haven't checked whether the ledger service dedupes on its
+side — that's the open question that decides whether this is a blocker
+or a monitored risk."</li>
+</ul>
+<p>The second version does three things at once: gives a concrete
+mechanism, gives a plausible scale, and names the <em>specific
+unknown</em> that would change the decision. That last part is what
+turns you from an obstacle into a service to the decision — you're not
+saying "don't ship," you're saying "here's the one fact that flips this
+from acceptable to unacceptable, go get it or let me get it."</p>
+<h3 id="the-ministry-of-testing-thread-underneath-this">The Ministry of
+Testing thread underneath this</h3>
+<p>A Club discussion on making testing visible to stakeholders lands on
+the same idea from a different angle: don't report activity, report
+business threats. One contributor's framing was to answer "what is the
+product's state and what business threats exist?" instead of "I
+completed my planned testing" — and to tailor the artifact to the
+audience (a one-page wall report for the team, narrative Jira issues
+with evidence for developers, a dashboard for anyone who wants raw
+status) (<a
+href="https://club.ministryoftesting.com/t/how-do-you-make-your-testing-visible-to-stakeholders/43063">Ministry
+of Testing Club, "How Do You Make Your Testing Visible To
+Stakeholders?"</a>). Influence without authority is mostly this:
+matching the shape of your evidence to what the specific person in front
+of you needs in order to act.</p>
+<h3 id="applying-it-the-sign-off-moment">Applying it: the "sign-off"
+moment</h3>
+<p>Next time you're asked to sign off or say "is it good to go," don't
+answer yes/no. Answer with three things:</p>
+<ol type="1">
+<li><strong>What I checked and how confident I am in that
+coverage</strong> (not "I tested it," but "I covered X and Y paths; Z
+was out of scope because...")</li>
+<li><strong>What I found and its plausible business impact</strong>,
+sized to something the decision-maker cares about (money, customers
+affected, SLA, regulatory exposure)</li>
+<li><strong>What's still unknown</strong>, and who needs to close that
+gap before this is a fully-informed decision</li>
+</ol>
+<p>This hands the decision back to whoever actually has authority over
+it — which is correct — while making it obvious that "QA said it's fine"
+was never a real basis for shipping.</p>
+<h3 id="small-exercise">Small exercise</h3>
+<p>Take the last bug or risk you reported that didn't get the reaction
+you wanted. Rewrite it in three lines using the structure above:
+mechanism + plausible scale + the one open question that would change
+the call. Then ask yourself honestly — did your original version
+actually contain that information, or did you assume the reader would
+infer it? Most influence failures are missing information, not missing
+assertiveness.</p>
+<p><strong>Sources used:</strong></p>
+<ul>
+<li><a
+href="https://developsense.com/blog/2010/05/testers-get-out-of-the-quality-assurance-business">DevelopSense
+— "Testers: Get Out of the Quality Assurance Business" (Michael
+Bolton)</a></li>
+<li><a
+href="https://club.ministryoftesting.com/t/how-do-you-make-your-testing-visible-to-stakeholders/43063">Ministry
+of Testing Club — "How Do You Make Your Testing Visible To
+Stakeholders?"</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-16.html" rel="prev"><span>Previous</span>Testing Utility Billing: When There&#39;s No &quot;Actual&quot; to Compare Against, What&#39;s Your Oracle?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
