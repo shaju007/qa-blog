@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Since October 2025, EU transmission system operators have been required to settle electricity imbalances every 15 minutes instead of the previous 30- or 60-minute blocks (European Commission, EU electricity tra">
+  <meta name="color-scheme" content="light">
+  <title>Testing a Market Mid-Migration: Applying FEW HICCUPPS to the EU&#39;s 15-Minute Settlement Rollout | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 19</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-19">QA Thinking — Day 19</h1>
+<h2
+id="testing-a-market-mid-migration-applying-few-hiccupps-to-the-eus-15-minute-settlement-rollout">Testing
+a Market Mid-Migration: Applying FEW HICCUPPS to the EU's 15-Minute
+Settlement Rollout</h2>
+<p>Since October 2025, EU transmission system operators have been
+required to settle electricity imbalances every 15 minutes instead of
+the previous 30- or 60-minute blocks (<a
+href="https://energy.ec.europa.eu/news/eu-electricity-trading-day-ahead-markets-becomes-more-dynamic-2025-10-01_en">European
+Commission, EU electricity trading in day-ahead markets becomes more
+dynamic</a>; <a
+href="https://www.epexspot.com/en/15-minute-products-market-coupling">EPEX
+SPOT, 15-minute products in Market Coupling</a>). This isn't a feature
+release with a spec you can check off — it's a live, staggered migration
+where different bidding zones cross over on different dates, and the
+"correct" price for a given quarter-hour has never existed before. That
+makes it a genuinely hard oracle problem, and it's a good excuse to
+practice a specific technique rather than just admit "there's no
+expected result."</p>
+<p><strong>The domain, briefly.</strong> Balance Responsible Parties
+(BRPs) submit a schedule to the TSO for how much energy their portfolio
+will produce or consume in each settlement period. When real-time
+delivery deviates from that schedule, the BRP is in imbalance — and
+depending on whether their deviation makes the system's imbalance worse
+or better, they pay or receive the imbalance price for that period (<a
+href="https://withthegrid.com/energy-pricing-epex-day-ahead-and-imbalance-prices/">withthegrid,
+Day-Ahead and Imbalance Prices</a>; <a
+href="https://www.gridx.ai/knowledge/imbalance-markets">gridX, Imbalance
+markets</a>). Shrinking the settlement period from 60 to 15 minutes
+means a BRP that used to get one averaged price per hour now gets four
+independent prices — which is the whole point: a solar ramp that spikes
+and crashes within a single hour used to get smoothed away, and now it
+doesn't.</p>
+<p><strong>Why this breaks naive testing.</strong> You can't
+regression-test this against last year's data, because last year's
+system didn't produce quarter-hourly prices. You can't fully trust a
+"golden" reference implementation, because every TSO is building its
+own. This is exactly the situation Michael Bolton describes needing an
+oracle heuristic for, rather than a single correct answer: FEW HICCUPPS
+— a set of consistency lenses (history, image, comparable products,
+claims, user expectations, product, purpose, statutes) you use to
+recognize a problem even without a ground truth (<a
+href="https://developsense.com/blog/2012/07/few-hiccupps">DevelopSense,
+FEW HICCUPPS</a>).</p>
+<p>Applied to the 15-minute migration, that looks like:</p>
+<ul>
+<li><strong>History consistency</strong> — does the <em>shape</em> of
+the new quarter-hourly price curve for a given day still look like a
+plausible subdivision of what the old hourly price would have been? If
+the system just replicates the hourly value four times, that's not "more
+granular data," that's a silent bug wearing a new column format.</li>
+<li><strong>Comparable-product consistency</strong> — cross-border
+market coupling means a zone still on 60-minute settlement is trading
+against a zone now on 15-minute settlement. Test that aggregating four
+quarter-hours back into an hour reconciles with what the coarser-grained
+neighbor reports — a mismatch here is where cross-zone settlement
+disputes start.</li>
+<li><strong>Claims consistency</strong> — the regulation states each ISP
+must be <em>independently</em> priced based on real-time conditions in
+that quarter-hour. Test specifically for the shortcut failure mode: a
+system that internally still calculates on an hourly cycle and only
+reformats output at 15-minute resolution.</li>
+<li><strong>Purpose consistency</strong> — the stated goal is better
+renewable integration. Pick a day with a sharp midday solar ramp and
+check whether the new granularity actually <em>reveals</em> a price
+swing that the old hourly average would have hidden. If it doesn't, the
+system isn't delivering on the reason the regulation exists, even if
+every field validates.</li>
+<li><strong>DST edge case, concretely</strong> — a clock-change day used
+to be 23 or 25 hourly periods. At 15-minute resolution that's 92 or 100
+periods, and off-by-one errors here directly misallocate real money to
+BRPs. This is the single highest-value test case in the whole migration
+and the easiest one to skip because it "only happens twice a year."</li>
+</ul>
+<p><strong>The exercise:</strong> Take a data pipeline or reporting
+feature you own that recently changed its unit of aggregation (time
+window, currency, geographic granularity, whatever). Pick two of the
+eight FEW HICCUPPS dimensions and write one test idea for each — not a
+test case, just the <em>question</em> the heuristic prompts. Notice
+which dimension surfaces an idea you wouldn't have generated by just
+checking the spec.</p>
+<p>Sources: <a
+href="https://developsense.com/blog/2012/07/few-hiccupps">DevelopSense —
+FEW HICCUPPS</a>, <a
+href="https://energy.ec.europa.eu/news/eu-electricity-trading-day-ahead-markets-becomes-more-dynamic-2025-10-01_en">European
+Commission — EU electricity trading in day-ahead markets becomes more
+dynamic</a>, <a
+href="https://www.epexspot.com/en/15-minute-products-market-coupling">EPEX
+SPOT — 15-minute products in Market Coupling</a>, <a
+href="https://withthegrid.com/energy-pricing-epex-day-ahead-and-imbalance-prices/">withthegrid
+— Day-Ahead and Imbalance Prices</a></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-18.html" rel="prev"><span>Previous</span>The Risk Story: Why &quot;28%, Not 30%&quot; Is More Convincing Than &quot;There&#39;s a Bug&quot;</a><a href="/qa-blog/posts/qa-thinking-day-20.html" rel="next"><span>Next</span>Testability Isn&#39;t a Tester&#39;s Virtue — It&#39;s a Property You Have to Negotiate For</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

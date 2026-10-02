@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="This question tests whether a tester understands the difference between conformance and quality — and whether they can push back on a design authority without being dismissive of design expertise or oversteppin">
+  <meta name="color-scheme" content="light">
+  <title>A designer tells you in a design review, &quot;Just test against the Figma file — if it matches the spec, it&#39;s correct.&quot; You&#39;ve found three cases where matching the spec exactly would create a broken or confusing experience. How do you handle this conversation? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 6</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-6">QA Interview Q&amp;A — Day 6</h1>
+<h2
+id="question-a-designer-tells-you-in-a-design-review-just-test-against-the-figma-file--if-it-matches-the-spec-its-correct-youve-found-three-cases-where-matching-the-spec-exactly-would-create-a-broken-or-confusing-experience-how-do-you-handle-this-conversation">Question:
+A designer tells you in a design review, "Just test against the Figma
+file — if it matches the spec, it's correct." You've found three cases
+where matching the spec exactly would create a broken or confusing
+experience. How do you handle this conversation?</h2>
+<h2 id="answer">Answer</h2>
+<p>This question tests whether a tester understands the difference
+between <em>conformance</em> and <em>quality</em> — and whether they can
+push back on a design authority without being dismissive of design
+expertise or overstepping their own.</p>
+<p><strong>Why "matches Figma" isn't the same as "correct."</strong> A
+Figma file is a snapshot of one happy-path state, usually at one
+viewport, one locale, one data volume, and one user permission level.
+It's a hypothesis about what good looks like, not a complete
+specification. Michael Bolton's point about testing being an
+investigation, not a confirmation, applies directly here: checking
+pixel-for-pixel conformance to a static mockup is a <em>check</em>, but
+discovering where the design breaks down under real conditions is
+<em>testing</em> (developsense.com). The designer's statement conflates
+"I approved this image" with "this is the right behavior in every
+context," and an experienced tester's job is to surface the gap without
+implying the designer did bad work.</p>
+<p><strong>What to bring to the conversation — concrete, not
+abstract.</strong> Vague pushback ("this might not work well") gets
+overridden by a deadline. Specific, reproducible cases don't. For each
+of the three cases, come with:</p>
+<ul>
+<li>The exact condition that breaks the design (e.g., "the saved-cards
+dropdown in the Figma file has three entries; a seller on our
+marketplace plan can have twelve — does it scroll, truncate, or
+paginate?")</li>
+<li>What currently happens if built literally to spec (text overflow,
+overlapping elements, a disabled state with no explanation)</li>
+<li>A screenshot or recording, not a description — designers reason
+visually, so show them the broken state rendered, not just describe
+it</li>
+</ul>
+<p><strong>Weak answers to watch for:</strong> "I'll just log it as a
+bug after dev builds it" (too late — rework cost is highest
+post-implementation); "I'll silently make a judgment call and deviate
+from spec" (removes the designer's authority over their own decisions
+and creates inconsistency); "the spec is the spec, I'll test exactly
+what's drawn" (abdicates the tester's actual job, which per Cem Kaner's
+framing of testing as an empirical, technical investigation is to
+evaluate quality, not just conformance — kaner.com). All three dodge the
+actual conversation.</p>
+<p><strong>How to frame it in the room.</strong> Don't say "this design
+is wrong." Say: "I want to flag three states the mockup doesn't show —
+can we decide together what should happen here, or do you want me to log
+these as open questions for refinement?" This keeps the designer as the
+owner of the decision while making clear these aren't edge cases you're
+inventing — they're states real users and real data will produce. For a
+sports-data platform, this might be a live-score widget design that only
+shows one match; what happens during a nine-game Saturday slate when ten
+matches are live simultaneously? For an energy utility portal, a
+tariff-comparison card designed for three tariffs — what renders when a
+customer has a single historical tariff with a null end date?</p>
+<p><strong>Evidence to gather before the meeting, not during
+it.</strong> Pull actual production data distributions (cardinality of
+lists, string lengths, locale variants) so the conversation is grounded
+in "here's what real accounts look like" rather than "I imagine this
+could be a problem." This is the same discipline Bolton and Bach's Rapid
+Software Testing heuristics push for — oracles grounded in consistency
+with history, comparable products, and user expectations, not just the
+artifact in front of you.</p>
+<p><strong>Follow-up questions an interviewer might ask:</strong></p>
+<ul>
+<li>The designer agrees the three cases are real problems but says
+"that's a fast-follow, ship the happy path now" — how do you
+respond?</li>
+<li>How would you handle the same disagreement if the designer is also
+your most senior stakeholder and visibly irritated at being questioned
+in front of the team?</li>
+</ul>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a
+href="https://www.developsense.com/presentations/2007-10-PNSQC-AnExploratoryTestersNotebook.pdf">Michael
+Bolton, DevelopSense — "An Exploratory Tester's Notebook"</a> — grounds
+the testing-vs-checking distinction used to separate "matches Figma"
+from "is correct."</li>
+<li><a href="https://kaner.com/">Cem Kaner, kaner.com — writings on
+testing as empirical technical investigation</a> — supports the framing
+that a tester's role is evaluating quality against context, not just
+verifying conformance to an artifact.</li>
+<li><a
+href="https://medium.com/@shannonmbain/design-qa-a-very-scrappy-practical-guide-51fda5aab5c1">Design
+QA: A Very Scrappy, Practical Guide (Shannon Bain, Medium)</a> —
+practical perspective on where design specs commonly fall short against
+real data and edge states, used to ground the concrete examples.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-05.html" rel="prev"><span>Previous</span>A developer closes your bug as &quot;works as intended&quot; in under two minutes, without running your repro steps. What do you do in the next ten minutes, and what do you do differently for your next ten bug reports?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

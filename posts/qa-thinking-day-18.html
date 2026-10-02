@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="James Bach and Michael Bolton describe the output of good testing as a risk story — not a pass/fail count, but a narrative that lets a decision-maker understand what could go wrong, how likely it is, and how ba">
+  <meta name="color-scheme" content="light">
+  <title>The Risk Story: Why &quot;28%, Not 30%&quot; Is More Convincing Than &quot;There&#39;s a Bug&quot; | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 18</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-18">QA Thinking — Day 18</h1>
+<h2
+id="the-risk-story-why-28-not-30-is-more-convincing-than-theres-a-bug">The
+Risk Story: Why "28%, Not 30%" Is More Convincing Than "There's a
+Bug"</h2>
+<p>James Bach and Michael Bolton describe the output of good testing as
+a <strong>risk story</strong> — not a pass/fail count, but a narrative
+that lets a decision-maker understand what could go wrong, how likely it
+is, and how bad it would be if it did (<a
+href="https://www.satisfice.com/rapid-software-testing-focused-risk">Rapid
+Software Testing Focused: Risk</a>; <a
+href="https://developsense.com/blog/category/risk">DevelopSense on
+risk</a>). Most testers report bugs. Fewer testers tell risk stories
+that survive contact with a skeptical product owner in a five-minute
+standup.</p>
+<p>The difference is concrete: a bug report says "discount stacking is
+broken." A risk story says "when we stack a 20% promo with a 10% loyalty
+discount, the system reads it as 30% off but it's actually 28% — that's
+a $2 gap on a $100 cart, and it's silent, so finance won't catch it
+until they reconcile margin next week." One of these gets triaged as P3.
+The other gets a fix scheduled before launch.</p>
+<h3
+id="why-e-commerce-discount-stacking-is-a-good-test-case-for-this-skill">Why
+e-commerce discount stacking is a good test case for this skill</h3>
+<p>A practitioner writeup on discount-validation APIs lays out the math
+cleanly: percentage discounts compose <strong>multiplicatively</strong>,
+not additively. Two sequential discounts of 20% and 10% give
+<code>0.8 × 0.9 = 0.72</code> — a 28% total, not 30% (<a
+href="https://dev.to/lizely/designing-a-discount-validation-api-catching-stacked-coupon-math-errors-before-they-hit-production-1lc2">Designing
+a Discount-Validation API</a>). This is exactly the kind of bug that's
+invisible in a demo, invisible in a happy-path test, and only shows up
+as a slow bleed in margin reports weeks later — which is precisely why
+it needs a risk story, not just a ticket.</p>
+<p>The same source flags three failure modes worth testing deliberately,
+because each one produces a <em>different</em> business consequence you
+should be able to name out loud:</p>
+<ul>
+<li><strong>No clamping</strong> — a $50 fixed coupon on a $30 item
+should floor at $0, not generate a negative price or a phantom refund.
+Consequence: money leaves the business with no purchase behind it.</li>
+<li><strong>Order-dependent stacking</strong> — applying the fixed
+discount before vs. after the percentage discount changes the final
+total. If your engine isn't consistent about order, two customers with
+the same coupons in different sequences pay different prices.
+Consequence: pricing inconsistency that support and finance can't
+explain.</li>
+<li><strong>Rounding mid-calculation instead of at the end</strong> —
+rounding after each discount step instead of once at the end can drift
+totals by a cent or more across three stacked discounts. Consequence: at
+scale, "off by a cent" becomes a five- or six-figure reconciliation
+headache, and it looks like fraud in an audit before anyone identifies
+it as a rounding bug.</li>
+</ul>
+<h3 id="applying-this-at-work">Applying this at work</h3>
+<ol type="1">
+<li><p><strong>Find the multiplicative traps in your own
+domain.</strong> Discount stacking is one instance of a general pattern:
+things that look additive to a product owner but are actually
+multiplicative, sequential, or order-dependent to the system. Ask "does
+the business assume this adds up, and does the code actually multiply,
+floor, or reorder it?" This pattern also shows up in tax-inclusive vs.
+tax-exclusive pricing, tiered API rate limits, and layered permission
+systems.</p></li>
+<li><p><strong>Turn the bug into a risk sentence before you file
+it.</strong> Use the shape: <em>"When [condition], the system does
+[behavior], which causes [business consequence], and it's
+[visible/invisible] to [which stakeholder]."</em> This is what makes a
+report land — it does the risk-assessment work for the reader instead of
+asking them to infer it. Ministry of Testing's Risky Business module
+frames this as the core skill of turning technical findings into
+decision-relevant language (<a
+href="https://club.ministryoftesting.com/t/new-module-release-module-6-risky-business-the-relationship-between-testing-and-risk/82290">Risky
+Business: The Relationship Between Testing and Risk</a>).</p></li>
+<li><p><strong>Test for silence, not just for wrongness.</strong> The
+rounding-drift bug is dangerous specifically because nothing crashes and
+no error is logged — it just quietly disagrees with finance's
+spreadsheet. When you test pricing, ask not "does this produce a wrong
+number" but "if this produces a wrong number, who finds out, and how
+long does it take them?" That question is often more important than the
+test case itself.</p></li>
+</ol>
+<h3 id="challenge">Challenge</h3>
+<p>Pick a calculation in your own product that involves more than one
+adjustment applied in sequence (discounts, taxes, fees, rate limits,
+permission overrides — anything layered). Write out:</p>
+<ul>
+<li>The order the system actually applies them in (check the code or ask
+an engineer — don't assume).</li>
+<li>One scenario where reordering the steps changes the final
+result.</li>
+<li>One risk story, in the sentence shape above, that you could say out
+loud in a standup and have a non-technical stakeholder immediately
+understand the stakes.</li>
+</ul>
+<p>Sources:</p>
+<ul>
+<li><a
+href="https://www.satisfice.com/rapid-software-testing-focused-risk">Rapid
+Software Testing Focused: Risk — Satisfice, Inc.</a></li>
+<li><a href="https://developsense.com/blog/category/risk">Risk category
+— DevelopSense (Michael Bolton)</a></li>
+<li><a
+href="https://club.ministryoftesting.com/t/new-module-release-module-6-risky-business-the-relationship-between-testing-and-risk/82290">Risky
+Business: The Relationship Between Testing and Risk — Ministry of
+Testing</a></li>
+<li><a
+href="https://dev.to/lizely/designing-a-discount-validation-api-catching-stacked-coupon-math-errors-before-they-hit-production-1lc2">Designing
+a Discount-Validation API: Catching Stacked-Coupon Math Errors Before
+They Hit Production — DEV Community</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-17.html" rel="prev"><span>Previous</span>Influence Without Authority: You Don&#39;t Assure Quality, You Assure That Decision-Makers Aren&#39;t Guessing</a><a href="/qa-blog/posts/qa-thinking-day-19.html" rel="next"><span>Next</span>Testing a Market Mid-Migration: Applying FEW HICCUPPS to the EU&#39;s 15-Minute Settlement Rollout</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
