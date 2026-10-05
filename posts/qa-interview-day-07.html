@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="This question tests whether a candidate can practice bug advocacy — getting a bug taken seriously on its merits — without pretending to have decision rights they don&#39;t have. Cem Kaner&#39;s BBST Bug Advocacy course">
+  <meta name="color-scheme" content="light">
+  <title>A rounding bug undercharges customers by a few cents on 0.3% of subscription renewals. In the release go/no-go meeting, the engineering lead says &quot;it&#39;s cosmetic, ship it.&quot; You have no authority to block the release. What do you say, and what do you do before and after the meeting? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 7</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-7">QA Interview Q&amp;A — Day 7</h1>
+<h2
+id="question-a-rounding-bug-undercharges-customers-by-a-few-cents-on-03-of-subscription-renewals-in-the-release-gono-go-meeting-the-engineering-lead-says-its-cosmetic-ship-it-you-have-no-authority-to-block-the-release-what-do-you-say-and-what-do-you-do-before-and-after-the-meeting">Question:
+A rounding bug undercharges customers by a few cents on 0.3% of
+subscription renewals. In the release go/no-go meeting, the engineering
+lead says "it's cosmetic, ship it." You have no authority to block the
+release. What do you say, and what do you do before and after the
+meeting?</h2>
+<h2 id="answer">Answer</h2>
+<p>This question tests whether a candidate can practice <strong>bug
+advocacy</strong> — getting a bug taken seriously on its merits —
+without pretending to have decision rights they don't have. Cem Kaner's
+BBST Bug Advocacy course frames this exactly: a bug report (and the
+conversation around it) is persuasive writing, not a verdict. Your job
+is to give the people with authority the best possible information, not
+to win an argument.</p>
+<p><strong>Before the meeting</strong>, an experienced tester does the
+investigation work that makes the bug hard to dismiss:</p>
+<ul>
+<li><strong>Reproduce the pattern, not just the instance.</strong> Is
+0.3% consistent, or does it spike with certain currencies, proration
+periods, or coupon stacking? A flat 0.3% across months looks like noise;
+a pattern tied to EUR-to-cent conversion or mid-cycle plan changes looks
+like a systemic rounding bug, which is a very different story.</li>
+<li><strong>Generalize and externalize</strong> (Kaner/Bach's terms from
+Bug Advocacy): where else in the codebase does this rounding function
+get called — invoices, refunds, proration, tax calculation? And what
+happens when this hits the real world at scale — finance reconciliation,
+customer trust, regulatory reporting for billing accuracy? A "cosmetic"
+bug that's actually a shared rounding utility used in five billing paths
+is a different risk than an isolated display glitch.</li>
+<li><strong>Quantify in business terms, not test terms.</strong> "0.3%
+of renewals" sounds small. "At our volume that's roughly $X/month in
+silent undercharges, plus it will show up as a reconciliation
+discrepancy in finance's monthly close" is something a release owner can
+act on.</li>
+<li><strong>Separate severity from priority explicitly.</strong> Michael
+Bolton's point (developsense.com) is important here: severity — how bad
+the problem <em>is</em> — is something a tester can assess with
+evidence. Priority — whether to fix it <em>now</em> — is a business call
+that belongs to product/release owners. Conflating the two is a common
+weak move: testers who either downgrade severity to avoid conflict, or
+who insist a bug must be fixed because they've personally decided it's
+important, both overstep or understate their actual role.</li>
+</ul>
+<p><strong>In the meeting</strong>, the framing should sound like this,
+not like an ultimatum:</p>
+<blockquote>
+<p>"I'm not saying don't ship — that's your call. Here's what I found:
+the rounding affects renewals across at least two currencies, it's in a
+shared proration function also used in refunds, and at current volume
+it's roughly $X/month in discrepancies that finance will likely flag in
+reconciliation. I haven't been able to rule out it affecting refund
+amounts too — I'd want 30 minutes to check that before we decide. What I
+need from you is: are we okay accepting that financial exposure and the
+finance team's reconciliation overhead, or does someone want to look at
+scope before we ship?"</p>
+</blockquote>
+<p>This does three things: states evidence, states the actual (not
+catastrophized) risk, and asks a direct question that puts the decision
+where it belongs — without the tester silently agreeing it's "fine" just
+because they lack veto power.</p>
+<p><strong>Weak answers to watch for:</strong></p>
+<ul>
+<li>"I'd escalate to my manager" as the whole answer — escalation
+without having first done the investigation that makes escalation useful
+is just passing the ball.</li>
+<li>Treating "cosmetic" as a technical judgment rather than naming it as
+what it is — a priority call the engineer isn't necessarily qualified to
+make alone, since they likely haven't seen the finance/reconciliation
+angle.</li>
+<li>Refusing to let it go after the decision is made — if leadership
+hears the evidence and still ships, a professional tester notes the risk
+in writing (for the record, not as a threat) and moves on.</li>
+</ul>
+<p><strong>After the meeting</strong>, regardless of outcome: write down
+what was decided and why, including the evidence presented, in the
+ticket or release notes. This isn't CYA — it's so that if the 0.3% turns
+into 3% next quarter, there's a paper trail showing this was a known,
+deliberate tradeoff rather than something QA missed.</p>
+<p><strong>Follow-up questions:</strong></p>
+<ul>
+<li>"The engineering lead says finance already has a monthly adjustment
+process for exactly this kind of discrepancy — does that change your
+recommendation?"</li>
+<li>"How would your approach differ if this were a 0.3%
+<em>overcharge</em> instead of an undercharge?"</li>
+</ul>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://kaner.com/pdfs/bugadvoc.pdf">Cem Kaner &amp; James
+Bach, "Bug Advocacy" (BBST course materials)</a> — the foundational
+framing of bug reporting as persuasive, evidence-based communication,
+including the maximize/generalize/externalize techniques used
+above.</li>
+<li><a
+href="https://developsense.com/blog/2013/03/severity-vs-priority">Michael
+Bolton, "Severity vs. Priority," DevelopSense</a> — the distinction
+between severity (a tester's evidence-based assessment) and priority (a
+business decision), central to how the tester communicates risk without
+overclaiming authority.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-06.html" rel="prev"><span>Previous</span>A designer tells you in a design review, &quot;Just test against the Figma file — if it matches the spec, it&#39;s correct.&quot; You&#39;ve found three cases where matching the spec exactly would create a broken or confusing experience. How do you handle this conversation?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
