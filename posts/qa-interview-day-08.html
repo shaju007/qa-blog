@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The short version (what I&#39;d say in the first 30 seconds)">
+  <meta name="color-scheme" content="light">
+  <title>Every contract test against your sports-data provider is green, but on the first live Saturday your app kept showing a goal for nine minutes after VAR had disallowed it, and some users got two &quot;GOAL!&quot; push notifications. The engineering manager asks: &quot;So do we just need more contract tests?&quot; What do you answer? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 8</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-8">QA Interview Q&amp;A — Day 8</h1>
+<h2
+id="question-every-contract-test-against-your-sports-data-provider-is-green-but-on-the-first-live-saturday-your-app-kept-showing-a-goal-for-nine-minutes-after-var-had-disallowed-it-and-some-users-got-two-goal-push-notifications-the-engineering-manager-asks-so-do-we-just-need-more-contract-tests-what-do-you-answer">Question:
+Every contract test against your sports-data provider is green, but on
+the first live Saturday your app kept showing a goal for nine minutes
+after VAR had disallowed it, and some users got two "GOAL!" push
+notifications. The engineering manager asks: "So do we just need more
+contract tests?" What do you answer?</h2>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version-what-id-say-in-the-first-30-seconds">The short
+version (what I'd say in the first 30 seconds)</h3>
+<p>"Probably not. The contract tests did what they were built to do.
+They checked that each message from the provider had the shape we
+expected, and every message did. This failure wasn't about the shape of
+one message. It came from the order, timing and duplication of several
+valid messages, and from how our own state handling reacted to them.
+More checks of the same kind would pass just as well. We need a
+different kind of test aimed at sequences and state, plus a production
+check that catches the score drifting away from the provider's. I can
+show the timeline and propose something specific."</p>
+<p>The interviewer wants to see whether you can tell <strong>what a
+check can actually tell you</strong> apart from <strong>what the team
+assumes it tells you</strong>.</p>
+<h3 id="step-1-be-precise-about-what-the-contract-tests-covered">Step 1:
+Be precise about what the "contract tests" covered</h3>
+<p>First, find out what the team actually means by "contract tests."
+With a third-party data provider, the answer is usually not real
+consumer-driven contracts. The Pact documentation says Pact is a poor
+fit when the team on the other side of the integration won't use Pact
+too, and when you can't control the data behind the provider's
+responses. Both are true for an external sports feed. So these "contract
+tests" are most likely checks of our consumer code against <strong>our
+own stubs or recorded fixtures</strong>. They confirm that our code
+handles the payloads we <em>believe</em> the provider sends. They don't
+confirm that the belief is true, and the provider never verifies
+them.</p>
+<p>Even real Pact contracts wouldn't have caught this. The Pact docs say
+directly that Pact is about "the contents and format of requests and
+responses," not the provider's functional behaviour. A contract
+describes one interaction at a time. Our bug only existed across three
+interactions arriving in a particular order.</p>
+<p>That isn't an argument against contract tests. They're cheap and
+fast, and they're good at catching a renamed field or an enum value
+we've never seen. They just answer a narrower question than "does the
+integration work?"</p>
+<h3
+id="step-2-reconstruct-the-failure-from-evidence-not-from-guesses">Step
+2: Reconstruct the failure from evidence, not from guesses</h3>
+<p>Before proposing fixes, I'd pull the facts together. A plausible
+timeline after reading the logs:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Time</th>
+<th>What happened</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>15:42:10</td>
+<td>Provider sends <code>goal</code> event <code>G-881</code>. Our
+webhook handler is slow under kickoff load and responds after the
+provider's timeout. The provider records the delivery as failed and
+schedules a retry. Our handler still finishes the work: score 1–0, push
+sent.</td>
+</tr>
+<tr class="even">
+<td>15:43:30</td>
+<td>VAR disallows the goal. Provider sends <code>goal_cancelled</code>
+referencing <code>G-881</code>. Our handler <strong>deletes</strong> the
+goal record. Score 0–0.</td>
+</tr>
+<tr class="odd">
+<td>15:44:05</td>
+<td>The provider retries <code>G-881</code>. Our deduplication looks up
+the goal record, finds nothing because it was deleted, and treats the
+event as new. Score 1–0 again, second push sent.</td>
+</tr>
+<tr class="even">
+<td>15:51:00</td>
+<td>Our 10-minute reconciliation poll fetches the provider's match
+snapshot and corrects the score to 0–0.</td>
+</tr>
+</tbody>
+</table>
+<p>Evidence I'd ask for:</p>
+<ul>
+<li><strong>Raw delivery logs</strong> with the provider's event IDs,
+any per-match sequence or version numbers, the provider's event
+timestamps, and our received-at timestamps.</li>
+<li><strong>Our endpoint's latency and status codes</strong> around
+kickoff. If we were slow or returning 5xx, the provider's retries are
+expected behaviour, not a provider bug.</li>
+<li><strong>The provider's documented delivery guarantees</strong>:
+at-least-once or exactly-once? Is ordering guaranteed per match? What
+does a correction reference? What is the retry schedule? Does the
+sandbox retry the way production does?</li>
+</ul>
+<p>That last question matters more than people expect. Compare how
+explicit a mature provider can be: Stripe's webhook docs say it doesn't
+guarantee events arrive in the order they were generated. They say
+endpoints "might occasionally receive the same event more than once."
+They warn against using the <code>created</code> timestamp to order
+events because it only has one-second resolution. And they note that
+live mode retries for up to three days, while sandbox retries only three
+times over a few hours. That's a documented case of a test environment
+whose retry behaviour <strong>differs from production by
+design</strong>. I'd ask our sports provider for the same facts in
+writing. If they can't give them, that gap is itself a finding to
+report, with risk attached.</p>
+<h3 id="step-3-name-the-actual-risk">Step 3: Name the actual risk</h3>
+<p>Every individual message was valid. The risk lives in <strong>time
+and state</strong>:</p>
+<ul>
+<li>Duplicates (at-least-once delivery, retries)</li>
+<li>Reordering (a retry arriving after a correction)</li>
+<li>Corrections and reversals (VAR, a goal reassigned to another scorer,
+a match abandoned)</li>
+<li>Side effects that can't be undone (push notifications)</li>
+</ul>
+<p>This lines up with James Bach's Heuristic Test Strategy Model. Its
+product factors treat <strong>Time</strong> (timing, sequencing,
+concurrency) and <strong>Data</strong> as dimensions in their own right,
+separate from <strong>Interfaces</strong>, and the latest version puts
+more weight on state-based testing. Our existing checks only covered the
+interface. Michael Bolton makes the same point in his series on
+exploratory testing of APIs: for "conversational" APIs where the
+sequence of interactions matters, vary the sequences, because people
+"get things out of order." The provider's retry did exactly that to
+us.</p>
+<p>The bug in our code was subtle and worth naming in the meeting:
+<strong>deduplication is not the same as order-independence.</strong>
+Our handler deduplicated correctly as long as events arrived in order. A
+hard delete on cancellation wiped out the evidence it needed to
+recognise the retry.</p>
+<h3 id="step-4-what-id-change-roughly-in-order-of-value">Step 4: What
+I'd change, roughly in order of value</h3>
+<ol type="1">
+<li><p><strong>Write down the invariants before writing tests.</strong>
+For example: "the displayed score equals the number of non-cancelled
+goals for each team"; "at most one goal notification per goal ID, ever";
+"a cancellation for a goal we haven't seen yet is stored, not dropped."
+These become the oracles for everything below. Developers and the PO
+need to agree on them, because some are product decisions.</p></li>
+<li><p><strong>Build a replay-and-perturb harness at the API
+level.</strong> Take recorded real event streams from past matches, or
+the provider's replay feed if one exists. Push them through our handler
+with duplicates injected, adjacent events swapped, deliveries delayed
+and some dropped, then check the invariants after each run. A match
+produces a few hundred events, so permutation runs are fast. This is
+where automation clearly pays off: high volume, tedious, and
+precise.</p></li>
+<li><p><strong>Do targeted exploratory sessions against a controllable
+fake provider.</strong> Explore the scenarios nobody has written down
+yet: a correction arriving before the original event, two corrections to
+one goal, a scorer change, a penalty retake, an abandoned match, extra
+time. Each session will likely turn up an assumption the team didn't
+know it was making.</p></li>
+<li><p><strong>Add production observability, because no test environment
+reproduces live retries on a Saturday afternoon.</strong> Reconcile our
+score against the provider's snapshot endpoint every 30–60 seconds
+instead of every 10 minutes, and alert on any divergence. Track rates of
+duplicate and out-of-order events and the endpoint's p99 latency. When
+state looks inconsistent, re-fetch the authoritative snapshot instead of
+trusting the event payload.</p></li>
+<li><p><strong>Remove the trigger.</strong> Acknowledge webhooks
+immediately and process them from a queue so peak load doesn't cause
+timeouts and retries. Replace the hard delete with a soft "cancelled"
+state that remembers the goal ID. These are developer decisions. My job
+is to show why they matter, not to dictate the implementation.</p></li>
+</ol>
+<h3 id="what-id-say-in-the-meeting">What I'd say in the meeting</h3>
+<blockquote>
+<p>"The contract tests weren't wrong. They answered 'Is each message
+shaped the way we expect?', and the answer was yes. Saturday's question
+was 'What happens when valid messages arrive twice or out of order after
+a correction?', and we had nothing asking that. I'd propose three
+things: a replay harness that permutes real match streams against a few
+agreed invariants, which I estimate at about two days with one
+developer; faster reconciliation with an alert in production; and a
+written answer from the provider on delivery and retry guarantees. One
+decision isn't mine to make: whether goal pushes should wait a few
+seconds for a possible VAR check. That's a product tradeoff between
+speed and correctness. I can bring data on how often goals were
+overturned last season so the decision has numbers behind it."</p>
+</blockquote>
+<p>That last part matters. QA supplies the evidence and makes the
+tradeoff visible. The product owner decides notification latency, and
+engineering decides architecture.</p>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"Yes, add more contract tests."</strong> That's more of a
+check that already passed. Coverage of shape doesn't add up to coverage
+of behaviour.</li>
+<li><strong>"Add an end-to-end test against the provider's
+sandbox."</strong> You can't schedule a VAR decision in a sandbox, and
+sandbox retry behaviour may not match live, as Stripe documents for its
+own platform.</li>
+<li><strong>"It's the provider's fault for sending a
+duplicate."</strong> At-least-once delivery is normal, and our slow
+responses triggered the retry. Either way, users blame <em>our</em>
+app.</li>
+<li><strong>"It's an edge case."</strong> Goals get overturned somewhere
+almost every match weekend. Count them before calling it rare.</li>
+<li><strong>"We need to test against production."</strong> Partly true,
+but as a monitoring and reconciliation strategy, not a reason to skip
+cheap, deterministic sequence testing beforehand.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<p><strong>1. The provider has no replay feed, and its sandbox only
+plays canned matches with no corrections. How do you test this
+risk?</strong> Record our own production traffic (payloads plus delivery
+metadata) from the next few match days, scrub anything sensitive, and
+turn it into a fixture library. Meanwhile, hand-build short adversarial
+sequences from the invariants: goal, cancel, duplicate goal; cancel
+before goal; two scorer changes. Report clearly that confidence will
+stay limited until we have real correction traffic. Production
+reconciliation then becomes the main safety net, not a backup.</p>
+<p><strong>2. The same pattern shows up outside sports. Where else would
+you look for it?</strong> Anywhere one event "undoes" another and side
+effects can't be reversed. Examples: a marketplace order cancellation
+racing a shipping-label webhook; an energy supplier receiving a
+corrected smart-meter reading after the bill was generated; an ad
+platform receiving a click-fraud reversal after a budget cap triggered.
+The questions carry over: what's the delivery guarantee, what's the
+source of truth, and which side effects can't be taken back?</p>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a
+href="https://docs.pact.io/getting_started/what_is_pact_good_for">Pact
+Docs: When to use Pact</a>. Says Pact is about "the contents and format
+of requests and responses," not provider functionality, and is a poor
+fit when the other side won't use Pact or you can't control provider
+data. Basis for Step 1's argument that green contract tests against a
+third-party feed promise less than teams assume.</li>
+<li><a href="https://docs.stripe.com/webhooks">Stripe Docs: Receive
+Stripe events in your webhook endpoint</a>. Primary documentation
+stating that event order isn't guaranteed, duplicates happen,
+<code>created</code> timestamps shouldn't be used for ordering, sandbox
+and live retries differ (three times over a few hours vs. up to three
+days), and endpoints should return 2xx quickly and process
+asynchronously. Used as the benchmark for which delivery facts to demand
+from any event provider.</li>
+<li><a
+href="https://developsense.com/blog/2018/07/exploratory-testing-on-an-api-part-1">Michael
+Bolton, DevelopSense: Exploratory Testing on an API? (Part 1)</a>.
+Explains the difference between checking (applying algorithmic decision
+rules) and testing (investigation and learning). This is the core
+distinction behind "the checks passed, but the integration wasn't
+tested."</li>
+<li><a
+href="https://developsense.com/blog/2018/07/exploratory-testing-on-an-api-part-3">Michael
+Bolton, DevelopSense: Exploratory Testing on an API? (Part 3)</a>.
+Recommends varying call sequences for APIs where order matters and
+following exploration with targeted, varied automated checks. Supports
+the replay-and-perturb harness and the exploratory sessions in Step
+4.</li>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">James
+Bach, Satisfice: Heuristic Test Strategy Model</a>. Its product factors
+separate Time and Data from Interfaces, and the current version
+emphasises state-based testing. Used to frame the risk as one of time
+and state rather than message format.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-07.html" rel="prev"><span>Previous</span>A rounding bug undercharges customers by a few cents on 0.3% of subscription renewals. In the release go/no-go meeting, the engineering lead says &quot;it&#39;s cosmetic, ship it.&quot; You have no authority to block the release. What do you say, and what do you do before and after the meeting?</a><a href="/qa-blog/posts/qa-interview-day-09.html" rel="next"><span>Next</span>Over a weekend, bots pushed 38,000 stolen-card authorizations through your guest checkout. By Monday afternoon the team has added a CAPTCHA and a per-IP rate limit, and the security lead wants QA to &quot;sign off&quot; by 9 a.m. Tuesday. You have one afternoon. What do you test, and what does your sign-off actually say?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

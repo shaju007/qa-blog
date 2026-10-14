@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A typical budget check on an ad platform looks like this: create a campaign with a €100 daily budget, push traffic at it, and assert that spend at the end of the day is &lt;= 100. The check passes and everyone mov">
+  <meta name="color-scheme" content="light">
+  <title>Testing Ad Budget Pacing: The Budget Is a Promise About a Curve, Not a Final Number | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 27</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-27">QA Thinking — Day 27</h1>
+<h2
+id="testing-ad-budget-pacing-the-budget-is-a-promise-about-a-curve-not-a-final-number">Testing
+Ad Budget Pacing: The Budget Is a Promise About a Curve, Not a Final
+Number</h2>
+<p>A typical budget check on an ad platform looks like this: create a
+campaign with a €100 daily budget, push traffic at it, and assert that
+spend at the end of the day is <code>&lt;= 100</code>. The check passes
+and everyone moves on.</p>
+<p>That check misses most of what matters. Advertisers aren't buying
+"about €100 spent by midnight." They're buying a <strong>spend
+curve</strong>: steady visibility through the day, the right share of
+the month, and no surprise charges. The worst pacing failures produce
+totals that look fine. All the money goes by 10:00. Spend stops for
+three days at the end of the month. Or the cap is hit exactly while the
+invoice still shows more than the cap because clicks kept arriving
+afterwards.</p>
+<p>Today's lesson is about testing systems where <strong>correctness is
+a shape over time</strong> and where <strong>the system always makes
+decisions with stale information</strong>. Ad pacing is the example. The
+same thinking applies to energy-market position limits, rate limiters,
+credit exposure checks and inventory reservations.</p>
+<hr />
+<h3
+id="1-domain-primer-the-vocabulary-you-need-before-you-can-test-anything">1.
+Domain primer: the vocabulary you need before you can test anything</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Term</th>
+<th>What it means</th>
+<th>Why a tester cares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Flight</strong></td>
+<td>Start and end dates of a campaign or line item</td>
+<td>Boundaries: first hour, last hour, time zone of "midnight"</td>
+</tr>
+<tr class="even">
+<td><strong>Daily vs. lifetime budget</strong></td>
+<td>A cap per day, or a total for the whole flight that the system
+spreads out</td>
+<td>Different oracles: the daily cap can be broken on purpose so the
+lifetime total comes out right</td>
+</tr>
+<tr class="odd">
+<td><strong>Pacing</strong></td>
+<td>The rate at which the system tries to spend or deliver</td>
+<td>The thing you're actually testing. The total is just where it ends
+up</td>
+</tr>
+<tr class="even">
+<td><strong>Even / Frontloaded / ASAP</strong></td>
+<td>Pacing modes: spread evenly, run ahead early, or spend as fast as
+possible</td>
+<td>Each mode has its own documented tolerance</td>
+</tr>
+<tr class="odd">
+<td><strong>Overdelivery / overspend</strong></td>
+<td>Delivering or spending beyond the goal</td>
+<td>In a guaranteed deal, the publisher gives inventory away. In
+self-serve, the advertiser may or may not be charged</td>
+</tr>
+<tr class="even">
+<td><strong>Underdelivery</strong></td>
+<td>Not reaching the goal</td>
+<td>On guaranteed deals this can trigger a <strong>makegood</strong>:
+free delivery later, credits, or other compensation</td>
+</tr>
+<tr class="odd">
+<td><strong>Served cost vs. billed cost</strong></td>
+<td>What the system delivered vs. what the customer is actually
+charged</td>
+<td>The gap between them is a ledger you have to reconcile</td>
+</tr>
+<tr class="even">
+<td><strong>CPM / CPC / CPA</strong></td>
+<td>Pricing per thousand impressions, per click, or per conversion</td>
+<td>With CPC and CPA, the charge can arrive minutes or days after the
+serving decision</td>
+</tr>
+<tr class="odd">
+<td><strong>Fast finish / catch-up</strong></td>
+<td>Speeding up spend near the end of a period, or after falling
+behind</td>
+<td>Where most overshoot happens</td>
+</tr>
+</tbody>
+</table>
+<p>A few documented behaviours turn this from theory into concrete
+oracles:</p>
+<ul>
+<li><strong>Google Ad Manager</strong> says Evenly-paced line items may
+deliver up to about 5% ahead of goal as a safeguard against
+underdelivery. Frontloaded can briefly run up to 40% ahead, then settles
+toward 5% near the end. In the final hours, a line item that is behind
+behaves as if it were set to ASAP. Underdelivery triggers aggressive
+catch-up the next day by default. Google also says caps can be slightly
+exceeded because of delayed impression counting and simultaneous
+requests (<a
+href="https://support.google.com/admanager/answer/2669484">Delivery
+basics</a>; <a
+href="https://support.google.com/admanager/answer/82244">Line
+items</a>).</li>
+<li><strong>Google Ads</strong> lets a campaign spend up to 2× its
+average daily budget on a given day. Over a month it bills no more than
+30.4× the average daily budget, and served cost above the limit is not
+billed (<a
+href="https://support.google.com/google-ads/answer/1704443?hl=en">About
+overdelivery</a>).</li>
+<li><strong>Microsoft's Xandr docs</strong> explain why exact budgeting
+is impossible. The platform sees millions of impressions per second,
+with a 200 ms auction timeout, so it is bidding on the next impressions
+before it knows whether it won the last one. Hundreds of bidders can
+work on one campaign. Small budgets are much more likely to overspend in
+percentage terms: about 45% of $1 budgets overspend, and 12% overspend
+by more than 30%. In-flight budget changes usually take effect within 5
+minutes, but in isolated cases can take up to 4 hours (<a
+href="https://learn.microsoft.com/en-us/xandr/monetize/difficulties-with-exact-budgeting">Difficulties
+with Exact Budgeting</a>).</li>
+<li><strong>Makegoods</strong> for underdelivery on guaranteed buys come
+from the IAB/4A's standard terms. The details are usually negotiated
+when the shortfall happens, and they generally don't apply to
+non-guaranteed or CPC inventory (<a
+href="https://www.bakerlaw.com/insights/revisiting-makegoods-in-media-buys">Baker
+Botts summary of makegoods</a>).</li>
+</ul>
+<p><strong>Main takeaway:</strong> in this domain, "the budget was
+exceeded" is not automatically a bug. Platforms document overspend
+tolerances on purpose. Your job is to find out whether the tolerance is
+<strong>stated, measured correctly, enforced where it should be, and
+acceptable to the people who carry the cost</strong>.</p>
+<hr />
+<h3 id="2-the-core-model-three-clocks-and-one-stale-counter">2. The core
+model: three clocks and one stale counter</h3>
+<p>Any pacing system involves at least three clocks:</p>
+<ol type="1">
+<li><strong>Decision time.</strong> The bidder or ad server decides to
+serve or bid, based on the spend counter it can see right now.</li>
+<li><strong>Event time.</strong> The impression renders, the click
+happens, or the conversion fires. This can be milliseconds later
+(impressions) or days later (CPA lookback windows).</li>
+<li><strong>Accounting time.</strong> The event reaches the aggregator,
+the spend counter updates, and later the invoice is generated.</li>
+</ol>
+<p>The spend counter is <strong>always behind reality</strong>. Every
+pacing bug is some version of "the system acted on a picture of the past
+that was too old for the speed at which things were changing."</p>
+<p>The <a href="https://arxiv.org/html/2509.07929v1">DoorDash ads team's
+Smart Fast Finish paper</a> (Garg, Xiao, Yang, Rahurkar, 2025) shows
+this in production. Ads were shown before the daily budget was used up,
+but the billable click or purchase arrived afterwards. Those charges
+came out of the <strong>monthly</strong> budget. Each day looked roughly
+right, while the month drifted. They report about 11.5% overspend for
+enterprise campaigns in the last week of May 2024 and nearly 25% in the
+first week of June. Overspending then caused <strong>blackout
+periods</strong>: several days at the end of the month with no ads
+served at all.</p>
+<p>Their fix (dynamic fast-finish start times and gradual throttling)
+was evaluated with a budget-split A/B test. Overdelivery dropped from 7%
+to 4.7%, and campaigns stayed live about 45 minutes longer per day. They
+tracked both overspend and live hours because the two pull against each
+other. If you only report overspend, you can "fix" pacing by starving
+campaigns.</p>
+<p>What this means for testing:</p>
+<ul>
+<li>A check of "daily spend ≤ daily cap" can pass every day while the
+monthly result is wrong.</li>
+<li>The customer-visible failure (no ads in the last days of the month)
+shows up <strong>weeks after</strong> the cause (small daily
+overshoots).</li>
+<li>Your oracle needs to cover the <strong>trajectory</strong>, not only
+the end state.</li>
+</ul>
+<hr />
+<h3 id="3-applying-the-heuristic-test-strategy-models-time-element">3.
+Applying the Heuristic Test Strategy Model's "Time" element</h3>
+<p>James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model (v6.3)</a> lists <strong>Time</strong> as a product
+element. It asks you to consider timing relationships between input and
+output, fast versus slow input, changing rates (spikes, bursts, hangs,
+interruptions) and concurrency. Most teams skim that section. For
+pacing, it is close to a full test plan. Here is how each sub-idea
+becomes a concrete test idea:</p>
+<table>
+<thead>
+<tr class="header">
+<th>HTSM Time idea</th>
+<th>Pacing test idea</th>
+<th>Oracle / what "problem" looks like</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Input/output timing</strong></td>
+<td>Delay the event pipeline on purpose (hold click events 2, 10, 60
+minutes) while the bidder keeps running</td>
+<td>How many decisions were made after the true spend crossed the cap?
+Is the overshoot within the stated tolerance?</td>
+</tr>
+<tr class="even">
+<td><strong>Input/output timing</strong></td>
+<td>CPC campaign with a click lookback that crosses midnight and the
+flight end</td>
+<td>Which day's budget and which invoice does a late click count
+against? Does it match what the advertiser UI says?</td>
+</tr>
+<tr class="odd">
+<td><strong>Fast / slow</strong></td>
+<td>Tiny budget (€1–€5) on high-traffic inventory, and a huge budget on
+thin inventory</td>
+<td>Small budgets: percentage overshoot. Thin inventory: does catch-up
+turn into frantic ASAP buying of poor-quality inventory?</td>
+</tr>
+<tr class="even">
+<td><strong>Changing rates</strong></td>
+<td>Traffic spike at a predictable moment (match kickoff, a TV ad, Black
+Friday 00:00)</td>
+<td>Does the hourly goal recalculation react to a stale counter and
+overshoot? Does it spend the rest of the day's budget in 20
+minutes?</td>
+</tr>
+<tr class="odd">
+<td><strong>Changing rates</strong></td>
+<td>Pipeline stops for 30 minutes, then delivers the backlog at
+once</td>
+<td>After the backlog lands, does pacing "see" a big overspend and pause
+the campaign too hard? (The over-correction failure.)</td>
+</tr>
+<tr class="even">
+<td><strong>Concurrency</strong></td>
+<td>Same campaign served from two regions or data centres; budget change
+during active bidding</td>
+<td>Does each region try to spend the full budget? Xandr explicitly
+warns about this for multi-geo campaigns</td>
+</tr>
+<tr class="odd">
+<td><strong>Concurrency</strong></td>
+<td>Advertiser lowers the budget from €1,000 to €200 after €400 has
+already been spent today</td>
+<td>What <em>should</em> happen? This is a business-rule question. Ask
+it before you test it (see §5)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>A timely case: the clock itself.</strong> EU daylight saving
+time ends on <strong>25 October 2026</strong>, so that Sunday has 25
+hours in Hamburg. US DST ends on <strong>1 November 2026</strong>, which
+leaves a week where the offset between EU and US time zones is different
+from usual. For a campaign whose "day" is defined in the advertiser's
+time zone:</p>
+<ul>
+<li>Is the daily budget spread over 25 hourly slots or 24? If hourly
+goal = remaining budget ÷ remaining hours, which "hours"?</li>
+<li>Does the 02:00–03:00 hour, which happens twice, get two hourly
+goals, one goal, or a key collision in the aggregation table?</li>
+<li>Does a report bucketed in UTC show a "day" that overspent, when it
+was really one correct local day split across two UTC dates?</li>
+</ul>
+<p>This is a ten-minute test with a controllable clock. If it's left
+unasked, it becomes a two-day incident.</p>
+<hr />
+<h3
+id="4-automation-strategy-put-the-checks-where-the-risk-actually-is">4.
+Automation strategy: put the checks where the risk actually is</h3>
+<p>Pacing code tends to collect strong unit tests for the arithmetic and
+almost nothing for the timing. Rebalance like this:</p>
+<p><strong>Keep, and make them property-based:</strong> the pacing math.
+Invariants such as "remaining hourly goals never sum to more than the
+remaining budget", "the throttle rate stays between 0 and 1", "a paused
+campaign gets zero goal" and "a budget change is reflected in the next
+recalculation" are cheap and catch real regressions.</p>
+<p><strong>Add: a simulation harness with injectable time and
+lag.</strong> This is where pacing risk actually lives. The harness
+needs:</p>
+<ul>
+<li>a <strong>controllable clock</strong>, so DST, midnight and flight
+end can be tested in seconds;</li>
+<li><strong>recorded or synthetic traffic curves</strong>, including
+spikes and droughts;</li>
+<li>a <strong>lag knob</strong> on the event pipeline, so you can model
+a stale counter;</li>
+<li>outputs as <strong>curves</strong>: planned vs. actual spend per
+hour, and "decisions made after true cap crossed."</li>
+</ul>
+<p>Your assertions then become statements about the shape. "With 60 s
+counter lag and a 10× traffic spike, overshoot stays below X% of the
+daily budget, and live hours don't drop below Y." X and Y are numbers
+you have to <strong>negotiate</strong> with the business, not invent
+yourself.</p>
+<p><strong>Avoid:</strong> end-to-end UI tests that create a campaign,
+wait, and assert on the dashboard total. They are slow and flaky. They
+also test the final number, which is the least informative thing about
+the system.</p>
+<hr />
+<h3
+id="5-observability-in-production-ask-for-the-curve-not-just-the-counter">5.
+Observability: in production, ask for the curve, not just the
+counter</h3>
+<p>Rob Meaney's Ministry of Testing talk <a
+href="https://ministryoftesting.com/testbash-sessions/observability-unlearn-guessing-reduce-stressing-and-learn-to-embrace-reality-rob-meaney">Observability:
+Unlearn Guessing, Reduce Stressing and Learn to Embrace Reality</a>
+argues that in complex distributed systems you can't predict all
+behaviour in advance, and that testing continues after deployment.
+Pacing is a strong example: no staging environment reproduces real
+auction density.</p>
+<p>So use your tester influence to make the system <strong>able to show
+you its own pacing problems</strong>. Concrete asks for the
+developers:</p>
+<ol type="1">
+<li><strong>Counter staleness as a metric.</strong> Age of the newest
+event included in the spend counter, per region. If that number jumps
+from 5 s to 4 minutes, overspend is coming.</li>
+<li><strong>Planned vs. actual spend per campaign per hour</strong>,
+stored, not only shown on a live dashboard. You can't investigate a
+curve you didn't keep.</li>
+<li><strong>"Decisions after cap" counter.</strong> Bids or serves made
+after the reconciled spend exceeded the cap. This is overshoot measured
+at its cause.</li>
+<li><strong>Served vs. billed reconciliation per day and per
+month.</strong> The gap is either deliberate (documented free
+overdelivery) or a leak.</li>
+<li><strong>Live hours per campaign.</strong> This catches the opposite
+failure: pacing that is "safe" because it starves campaigns.</li>
+</ol>
+<p>Then ask the operational question: <strong>who gets alerted, and can
+they act?</strong> Xandr's safety-budget guidance recommends sending the
+80% alert to people with the authority and knowledge to change the
+campaign. A metric that nobody owns doesn't help anyone.</p>
+<hr />
+<h3 id="6-soft-skills-handling-its-within-tolerance">6. Soft skills:
+handling "it's within tolerance"</h3>
+<p>Sooner or later you'll report an overspend and a developer will say:
+<em>"That's expected. Pacing is never exact. It's within
+tolerance."</em> They may well be right. Here is how to have the
+conversation without either giving up or turning it into an argument
+about who's right.</p>
+<p><strong>Split the claim into three questions.</strong> Ask them one
+at a time and calmly:</p>
+<ol type="1">
+<li><strong>"Where is the tolerance written down?"</strong> If it lives
+only in the team's heads, the first deliverable isn't a fix. It's a
+decision, written down and owned by someone with business authority
+(product owner, ad ops lead, finance).</li>
+<li><strong>"Measured how?"</strong> Served or billed? Per day, per
+flight or per month? Before or after late events arrive? A 5% daily
+tolerance measured on yesterday's data at 09:00 can hide a 25% monthly
+drift, which is the DoorDash pattern.</li>
+<li><strong>"Is it acceptable <em>for whom</em>?"</strong> Xandr's own
+data shows overspend percentage is much worse for small budgets. A
+tolerance that is fine for a €50,000 enterprise campaign may mean a
+€20/day local advertiser regularly pays for, or receives, a third more
+than they asked for.</li>
+</ol>
+<p><strong>Translate the finding for each audience.</strong> The same
+issue, three ways:</p>
+<ul>
+<li><em>Developer:</em> "With the counter lagging about 90 s during
+kickoff spikes, we served for about 40 s after the true cap. Can we get
+counter staleness as a metric so we can see how often this
+happens?"</li>
+<li><em>Product owner:</em> "Small-budget campaigns overspend by 12–30%
+on spike days. We don't have a written tolerance per segment, so right
+now nobody has decided whether that's acceptable."</li>
+<li><em>Account manager / ad ops:</em> "Advertisers on daily budgets
+under €30 may see invoices above their stated budget on match days, or,
+if billing caps it, the platform absorbs the cost. Do customers complain
+about either today?"</li>
+</ul>
+<p><strong>Avoid:</strong> "pacing is broken." <strong>Use
+instead:</strong> a curve, a number, the affected customer segment, and
+a question about who decides. You aren't trying to win the argument.
+You're trying to make sure a tolerance exists and that someone with the
+authority has signed off on it.</p>
+<hr />
+<h3 id="7-practical-challenge-45-minutes">7. Practical challenge (≈45
+minutes)</h3>
+<p>A sports-media publisher sells a <strong>guaranteed sponsorship line
+item</strong>: 600,000 impressions, Monday–Saturday,
+<strong>Even</strong> pacing, so the daily goal is about 100,000. The
+CPM is €12. The ad ops dashboard refreshes from an aggregation job.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Day</th>
+<th>Final delivered</th>
+<th>What the dashboard showed</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Mon</td>
+<td>101,800</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Tue</td>
+<td>104,600</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Wed</td>
+<td>71,000</td>
+<td>—</td>
+<td>Ad server deploy 14:00–18:00; a targeting key was missing for 4
+hours</td>
+</tr>
+<tr class="even">
+<td>Thu</td>
+<td>129,500</td>
+<td>—</td>
+<td>"Catch-up day"</td>
+</tr>
+<tr class="odd">
+<td>Fri</td>
+<td>98,000</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Sat</td>
+<td>127,300</td>
+<td>96,000 at 22:00</td>
+<td>Derby kickoff 20:30; final figures landed at 03:00 Sunday</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Total: 632,200 (+5.4%)</strong></p>
+<p><strong>Your tasks:</strong></p>
+<ol type="1">
+<li><strong>Oracles.</strong> Name at least three sources of
+expectation, for example the platform's documented Even tolerance, the
+insertion-order terms, the sponsor's actual goal ("visible every day"),
+and the publisher's revenue. For each, decide whether it says this is a
+problem. Note where they disagree.</li>
+<li><strong>Questions before filing.</strong> Write the three questions
+you'd ask before calling anything a bug. Hint: is +5.4% over
+flight-level tolerance? Was Wednesday's shortfall makegood-relevant if
+Thursday caught up? What pacing decision was made around 22:00 Saturday,
+and on which number?</li>
+<li><strong>The Saturday hypothesis.</strong> Explain in 3–4 sentences
+how a stale counter (96,000 shown, reality much higher) plus a traffic
+spike plus end-of-flight ASAP behaviour could produce the overshoot.
+Then describe the simulation-harness experiment that would confirm or
+rule it out.</li>
+<li><strong>Two risk statements.</strong> One for the developer
+(mechanism plus the metric you want), one for the ad ops lead. For
+example: the extra ~32,000 impressions at €12 CPM are about €386 of
+inventory given away on the most valuable night of the week. Was that
+inventory sellable?</li>
+<li><strong>Observability ask.</strong> Name the one signal that would
+have warned someone at 21:00 on Saturday, and who should receive the
+alert.</li>
+</ol>
+<p><strong>A strong answer</strong> keeps "over flight goal" separate
+from "uneven daily presence." It doesn't assume +5.4% is a defect
+without a written tolerance. And it ends with a specific question for
+the person who owns the decision.</p>
+<hr />
+<h3 id="sources-used-today">Sources used today</h3>
+<ul>
+<li>James Bach / Satisfice — <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model v6.3</a> (Product Elements → Time)</li>
+<li>Rob Meaney / Ministry of Testing — <a
+href="https://ministryoftesting.com/testbash-sessions/observability-unlearn-guessing-reduce-stressing-and-learn-to-embrace-reality-rob-meaney">Observability:
+Unlearn Guessing, Reduce Stressing and Learn to Embrace Reality</a></li>
+<li>Garg, Xiao, Yang, Rahurkar (DoorDash) — <a
+href="https://arxiv.org/html/2509.07929v1">Smart Fast Finish: Preventing
+Overdelivery via Daily Budget Pacing at DoorDash</a></li>
+<li>Microsoft Learn (Xandr) — <a
+href="https://learn.microsoft.com/en-us/xandr/monetize/difficulties-with-exact-budgeting">Difficulties
+with Exact Budgeting</a> and <a
+href="https://learn.microsoft.com/en-us/xandr/monetize/key-budgeting-and-pacing-concepts">Key
+Budgeting and Pacing Concepts</a></li>
+<li>Google Ad Manager Help — <a
+href="https://support.google.com/admanager/answer/2669484">Delivery
+basics</a> and <a
+href="https://support.google.com/admanager/answer/82244">Line
+items</a></li>
+<li>Google Ads Help — <a
+href="https://support.google.com/google-ads/answer/1704443?hl=en">About
+overdelivery and your average daily budget</a></li>
+<li>Baker Botts — <a
+href="https://www.bakerlaw.com/insights/revisiting-makegoods-in-media-buys">Revisiting
+Makegoods in Media Buys</a> (summary of IAB/4A's terms)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-26.html" rel="prev"><span>Previous</span>Testing Payment Disputes: The Deadline and the Verdict Both Belong to Someone Else</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

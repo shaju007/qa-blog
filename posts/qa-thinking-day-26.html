@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most of the workflows you test are owned by your company. You decide when a state changes, what counts as success, and how long things take.">
+  <meta name="color-scheme" content="light">
+  <title>Testing Payment Disputes: The Deadline and the Verdict Both Belong to Someone Else | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 26</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-26">QA Thinking — Day 26</h1>
+<h2
+id="testing-payment-disputes-the-deadline-and-the-verdict-both-belong-to-someone-else">Testing
+Payment Disputes: The Deadline and the Verdict Both Belong to Someone
+Else</h2>
+<p>Most of the workflows you test are owned by your company. You decide
+when a state changes, what counts as success, and how long things
+take.</p>
+<p>Payment disputes (chargebacks) work differently. A cardholder's bank
+opens the case, the card network sets the deadline, and the issuing bank
+decides the result, sometimes two or three months later. Your system
+only reacts. You may also get just one chance to respond.</p>
+<p>So "the dispute screen works" tells you very little. The useful
+questions are whether your system reacts correctly to events it doesn't
+control, on a timeline it doesn't control, without wasting the one
+chance it gets.</p>
+<p>Today's domain is payments, set in a <strong>ticketing
+platform</strong> that sells tickets for concerts and football matches.
+The testing lens is <strong>time as a product element</strong>, taken
+from the Heuristic Test Strategy Model. The soft skill is <strong>asking
+questions that show who owns each deadline</strong>.</p>
+<hr />
+<h2 id="1-domain-primer-how-a-card-dispute-actually-works">1. Domain
+primer: how a card dispute actually works</h2>
+<p>The details below are from Stripe's documentation. Other payment
+service providers (PSPs) use different names, but the card-network
+mechanics are similar. Card scheme rules are the final authority, and
+the timelines differ by network.</p>
+<p><strong>Who is involved</strong></p>
+<ul>
+<li><strong>Cardholder</strong>: the customer who complains to their
+bank.</li>
+<li><strong>Issuer</strong>: the cardholder's bank. It decides the
+outcome.</li>
+<li><strong>Card network</strong>: Visa, Mastercard, Amex and so on. It
+sets the rules and timelines.</li>
+<li><strong>Acquirer/PSP</strong>: Stripe, Adyen and others. They pass
+the case to you and debit your balance.</li>
+<li><strong>Merchant</strong>: you. You can accept the dispute or
+contest it with evidence.</li>
+</ul>
+<p><strong>Two stages</strong></p>
+<ul>
+<li><strong>Inquiry</strong> (also called a retrieval or request for
+information). This is a pre-dispute question from the issuer. Stripe
+says Amex and Discover use it most, and Visa and Mastercard no longer
+do. Inquiries show up in the API with a <code>warning_</code> prefix:
+<code>warning_needs_response</code>, <code>warning_under_review</code>,
+<code>warning_closed</code>. You can resolve an inquiry by answering it
+or by refunding in full, without a dispute fee. <strong>If you ignore
+it, the issuer may read that as acceptance and escalate.</strong></li>
+<li><strong>Chargeback</strong>: a formal dispute
+(<code>needs_response</code> → <code>under_review</code> →
+<code>won</code> / <code>lost</code>). Stripe's current enum also
+includes <code>prevented</code>.</li>
+</ul>
+<p><strong>What happens when a chargeback opens</strong></p>
+<ul>
+<li>The disputed amount <strong>plus a dispute fee</strong> is taken
+from your balance immediately. This happens before anyone has decided
+anything.</li>
+<li>You usually have <strong>7 to 21 days</strong> to respond, depending
+on the network. <strong>If you miss the deadline, you lose
+automatically.</strong></li>
+<li>Stripe's dashboard flow allows <strong>one submission</strong>. You
+can't edit it or add files afterwards.</li>
+<li>The issuer usually takes <strong>60 to 75 days</strong> to decide.
+The whole process can take <strong>2 to 3 months</strong>.</li>
+<li>Stripe describes the outcome as normally final. In rare cases a
+dispute changes from <code>lost</code> to <code>won</code> (a "late
+win").</li>
+</ul>
+<p><strong>Facts that become test ideas</strong></p>
+<ul>
+<li>The <strong>disputed amount can differ from the charge</strong>.
+Causes include exchange-rate changes, partial disputes, a bank combining
+several recurring payments into one dispute, and full disputes on
+partially refunded payments.</li>
+<li><strong>One payment can receive several disputes.</strong> Each one
+has to be accepted or contested separately.</li>
+<li>Cardholders can usually dispute <strong>within 120 days</strong>.
+For <strong>future events</strong> such as concerts, trips or
+appointments, the window generally <strong>starts at the event date, not
+the purchase date</strong>.</li>
+<li><strong>Early fraud warnings</strong> can arrive <em>after</em> a
+fraud dispute has already opened, because the networks run those systems
+separately.</li>
+<li>Some disputes <strong>can't be contested at all</strong>. Stripe
+closes them as lost as soon as they open.</li>
+</ul>
+<p>Think about what that last group of facts means for a ticketing
+company. Someone who buys a ticket in March for a match in September can
+still dispute in December.</p>
+<hr />
+<h2 id="2-why-this-breaks-your-normal-testing-habits">2. Why this breaks
+your normal testing habits</h2>
+<p>Disputes have three properties that most flows don't have:</p>
+<ol type="1">
+<li><strong>There's no oracle when you test.</strong> Whether your
+evidence would <em>win</em> is decided by a bank weeks later, using
+criteria you can't run.</li>
+<li><strong>The deadlines come from outside.</strong> Your code receives
+<code>evidence_details.due_by</code> as a Unix timestamp. It doesn't
+calculate the deadline.</li>
+<li><strong>Some actions can't be undone.</strong> You get one
+submission. Accepting a dispute can't be reversed by you.</li>
+</ol>
+<p>The sandbox squeezes all of this into seconds. Stripe has test cards
+that create a fraud dispute (<code>4000000000000259</code>), a
+product-not-received dispute (<code>4000000000002685</code>), an inquiry
+(<code>4000000000001976</code>) and an early fraud warning
+(<code>4000000000005423</code>). It also has special evidence values:
+<code>winning_evidence</code>, <code>losing_evidence</code> and
+<code>escalate_inquiry_evidence</code>.</p>
+<p>These are useful, but be clear about what they prove. <strong>They
+test how your system handles outcomes. They tell you nothing about the
+quality of your evidence.</strong> A green run with
+<code>winning_evidence</code> means your ledger handles a win. It
+doesn't mean your ops team would win a real dispute.</p>
+<p>When you report on this area, say that explicitly. For example:
+<em>"Outcome handling tested with sandbox values. Evidence completeness
+tested against our own per-reason checklist. Actual win rate is
+untestable before release and needs production monitoring."</em> That's
+an honest coverage statement. "Disputes tested ✅" isn't.</p>
+<hr />
+<h2 id="3-applying-the-htsm-time-guideword">3. Applying the HTSM "Time"
+guideword</h2>
+<p>James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a> (v6.3, December 2024) lists
+<strong>Time</strong> among the product factors. It covers when inputs
+and outputs happen and the gaps between them, fast and slow inputs,
+changing rates (spikes, bursts, stalls) and concurrency.</p>
+<p>Teams often skip Time because their test environment hides it.
+Disputes are a good place to use it on purpose. Take each part of it in
+turn and turn it into concrete risks.</p>
+<h3 id="inputoutput-timing-when-does-due-actually-mean-due">Input/Output
+timing: when does "due" actually mean due?</h3>
+<p>Stripe's example dispute object has <code>due_by: 1682294399</code>.
+That's <strong>2023-04-23 23:59:59 UTC</strong>. In Hamburg (CEST,
+UTC+2) it's <strong>01:59:59 on 24 April</strong>.</p>
+<p>Now picture an internal ops dashboard that shows "Due: 24 Apr"
+because it formats the timestamp as a local date. An agent who plans to
+submit "on the due date" at 10:00 Berlin time is already eight hours
+late. The result is an automatic loss of the disputed amount plus the
+fee.</p>
+<p>Note the direction: teams <strong>east of UTC</strong> see a date
+that's <em>later</em> than the real deadline. That's the dangerous
+direction, and it's where you are.</p>
+<p>Test ideas:</p>
+<ul>
+<li>Look at how every surface shows <code>due_by</code>: dashboard,
+email digest, Slack alert, CSV export. Do they all show the same
+instant?</li>
+<li>Compare <code>due_by</code> values around <strong>25 October
+2026</strong>, when Germany leaves daylight saving time.</li>
+<li>Find the <strong>internal</strong> deadline. Gathering evidence
+takes time: ticket-scan logs, emails, refund-policy screenshots. Is
+anything alerting at <code>due_by</code> minus <em>your</em> lead time,
+or only at <code>due_by</code>?</li>
+</ul>
+<h3 id="fastslow-being-too-fast-is-also-a-failure">Fast/Slow: being too
+fast is also a failure</h3>
+<p>Suppose an engineer automates disputes: <em>"When a
+<code>product_not_received</code> dispute arrives, attach the
+ticket-scan record and submit."</em> It's fast and clean.</p>
+<p>Now ask when the scan data actually arrives. If gate scans reach the
+warehouse in a nightly batch, a dispute that arrives at 14:00 gets
+submitted with <strong>no scan evidence</strong>. Because you only get
+one submission, the chance has been used and can't be fixed.</p>
+<p>At the slow end, an issuer decision 75 days later can fall after a
+quarter has closed. Does finance reporting handle a dispute opened in Q3
+that's won in Q4? Is the <code>balance_transactions</code> array (zero,
+one or two entries, according to the API) reconciled each time it
+changes, or only once when the dispute is created?</p>
+<h3 id="changing-rates-the-postponed-match">Changing rates: the
+postponed match</h3>
+<p>A Saturday match is postponed, and the refund announcement is
+unclear. Over the next ten days, several hundred
+<code>credit_not_processed</code> and <code>product_not_received</code>
+disputes arrive.</p>
+<ul>
+<li>Does the ops queue sort by <code>due_by</code>, or by created date?
+It needs to sort by the deadline.</li>
+<li>Does the automation respect your PSP's API rate limits, or does it
+fail silently on dispute 201?</li>
+<li>Does anything warn that this event is raising the dispute rate?
+Stripe documents <a
+href="https://docs.stripe.com/disputes/how-disputes-work">dispute
+monitoring programs</a>, and those programs care about rates, not
+individual cases.</li>
+</ul>
+<h3 id="concurrency-the-refund-race">Concurrency: the refund race</h3>
+<p>These bugs cost real money:</p>
+<ul>
+<li>Customer service issues a refund, and the cardholder files a dispute
+the same afternoon. Can the customer get the money twice? Stripe says
+you can't refund outside the dispute process once a chargeback is open,
+and the dispute object has <code>is_charge_refundable</code>.
+<strong>Does your code read that flag, or does it assume?</strong></li>
+<li>A rule auto-refunds every early fraud warning. The warning arrives
+<em>after</em> the fraud dispute. What does the refund call do, and what
+does your ledger record?</li>
+<li>Webhooks arrive out of order. <code>charge.dispute.closed</code>
+arrives before your handler has finished processing
+<code>charge.dispute.created</code>.</li>
+<li>Two disputes on one payment. Does your UI show both, or does the
+second overwrite the first in a <code>payment.dispute_id</code>
+column?</li>
+</ul>
+<hr />
+<h2 id="4-when-you-cant-test-the-verdict-move-the-oracle">4. When you
+can't test the verdict, move the oracle</h2>
+<p>You can't check "did we win" before release, so test things you
+<em>can</em> check that predict a good outcome and keep the books
+correct:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Instead of…</th>
+<th>Check…</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>"Evidence wins"</td>
+<td>Evidence is <strong>complete for the reason code</strong> (fraud,
+product not received and credit not processed each need different
+evidence) and submitted <strong>before the internal
+deadline</strong></td>
+</tr>
+<tr class="even">
+<td>"Status updates"</td>
+<td><strong>Every</strong> status maps somewhere, including
+<code>prevented</code>, any value your code doesn't know yet, and
+<code>lost → won</code> (late win)</td>
+</tr>
+<tr class="odd">
+<td>"Refund works"</td>
+<td>Customer refunds + dispute debits + reinstatements <strong>add
+up</strong> per payment, including FX and partial-dispute amounts</td>
+</tr>
+<tr class="even">
+<td>"Old purchases are safe"</td>
+<td><strong>Data retention ≥ dispute window measured from the event
+date.</strong> If scan logs are deleted 90 days after purchase, a
+dispute filed three months after a September match will have no
+evidence.</td>
+</tr>
+</tbody>
+</table>
+<p>That last row is the one most worth raising this week. It needs no
+fancy tooling, just a question asked across three teams.</p>
+<p>One more practical point: <code>lost</code> is often treated as final
+in code. Replay a fixture that moves <code>lost → won</code> and see
+whether your state machine ignores it. If it does, the money credited to
+your PSP balance never shows up in your own reports.</p>
+<hr />
+<h2 id="5-soft-skills-ask-who-owns-each-clock">5. Soft skills: ask who
+owns each clock</h2>
+<p>The HTSM's Project Environment section includes <em>Information</em>
+and <em>Customers</em>: who knows what, and who relies on the result. In
+dispute work, nobody owns the timeline from start to finish, so the main
+testing skill here is <strong>asking questions</strong>. Ask these in
+refinement, before you test anything:</p>
+<p><strong>To the product owner:</strong> "When a dispute arrives, who
+gets told, through which channel, and how many working days before
+<code>due_by</code>? If the answer is 'Stripe emails us', which inbox is
+it, and who reads it on a Sunday?"</p>
+<p><strong>To finance:</strong> "When a dispute is won 70 days later,
+which period does the reinstated money go to? Who reconciles disputes
+where the amount differs from the charge?"</p>
+<p><strong>To data/platform:</strong> "How long do we keep gate scans,
+delivery confirmations and support transcripts? Is that measured from
+purchase or from the event?"</p>
+<p><strong>To customer service:</strong> "Can an agent refund a payment
+that has an open inquiry? Should they?" Stripe treats a full refund as a
+valid way to resolve an inquiry, but a partial refund can still lead to
+a chargeback.</p>
+<p><strong>To the developer who says "Stripe handles the
+deadlines":</strong> agree with what's true, then make the gap specific.
+<em>"Right, Stripe enforces the deadline. It doesn't collect our scan
+logs or warn ops three days early. Can we look at what happens between
+<code>charge.dispute.created</code> and submission?"</em> You're not
+saying they're wrong. You're pointing at the part of the timeline nobody
+has claimed.</p>
+<p><strong>Turning a finding into a risk statement.</strong> Don't write
+"timezone bug in dispute dashboard". Write:</p>
+<blockquote>
+<p>"For disputes whose <code>due_by</code> falls in the last two hours
+of a UTC day (all of them, as far as the samples we've seen show;
+Stripe's deadlines appear to end at 23:59:59 UTC), our dashboard shows a
+due date one day later than the real one. An agent working to the
+displayed date will miss the deadline, and a missed deadline is an
+automatic loss of the disputed amount plus the fee. Fix: show the
+deadline in UTC with a local-time hint, and alert at <code>due_by</code>
+minus 72h."</p>
+</blockquote>
+<p>That gives the scope, the mechanism, the cost, and a proposed fix. A
+product owner can decide on that in two minutes.</p>
+<p><strong>Negotiating testability.</strong> Ask for two things: an
+<strong>injectable clock</strong> in the dispute service, and a
+<strong>webhook replay harness</strong> with fixtures for every status,
+including an unknown one and <code>lost → won</code>. Explain why: the
+sandbox can't make you live through 21 days, so without these the
+time-related risks can only be found in production.</p>
+<hr />
+<h2 id="6-challenge-4560-minutes">6. Challenge (45–60 minutes)</h2>
+<p><strong>Scenario:</strong> Your ticketing platform automatically
+submits evidence for <code>product_not_received</code> disputes as soon
+as a gate-scan record exists. If there's no record, the dispute goes to
+an ops queue. Gate scans are batch-loaded at 03:00 UTC. Scan logs are
+deleted 120 days after <strong>purchase</strong>. Ops works from a
+Berlin-time dashboard.</p>
+<ol type="1">
+<li><strong>Model the timeline.</strong> For each part of the HTSM Time
+guideword (input/output timing, fast/slow, changing rates, concurrency),
+write <strong>two</strong> test ideas specific to this scenario. At
+least one has to involve money appearing twice or disappearing.</li>
+<li><strong>Split what the sandbox can and can't show.</strong> Which of
+your eight ideas can you run with Stripe test cards and evidence values?
+Which need an injectable clock or replayed webhooks? Which can only be
+watched in production?</li>
+<li><strong>Check a deadline.</strong> A dispute arrives with
+<code>due_by = 1793145599</code>. Convert it to UTC and to Berlin local
+time. <em>(Check: it should be 2026-10-27 23:59:59 UTC, which is
+00:59:59 CET on 28 October, after the clocks change. What date does your
+dashboard show?)</em></li>
+<li><strong>Ask before you test.</strong> Write the three questions
+you'd bring to refinement, each aimed at a different person, and a risk
+statement of no more than five sentences about the retention rule.</li>
+<li><strong>Stretch:</strong> sketch the dispute state machine you'd
+expect, including inquiry escalation, <code>prevented</code>,
+<code>warning_closed</code> after 120 days, uncontestable disputes and
+the late win. Then compare it with what your code actually handles.</li>
+</ol>
+<p>If you do this for a real payment integration at work, step 4 alone
+is often worth more than a week of UI checks.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Stripe Docs: <a
+href="https://docs.stripe.com/disputes/how-disputes-work">How disputes
+work</a>. Covers inquiries vs chargebacks, timelines, fees,
+disputed-amount differences, multiple disputes, uncontestable disputes
+and late wins.</li>
+<li>Stripe Docs: <a
+href="https://docs.stripe.com/disputes/responding">Respond to
+disputes</a>. Covers the single submission, automatic loss on missed
+deadlines and evidence guidelines.</li>
+<li>Stripe API Reference: <a
+href="https://docs.stripe.com/api/disputes/object">The Dispute
+object</a>. Covers <code>evidence_details.due_by</code>,
+<code>is_charge_refundable</code>, <code>balance_transactions</code> and
+the status enum including <code>prevented</code>.</li>
+<li>Stripe Docs: <a href="https://docs.stripe.com/testing">Testing</a>.
+Covers dispute test cards and the <code>winning_evidence</code> /
+<code>losing_evidence</code> / <code>escalate_inquiry_evidence</code>
+values.</li>
+<li>James Bach, Satisfice: <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model, v6.3</a> (also hosted by DevelopSense as a <a
+href="https://developsense.com/htsm">PDF</a>). Used here for the Time
+product factor and the Project Environment questions.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-25.html" rel="prev"><span>Previous</span>&quot;We Did Some Exploratory Testing&quot; Isn&#39;t Evidence Yet: Session-Based Testing of Smart-Meter Outage Detection</a><a href="/qa-blog/posts/qa-thinking-day-27.html" rel="next"><span>Next</span>Testing Ad Budget Pacing: The Budget Is a Promise About a Curve, Not a Final Number</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Context: a B2B SaaS product with seat-based subscriptions billed through Stripe Billing. Customers are in Germany, Austria and the Netherlands, and some accounts date back to 2019.">
+  <meta name="color-scheme" content="light">
+  <title>Your platform team plans to shut down shared staging on 1 November. Every pull request will get its own preview environment instead: a fresh database, 40 accounts loaded by a seed script, one shared Stripe sandbox, and automatic teardown on merge. &quot;Staging is flaky and nobody owns its data. This fixes both.&quot; In planning, the engineering manager turns to you: &quot;QA, any objections?&quot; What do you say, and what would you need to see before staging is switched off? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 13</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-13">QA Interview Q&amp;A — Day 13</h1>
+<h2
+id="question-your-platform-team-plans-to-shut-down-shared-staging-on-1-november-every-pull-request-will-get-its-own-preview-environment-instead-a-fresh-database-40-accounts-loaded-by-a-seed-script-one-shared-stripe-sandbox-and-automatic-teardown-on-merge-staging-is-flaky-and-nobody-owns-its-data-this-fixes-both-in-planning-the-engineering-manager-turns-to-you-qa-any-objections-what-do-you-say-and-what-would-you-need-to-see-before-staging-is-switched-off">Question:
+Your platform team plans to shut down shared staging on 1 November.
+Every pull request will get its own preview environment instead: a fresh
+database, 40 accounts loaded by a seed script, one shared Stripe
+sandbox, and automatic teardown on merge. "Staging is flaky and nobody
+owns its data. This fixes both." In planning, the engineering manager
+turns to you: "QA, any objections?" What do you say, and what would you
+need to see before staging is switched off?</h2>
+<p><em>Context: a B2B SaaS product with seat-based subscriptions billed
+through Stripe Billing. Customers are in Germany, Austria and the
+Netherlands, and some accounts date back to 2019.</em></p>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>Don't object, and don't simply agree either. The platform team is
+right about the problem. Staging is flaky because several teams share
+it, and that makes test results hard to trust. Preview environments
+really do fix that kind of contention.</p>
+<p>My concern is something nobody has listed. Staging has been doing
+several jobs that no one designed it to do, and switching it off will
+quietly remove them. So my answer is: "Yes to preview environments.
+Before we switch staging off, let's write down what staging is doing for
+us today and decide where each of those jobs goes." That position is
+constructive. It also turns a gut feeling into a list the team can
+check.</p>
+<h3 id="what-staging-is-quietly-doing">What staging is quietly
+doing</h3>
+<p>James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a> separates <strong>Project Environment</strong>
+(the resources and constraints that enable or limit testing, including
+the equipment and tools you test with) from <strong>Product
+Elements</strong> (what you test, including the product's
+<em>data</em>). Under Data, the model asks you to consider persistent
+data and how data changes over its lifecycle. Those two questions are
+exactly what a freshly seeded environment can't answer. Walking through
+the model's guidewords, I'd expect a list like this:</p>
+<ol type="1">
+<li><strong>Data written by older versions of the code.</strong> A seed
+script run today can only produce the data shapes today's code writes.
+Production holds accounts created in 2019 with legacy plan IDs,
+grandfathered prices, columns that were backfilled during a migration,
+and VAT IDs stored before validation was added. Staging has slowly built
+up some of that history. The seed script has none of it, so a preview
+environment will never show a bug that only hits a 2019 account.</li>
+<li><strong>Time.</strong> A preview environment is two hours old. It
+has no trials that expire tomorrow, no invoices on their third dunning
+retry, and no annual renewals due next week. Before a subscription
+business gets rid of its only long-lived environment, someone has to say
+how time-dependent behaviour will be tested.</li>
+<li><strong>Mixed service versions.</strong> In a preview environment,
+the branch under test usually runs against everything else built from
+<code>main</code>. In production, during a rollout, the new billing
+service may run alongside an old notification service for twenty
+minutes. Staging sometimes catches problems with deploy order and
+backward compatibility by accident. Preview environments are consistent
+by design, so they won't.</li>
+<li><strong>Real third-party integration, and a new kind of
+sharing.</strong> One Stripe sandbox shared by thirty preview
+environments brings back the contention problem, this time outside the
+system. Stripe's <a href="https://docs.stripe.com/sandboxes">sandbox
+documentation</a> and <a
+href="https://docs.stripe.com/testing-use-cases">testing-environment
+comparison</a> say general sandboxes are fully isolated from each other.
+They recommend separate sandboxes for local development and CI, and they
+allow up to five general sandboxes per account in addition to the
+test-mode sandbox. Five sandboxes can't give thirty preview environments
+one each. So I'd ask:
+<ul>
+<li>Webhook events are sent to the endpoints registered on the sandbox,
+not to the environment that created the object. Which preview
+environment receives <code>invoice.payment_failed</code> for a customer
+that environment #17 created?</li>
+<li>Will one environment's teardown or cleanup delete Stripe objects
+that another environment's test is using?</li>
+</ul></li>
+<li><strong>Volume.</strong> With 40 accounts, a migration takes
+milliseconds, every list fits on one page, and the monthly usage report
+returns instantly. Staging isn't production-sized either, but it is
+usually much bigger than 40 accounts.</li>
+<li><strong>People and long-running work.</strong> The product owner
+uses staging for acceptance demos. Support uses it to reproduce customer
+tickets. Testers use it for exploratory sessions that run over several
+days. If the environment is torn down at merge, any investigation still
+running at merge time is lost.</li>
+</ol>
+<h3 id="evidence-id-gather-before-arguing">Evidence I'd gather before
+arguing</h3>
+<p>Opinions won't settle this. Evidence will. Before the decision
+meeting I'd collect:</p>
+<ul>
+<li><strong>Six months of bugs, classified.</strong> For each bug found
+in staging, and each bug that escaped to production, ask: "Would a
+freshly seeded preview environment have caught this?" Sort the answers
+into three buckets: <em>yes</em>, <em>no because of data
+age/history</em>, and <em>no because of time, volume, or an
+integration</em>. If 3 of 60 bugs fall into the "no" buckets, the risk
+is small and I should say so. If 18 do, that changes the
+conversation.</li>
+<li><strong>Who uses staging and what runs on it.</strong> Pull the
+access logs for logins and look at the scheduled jobs: nightly
+invoicing, dunning, and data exports. Every regular user and every job
+is a dependency that needs a new home.</li>
+<li><strong>A review of the seed script.</strong> Map the states it
+creates against the ones that matter: plan type × billing status ×
+account age × payment method × tax country. Compare that map with
+<em>aggregate counts</em> from production. This means queries like "how
+many accounts are on a legacy plan?", not copies of customer records.
+Most seed scripts cover the middle of the matrix well and miss its
+edges.</li>
+<li><strong>How the seed data is built.</strong> Raw SQL inserts skip
+validation and domain events. They can create states the app can't
+actually reach, and they can also be too clean. Data built through the
+app's own API or domain services follows real rules. You still need
+explicit "legacy-shaped" scenarios on top, because no current code path
+creates a 2019 account.</li>
+</ul>
+<h3 id="what-id-propose">What I'd propose</h3>
+<ul>
+<li><p><strong>Keep the isolation for what it's good at.</strong>
+Preview environments are a clear improvement for functional checks on
+each change and for stable automated suites. Google's <a
+href="https://testing.googleblog.com/2012/10/hermetic-servers.html">Hermetic
+Servers</a> post explains why. Injecting dependencies and faking
+datastores removes network flakiness and nondeterminism. The trade-off
+is that each fake is a model, and a model only knows what you put into
+it.</p></li>
+<li><p><strong>Treat the seed data as a product with an owner.</strong>
+Build a catalogue of named scenarios that any environment can load on
+request. For example: <code>legacy-2019-grandfathered-price</code>,
+<code>annual-renewal-due-in-24h</code>,
+<code>past-due-dunning-day-3</code>, <code>de-reverse-charge-b2b</code>,
+<code>seat-downgrade-mid-cycle</code>. A bug that slipped through
+because data was missing should lead to a new scenario, in the same way
+a regression should lead to a new check.</p></li>
+<li><p><strong>Use Stripe's time tools, but know their limits.</strong>
+Stripe <a
+href="https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage">test
+clocks</a> let you move subscriptions forward in time without waiting.
+The documentation is also clear about their limits:</p>
+<ul>
+<li>Each simulation supports at most three customers and three
+subscriptions per customer.</li>
+<li>Clocks can only move forward, and an active subscription can only be
+advanced two billing intervals at a time.</li>
+<li>Simulations are deleted automatically after 30 days.</li>
+<li>List endpoints leave out test-clock objects unless you filter for
+them.</li>
+<li>Bank-debit payments (<code>us_bank_account</code> is the example in
+the docs) aren't collected while the clock advances.</li>
+</ul>
+<p>That last limit matters for our DACH customers. I'd want SEPA Direct
+Debit renewals checked separately, rather than assuming the clock covers
+them. Our own scheduled jobs also need a controllable clock. Advancing
+Stripe's clock does nothing to our dunning job.</p></li>
+<li><p><strong>Plan Stripe isolation on purpose.</strong> Options
+include separate sandboxes for CI, for exploratory and acceptance work,
+and for long-lived soak testing, plus tagging every object with the
+preview environment's ID in its metadata. A small relay service can then
+forward each webhook to the right environment based on that ID.</p></li>
+<li><p><strong>Keep one slimmed-down, long-lived environment</strong>,
+or at least a version of staging with an owner. It should hold aged and
+legacy-shaped data, run the real nightly jobs, and get the full
+deploy-order rehearsal. A shared environment <em>with an owner and a
+reset policy</em> is a different thing from the one we have
+now.</p></li>
+<li><p><strong>Run a pilot instead of a cutover.</strong> One team uses
+preview environments for four to six weeks while staging stays up. At
+the end, compare escaped bugs and the bug-classification results, then
+decide.</p></li>
+</ul>
+<p>In James Bach's <a
+href="https://www.satisfice.com/download/heuristics">Heuristics of
+Software Testability</a>, testability isn't only a property of the
+product. There is also <em>project-related</em> testability: whether you
+have the environments, tools and information you need. This decision
+changes our project-related testability in both directions. I'd like us
+to choose those changes on purpose rather than find them out after the
+switch-off.</p>
+<h3 id="what-id-actually-say-in-the-meeting">What I'd actually say in
+the meeting</h3>
+<blockquote>
+<p>"I'm in favour of preview environments. Shared staging has cost us
+real time, and isolated per-PR checks are a big step up. I'm not asking
+to block this. It's your and the platform team's call. I'd ask for two
+things before staging goes away. First, an hour to list what staging
+does for us today: legacy-shaped data, time-based billing states,
+nightly jobs, support repros and PO demos. Then we agree where each one
+moves. Second, a decision on how 30 environments share one Stripe
+sandbox, especially webhook routing. I'll bring a classification of the
+last six months of bugs, so we can see how many of them a fresh
+40-account environment would have missed. If the number is small, I'll
+say so, and we switch staging off with confidence."</p>
+</blockquote>
+<p>That statement agrees with the goal, names specific risks, offers
+evidence instead of opinion, leaves the decision with the people who own
+it, and says what would change my mind.</p>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"We need staging, it's the only realistic
+environment."</strong> This defends the status quo, flaws included, and
+ignores the real damage caused by contention.</li>
+<li><strong>"Ephemeral is best practice, great idea."</strong> This
+treats a structural change as purely good news and misses data age, time
+and integrations.</li>
+<li><strong>"Just restore a production copy into every preview
+environment."</strong> It adds privacy, compliance and cost problems,
+and it skips the actual question: which states matter, and how do we
+create them on purpose?</li>
+<li><strong>"Mock Stripe completely."</strong> Mocks are useful for
+speed. They also remove the part of the system most likely to surprise
+you, such as asynchronous events, retries and how one object's state
+affects another.</li>
+<li><strong>Listing risks with no proposal and no evidence.</strong>
+Experienced testers make risk discussable. They don't just make it
+louder.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><em>The platform lead replies: "We'll just add more fixtures
+whenever a bug slips through." Why isn't that enough on its own, and
+what would you add?</em> (Hint: fixtures only capture failures you've
+already seen. Think about how you'd find the next legacy shape before a
+customer does. Aggregate profiling of production data shapes and a
+migration rehearsal against aged data are two starting points.)</li>
+<li><em>How would you test a schema migration on a 2019-era account
+table once staging no longer exists?</em></li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model — James Bach, Satisfice</a>: The framework I used to
+list what staging provides. The Project Environment guidewords
+(equipment and tools, test items) and the Product Elements guidewords on
+Data (persistent data, lifecycle) and Time are where the "hidden jobs"
+list comes from. The same model is also hosted on <a
+href="https://developsense.com/htsm">DevelopSense</a>.</li>
+<li><a href="https://www.satisfice.com/download/heuristics">Heuristics
+of Software Testability — James Bach, Satisfice</a>: Describes five
+kinds of testability, including project-related testability. That
+supports treating the environment decision as a change to testability,
+not only to infrastructure.</li>
+<li><a href="https://docs.stripe.com/sandboxes">Stripe Docs —
+Sandboxes</a> and <a
+href="https://docs.stripe.com/testing-use-cases">Testing use cases /
+sandbox comparison</a>: The primary source for sandbox isolation, the
+recommendation to use separate sandboxes for local development and CI,
+and the limit of five general sandboxes. These shaped the shared-sandbox
+and webhook-routing questions.</li>
+<li><a
+href="https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage">Stripe
+Docs — Test clocks: API and advanced usage</a>: The primary source for
+test-clock limits: three customers per simulation, forward-only time,
+two-interval advances, 30-day automatic deletion, list filtering, and
+bank debits not being collected during advances. These limits are why I
+said test clocks help with time but don't solve it.</li>
+<li><a
+href="https://testing.googleblog.com/2012/10/hermetic-servers.html">Google
+Testing Blog — Hermetic Servers (Narla &amp; Salas, 2012)</a>: A
+practitioner explanation of why isolated, self-contained test setups
+reduce flakiness through injected dependencies and faked datastores. I
+used it to give fair credit to the platform team's idea while pointing
+out that fakes are models.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-12.html" rel="prev"><span>Previous</span>Your new QA manager says, &quot;If it isn&#39;t written as a test case before you start, it didn&#39;t happen.&quot; Starting next sprint, every test has to be in the test management tool before anyone runs it. You think this will make testing of the new budget-pacing feature worse. What do you bring to Thursday&#39;s meeting?</a><a href="/qa-blog/posts/qa-interview-day-14.html" rel="next"><span>Next</span>&quot;I don&#39;t need the details. Out of 100, how confident are you that it&#39;s ready?&quot; What do you tell a product owner who needs one number for a steering-committee slide tomorrow?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

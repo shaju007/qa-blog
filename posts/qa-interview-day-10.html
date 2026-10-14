@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The interviewer is checking three things. Do you know how this domain models time? Can you treat a confident claim as something to test, without picking a fight? And can you turn 17 days into evidence instead o">
+  <meta name="color-scheme" content="light">
+  <title>Your energy supplier&#39;s dynamic-tariff feature has been live since November 2025. It bills households for each 15-minute interval, using day-ahead prices and smart-meter readings. On 25 October 2026 the clocks go back, and the feature has never been through that change. The developers say: &quot;Everything&#39;s stored in UTC, so DST isn&#39;t an issue.&quot; You have 17 days. What do you do? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 10</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-10">QA Interview Q&amp;A — Day 10</h1>
+<h2
+id="question-your-energy-suppliers-dynamic-tariff-feature-has-been-live-since-november-2025-it-bills-households-for-each-15-minute-interval-using-day-ahead-prices-and-smart-meter-readings-on-25-october-2026-the-clocks-go-back-and-the-feature-has-never-been-through-that-change-the-developers-say-everythings-stored-in-utc-so-dst-isnt-an-issue-you-have-17-days-what-do-you-do">Question:
+Your energy supplier's dynamic-tariff feature has been live since
+November 2025. It bills households for each 15-minute interval, using
+day-ahead prices and smart-meter readings. On 25 October 2026 the clocks
+go back, and the feature has never been through that change. The
+developers say: "Everything's stored in UTC, so DST isn't an issue." You
+have 17 days. What do you do?</h2>
+<h2 id="answer">Answer</h2>
+<p>The interviewer is checking three things. Do you know how this domain
+models time? Can you treat a confident claim as something to test,
+without picking a fight? And can you turn 17 days into evidence instead
+of worry? "I'd test the DST change" isn't an answer. The useful answer
+explains where the risk sits, how you'd find out, and what you'd
+say.</p>
+<h3 id="1-why-everything-is-utc-doesnt-settle-it">1. Why "everything is
+UTC" doesn't settle it</h3>
+<p>UTC storage solves one problem: every stored instant is unambiguous.
+But in this domain most of the business concepts are in local time:</p>
+<ul>
+<li><strong>The delivery day.</strong> The day-ahead auction sells
+electricity for a local delivery day. Under EU summer-time rules, summer
+time ends at 01:00 UTC on the last Sunday of October. So on 25 October
+2026, local time goes 02:59 CEST → 02:00 CET, and the hour from 02:00 to
+03:00 happens twice. That day has 25 hours. Since the single day-ahead
+coupling moved to a 15-minute market time unit (delivery day 1 October
+2025), that means <strong>100 price intervals, not 96</strong>.</li>
+<li><strong>The meter day, the invoice and the app.</strong> Customers
+see "tonight's cheapest window" in local time. Meter data arrives per
+local day, and plausibility checks often run per local day. Daily and
+monthly totals are local.</li>
+<li><strong>The device schedule.</strong> If the app tells a heat pump
+or EV charger to run from "02:00 to 04:00," that window is ambiguous on
+that one night.</li>
+</ul>
+<p>So the risk isn't in the database. It sits in every place where we
+convert, group, join or check counts. PEP 495, which added the
+<code>fold</code> attribute to Python's datetime, describes this
+exactly: during a fall-back, a local clock reading "is insufficient to
+identify a particular moment in time."</p>
+<p>The history matters too. The feature has been through one clock
+change: spring-forward on 29 March 2026. That was a 23-hour day with 92
+intervals. <strong>Spring and autumn fail differently.</strong> A
+missing hour can drop data or leave a gap. A repeated hour can cause
+<strong>collisions</strong>. Here's the classic case: an upsert keyed on
+<code>(meter_id, local_timestamp)</code> quietly replaces the first
+02:15 reading with the second one. Nothing errors, and one hour of
+consumption is just gone. "We survived March" is real evidence, but it
+only covers half of the problem.</p>
+<h3 id="2-learn-the-pipeline-before-testing-it-days-12">2. Learn the
+pipeline before testing it (days 1–2)</h3>
+<p>I'd spend an hour each with someone from billing operations and
+someone who owns the meter-data integration. I'd ask them to walk me
+through the chain: <strong>price ingest → meter-data ingest → validation
+→ rating → invoice → app display → device control</strong>. At each step
+I'd ask:</p>
+<ul>
+<li>What timestamp format comes in? UTC, local with offset, or local
+without offset? How does the price feed or the meter feed label the
+repeated hour?</li>
+<li>What defines "a day" here, and who decided that?</li>
+<li>Is anything a fixed size: an array of 96 slots, a chart with 24
+bars, a check like "expect 96 readings per day", a cron job at 02:30
+local time?</li>
+<li>What happens when a check fails? Do we reject the data, alert
+someone, or <strong>substitute estimated values</strong>? That last one
+matters most. If the plausibility check says "a day must have 96
+readings," a perfectly valid 100-interval day might get replaced by
+estimates. The customer then gets billed on estimates for a day we
+actually measured.</li>
+</ul>
+<p>This is where the Heuristic Test Strategy Model from James Bach
+(Satisfice) helps. <strong>Time</strong> and <strong>Data</strong> are
+separate product elements in it, and it puts <strong>Project
+Environment</strong> (who knows what, and where the information lives)
+alongside the product. In this domain, the knowledge you need is mostly
+in billing ops and in market-data documents, not in the code.</p>
+<h3 id="3-collect-cheap-evidence-first-days-24">3. Collect cheap
+evidence first (days 2–4)</h3>
+<p>Before setting up anything new, I'd check production data from
+<strong>29 March 2026</strong>. For every dynamic-tariff meter: how many
+intervals were priced that local day? 92 is what we'd expect. If it's 96
+with four zeros or duplicates, something is wrong. Then a
+reconciliation: does the sum of the 15-minute consumption match the
+change in the meter register reading? This uses two of the oracle
+heuristics in Michael Bolton's HICCUPPS (DevelopSense):</p>
+<ul>
+<li><strong>History</strong>: what the system did last time.</li>
+<li><strong>Product consistency</strong>: two parts of the product
+should agree with each other.</li>
+</ul>
+<p>I'd also grep for <code>96</code>, <code>24</code>,
+<code>86400</code>, <code>* 24</code>,
+<code>timestamp without time zone</code>, and any scheduler config in
+local time. That isn't a code review. It's a quick way to find likely
+suspects.</p>
+<h3
+id="4-rehearse-the-night-with-data-designed-to-expose-bugs-days-410">4.
+Rehearse the night with data designed to expose bugs (days 4–10)</h3>
+<p>In an isolated environment with a controllable clock (not my laptop
+clock, and not shared staging), I'd replay a full fall-back day. Last
+year's 26 October 2025 results are real 100-interval data and a good
+starting point. Then I'd change the data <strong>so mistakes become
+visible</strong>:</p>
+<ul>
+<li>Give the first and second 02:00–03:00 hours <strong>very different
+prices</strong>, for example 5 ct vs 45 ct.</li>
+<li>Create one test customer who uses 11 kW (an EV charging)
+<strong>only in the second 02:00 hour</strong>, and nothing in the
+first.</li>
+<li>Calculate the expected bill <strong>independently in a
+spreadsheet</strong>, so I have an oracle that doesn't depend on our
+code.</li>
+</ul>
+<p>With realistic data, a mis-join might move the bill by a few cents,
+and nobody would notice. With this data, a mis-join shows up immediately
+as a wrong amount or missing consumption. Then I'd check the app's chart
+and the "cheapest window" text, the device schedule sent for that night,
+and the push notification jobs. I'd do the same for <strong>28 March
+2027</strong>: spring-forward, 92 intervals.</p>
+<h3 id="5-what-to-automate-and-what-not-to">5. What to automate, and
+what not to</h3>
+<p>A unit or contract-level test with a <strong>fixed clock and fixtures
+for 23-, 24- and 25-hour days</strong> should go into the permanent
+suite. It's cheap, it's deterministic, and the dates come back twice a
+year forever. The full end-to-end rehearsal with real feeds is a one-off
+before this transition. I wouldn't turn it into a flaky nightly job.</p>
+<h3 id="6-plan-for-the-night-itself-days-1117">6. Plan for the night
+itself (days 11–17)</h3>
+<p>Testing reduces uncertainty. It doesn't remove it. So I'd propose
+these to the product owner and engineering lead. They're suggestions;
+the decisions are theirs:</p>
+<ul>
+<li>An alert on the morning of 26 October if any meter-day has an
+interval count other than 100, or fails the register
+reconciliation.</li>
+<li><strong>Hold the invoice run for affected periods</strong> until
+reconciliation passes.</li>
+<li>A short briefing for customer support: "Why does my chart show 02:00
+twice?"</li>
+<li>A named on-call person for the pricing and meter pipelines.</li>
+</ul>
+<h3 id="what-id-say-in-the-meeting">What I'd say in the meeting</h3>
+<blockquote>
+<p>"I'm not saying it's broken, and the UTC storage is a genuinely good
+decision. My concern is the places where we turn UTC back into local
+days: the auction's delivery day, the meter feed's day, the invoice and
+the device schedule. That day has 100 intervals. March only tested the
+missing hour, not the repeated one. I'd like two days to check what
+March did in production and one isolated rehearsal of the 25 October
+data. If both look clean, I'll say so plainly. If not, we'll still have
+about ten days to choose between fixing it, adding a manual
+reconciliation step, or holding invoices."</p>
+</blockquote>
+<p>That treats "everything is UTC" as a <strong>claim</strong>, another
+HICCUPPS oracle, and tests it without disrespecting the people who made
+it. It also gives decision-makers options instead of a veto I don't
+have.</p>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"Change my system clock and click around."</strong> It only
+tests the UI on one machine. It misses ingest, joins, validation and
+scheduled jobs.</li>
+<li><strong>"It's one night a year, it's an edge case."</strong> It hits
+<em>every</em> dynamic-tariff customer at once, it affects billing, and
+it repeats every spring and autumn.</li>
+<li><strong>"Ask the devs if they handled DST."</strong> They'll
+honestly say yes, because in their model they did.</li>
+<li><strong>"Write more unit tests."</strong> That's useful, but they
+only check the assumptions the team already has. The failure modes here
+come from the domain.</li>
+<li><strong>Treating it only as a technical bug.</strong> In this domain
+it's a billing-accuracy and customer-trust problem. In Germany, offering
+dynamic tariffs is a legal obligation for suppliers (§ 41a EnWG), not an
+experiment. That raises the cost of getting the bill wrong.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><strong>Your rehearsal shows the second 02:00 hour is priced at the
+first hour's rates. The average error is €0.04 per customer. The product
+owner wants to "fix it after the clock change." What do you
+say?</strong> Here's how I'd answer. The amount isn't the question. The
+questions are which way the error goes, whether customers can see it,
+and whether we can correct invoices before they go out. If the
+hold-and-reconcile step is in place, fixing afterwards may be completely
+fine. I'd write down the decision and who made it.</li>
+<li><strong>Which other dates in this domain deserve the same
+treatment?</strong> Spring-forward (92 intervals), a late or missing
+day-ahead result, month-end and year-end invoice boundaries, leap days,
+and any date when grid fees or tax rates change in the middle of a
+billing period.</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://developsense.com/resource/Oracles.pdf">Michael
+Bolton, DevelopSense, "Oracles" (HICCUPPS consistency heuristics)</a>.
+This is where History, Claims, Product consistency and
+Standards/Statutes come from. The answer uses them to question
+"everything is UTC" and to check March production data and register
+reconciliation.</li>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">James
+Bach, Satisfice, Heuristic Test Strategy Model</a> (also hosted at <a
+href="https://developsense.com/htsm">DevelopSense</a>). Time and Data as
+product elements and Project Environment as a context factor. That
+framing drives the "learn the pipeline before testing it" step.</li>
+<li><a
+href="https://www.ministryoftesting.com/software-testing-glossary/oracles">Ministry
+of Testing, glossary entry "Oracles"</a>. Practitioner definitions of
+oracles, including "derived" (check the math) and "statistical" oracles.
+These support the independent spreadsheet calculation and the
+interval-count alerting.</li>
+<li><a href="https://eur-lex.europa.eu/eli/dir/2000/84/oj/eng">Directive
+2000/84/EC on summer-time arrangements (EUR-Lex)</a>. The primary source
+that summer time ends at 01:00 GMT on the last Sunday in October, which
+produces the 25-hour local day.</li>
+<li><a
+href="https://www.ote-cr.cz/en/about-ote/ote-news/market-coupling-steering-committee-confirms-go-live-of-15-minute-mtu-in-sdac-on-trading-day-30-september-2025-for-delivery-day-1-october-2025">OTE:
+Market Coupling Steering Committee confirms 15-minute MTU in SDAC for
+delivery day 1 October 2025</a>. Confirms day-ahead prices moved to
+15-minute intervals, so the fall-back day has 100 price intervals.</li>
+<li><a href="https://www.gesetze-im-internet.de/enwg_2005/__41a.html">§
+41a EnWG (gesetze-im-internet.de)</a>. The German obligation for
+suppliers to offer dynamic tariffs to smart-meter customers, which is
+why billing accuracy here goes beyond a product-quality concern.</li>
+<li><a href="https://peps.python.org/pep-0495/">PEP 495 — Local Time
+Disambiguation</a>. Primary technical documentation on why local time is
+ambiguous during a fall-back and how the <code>fold</code> attribute
+addresses it. Background for the upsert-collision failure mode.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-09.html" rel="prev"><span>Previous</span>Over a weekend, bots pushed 38,000 stolen-card authorizations through your guest checkout. By Monday afternoon the team has added a CAPTCHA and a per-IP rate limit, and the security lead wants QA to &quot;sign off&quot; by 9 a.m. Tuesday. You have one afternoon. What do you test, and what does your sign-off actually say?</a><a href="/qa-blog/posts/qa-interview-day-11.html" rel="next"><span>Next</span>Your director says the 2-hour end-to-end suite is too slow and nobody trusts it: &quot;Get it to 20 minutes by end of quarter. Delete whatever you have to.&quot; Which tests do you delete first, and how do you know it&#39;s safe?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

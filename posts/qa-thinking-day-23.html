@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most teams have a moment like this. A check fails in CI. Someone re-runs the pipeline and it passes. A developer writes &quot;flaky, added retry: 2&quot; in the PR, and the team moves on.">
+  <meta name="color-scheme" content="light">
+  <title>A Flaky Check Is a Witness You Haven&#39;t Questioned Yet: Investigating Intermittent Failures in a Live Betting-Odds Pipeline | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 23</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-23">QA Thinking — Day 23</h1>
+<h2
+id="a-flaky-check-is-a-witness-you-havent-questioned-yet-investigating-intermittent-failures-in-a-live-betting-odds-pipeline">A
+Flaky Check Is a Witness You Haven't Questioned Yet: Investigating
+Intermittent Failures in a Live Betting-Odds Pipeline</h2>
+<p>Most teams have a moment like this. A check fails in CI. Someone
+re-runs the pipeline and it passes. A developer writes "flaky, added
+<code>retry: 2</code>" in the PR, and the team moves on.</p>
+<p>This lesson argues that this moment is a testing decision, and often
+a risky one. A retry policy is a rule for <strong>which evidence gets
+ignored</strong>. That makes it a tester's business, and in some domains
+it's also a money and compliance question.</p>
+<p>Today's domain is <strong>live sports betting</strong>. In a
+sportsbook, "it passes most of the time" can mean "most of the time we
+stop taking bets after a goal is scored."</p>
+<hr />
+<h3
+id="1-the-core-idea-the-check-isnt-unreliable-your-model-of-the-system-is-incomplete">1.
+The core idea: the check isn't unreliable. Your model of the system is
+incomplete.</h3>
+<p>In <a
+href="https://developsense.com/blog/2021/02/flaky-testing">Flaky
+Testing</a>, Michael Bolton says the phrase "flaky test" points the
+blame the wrong way. It treats the check as a broken experiment. He
+argues the experiment is working well: it shows that someone's models of
+the product, the check code, the environment and the expected outcomes
+don't line up. In his words, it's telling you <em>"there's something you
+don't know."</em></p>
+<p>Bach and Bolton's <a
+href="https://www.satisfice.com/blog/archives/856">Testing and Checking
+Refined</a> explains why this matters. <strong>Checking</strong> is "the
+mechanistic process of verifying propositions about the product".
+<strong>Testing</strong> is evaluating the product by learning about it.
+A machine can run a check and turn it red or green. It can't tell you
+what an intermittent red <em>means</em>. Interpreting that is testing
+work, and adding a retry hands that interpretation back to the
+machine.</p>
+<p>The <a
+href="https://www.ministryoftesting.com/software-testing-glossary/flaky-test">Ministry
+of Testing glossary entry on flaky tests</a> gives the practical
+warning: patching or suppressing a flaky test without understanding the
+root cause risks masking a real problem.</p>
+<p><strong>How to apply this at work:</strong> stop asking "is this test
+flaky?" Ask "<strong>which of my models is wrong: the product, the
+check, the environment, or the oracle?</strong>" Each answer leads to a
+different fix and a different person who owns it.</p>
+<hr />
+<h3
+id="2-domain-primer-how-a-live-odds-pipeline-works-and-where-it-can-lose-money">2.
+Domain primer: how a live odds pipeline works and where it can lose
+money</h3>
+<p>A sportsbook usually doesn't calculate all its live odds itself. It
+consumes a feed from a data/odds provider and turns the messages into
+<strong>markets</strong>, such as "Match Result", "Next Goal" or
+"Over/Under 2.5". Each market has <strong>outcomes</strong> with prices.
+Customers place <strong>tickets</strong> (bets) against those
+prices.</p>
+<p>I'm using Sportradar's Unified Odds Feed (UOF) as a concrete example
+because it's publicly documented. Other providers differ in the details,
+but the concepts carry over. The <a
+href="https://docs.sportradar.com/uof/data-and-features/messages">UOF
+message reference</a> lists messages with explicit priorities:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Message</th>
+<th>Priority</th>
+<th>Business meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>odds_change</code></td>
+<td>High</td>
+<td>New prices, and can also signal a bet stop</td>
+</tr>
+<tr class="even">
+<td><code>bet_stop</code></td>
+<td>High</td>
+<td>Suspend a group of markets now (e.g. a dangerous attack or a
+penalty)</td>
+</tr>
+<tr class="odd">
+<td><code>bet_cancel</code></td>
+<td>High</td>
+<td>Void a market because of an error</td>
+</tr>
+<tr class="even">
+<td><code>fixture_change</code></td>
+<td>High</td>
+<td>Kickoff time or other fixture details changed</td>
+</tr>
+<tr class="odd">
+<td><code>bet_settlement</code></td>
+<td>Low</td>
+<td>Settle bets: winners get paid</td>
+</tr>
+<tr class="even">
+<td><code>rollback_bet_settlement</code></td>
+<td>Low</td>
+<td>Undo a settlement sent by mistake</td>
+</tr>
+<tr class="odd">
+<td><code>alive</code></td>
+<td>Low</td>
+<td>Heartbeat. If it stops arriving, something is broken</td>
+</tr>
+</tbody>
+</table>
+<p>The <a
+href="https://docs.sportradar.com/uof/error-handling/recovery-using-api">recovery
+documentation</a> contains several business rules a tester should
+know:</p>
+<ul>
+<li><strong>Disconnects require recovery.</strong> After a lost
+connection, or an <code>alive</code> with <code>subscribed="0"</code>
+(that producer went down), the client requests recovery and processes
+messages until <code>snapshot_complete</code> arrives.</li>
+<li><strong>Stateful messages wait.</strong> Settlements, cancellations
+and rollbacks that arrive during recovery should be queued and processed
+<strong>after</strong> <code>snapshot_complete</code>.</li>
+<li><strong>Stale data can arrive.</strong> The docs say the client "may
+receive messages sent before the timestamp provided" and must handle
+that.</li>
+<li><strong>Lost connection means suspend.</strong> If the live-odds
+producer connection drops, the client should immediately suspend all
+live markets and stop accepting tickets.</li>
+<li><strong>Recovery has a lookback window.</strong> It varies by
+producer, for example 10 hours for live odds. Past that window, a
+partial recovery can't fully rebuild your state.</li>
+</ul>
+<p><strong>Failure modes that cost money:</strong></p>
+<ul>
+<li><strong>Late acceptance (past-posting risk).</strong> A goal
+happens, <code>bet_stop</code> arrives, but the market stays open for
+another second and accepts bets at pre-goal prices. Sharp bettors and
+bots look for exactly this window.</li>
+<li><strong>Stale overwrite.</strong> An older recovery
+<code>odds_change</code> overwrites newer live prices, so you offer
+yesterday's price for today's game state.</li>
+<li><strong>Settle-then-rollback mishandled.</strong> You pay winners,
+then a <code>rollback_bet_settlement</code> arrives. If wallet balances
+aren't reversed correctly, or the bet is settled twice, the ledger is
+wrong.</li>
+<li><strong>Silent producer death.</strong> No <code>alive</code>
+messages arrive, nobody notices, and markets stay open on frozen
+odds.</li>
+</ul>
+<p>Notice that almost all of these are <strong>timing and
+ordering</strong> problems. Timing and ordering are also the main causes
+of intermittent check failures.</p>
+<hr />
+<h3 id="3-why-intermittent-failures-and-product-risk-overlap-here">3.
+Why intermittent failures and product risk overlap here</h3>
+<p>The research backs this up:</p>
+<ul>
+<li>Luo et al.'s <a
+href="https://mir.cs.illinois.edu/lamyaa/publications/fse14.pdf">An
+Empirical Analysis of Flaky Tests</a> (FSE 2014) studied 201
+flaky-test-fixing commits across 51 Apache projects. The top three root
+causes were <strong>async wait, concurrency, and test order
+dependency</strong>.</li>
+<li>Eck et al., <a
+href="https://arxiv.org/html/1907.01466v1">Understanding Flaky Tests:
+The Developer's Perspective</a> (ESEC/FSE 2019), found the root cause
+isn't always in test code. In their data, <strong>34% of
+concurrency-related flakiness came from production code</strong>, along
+with 15% of resource-leak cases and 10% of platform-dependency
+cases.</li>
+<li>Parry et al., <a href="https://arxiv.org/html/2504.16777">Systemic
+Flakiness</a> (EASE 2025), analysed 810 flaky tests in 24 Java projects.
+<strong>75% of flaky tests belonged to clusters that failed
+together</strong>, often because of networking or external-dependency
+problems. Triaging tests one at a time wastes effort and hides the
+shared cause.</li>
+</ul>
+<p>Put this together with the domain. An odds consumer is an async,
+concurrent, priority-sensitive system. When the check
+<code>market_suspends_within_500ms_of_bet_stop</code> fails 1 time in
+20, "the test is too impatient" is one hypothesis. "Under load, our
+consumer processes high-priority messages behind a backlog of
+low-priority settlements" is another, and it describes a production
+incident waiting to happen.</p>
+<hr />
+<h3
+id="4-the-flake-interview-questions-to-ask-before-anyone-adds-a-retry">4.
+The Flake Interview: questions to ask before anyone adds a retry</h3>
+<p>Treat each intermittent failure like a witness interview. For every
+symptom you need <strong>at least one check-side and one product-side
+hypothesis</strong>, plus <strong>an experiment that tells them
+apart</strong>.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>Check/environment hypothesis</th>
+<th>Product hypothesis</th>
+<th>Experiment that tells them apart</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Market still <code>ACTIVE</code> 500ms after
+<code>bet_stop</code></td>
+<td>Polling interval too coarse; slow CI runner</td>
+<td>Priority inversion: one consumer thread drains a
+<code>bet_settlement</code> flood before the <code>bet_stop</code></td>
+<td>Run the check alone on a fast machine while the stub feed injects a
+burst of 5,000 settlements. If latency jumps only with the burst, it's
+the product.</td>
+</tr>
+<tr class="even">
+<td>Settlement check fails only when run after the recovery check</td>
+<td>Shared state leaks between tests (order dependency)</td>
+<td>Settlements are applied <strong>before</strong>
+<code>snapshot_complete</code> instead of being queued</td>
+<td>Run in reverse and in random order. Then replay a recovery where a
+settlement arrives mid-snapshot.</td>
+</tr>
+<tr class="odd">
+<td>Odds value differs from expected, rarely</td>
+<td>Test fixture timestamps collide</td>
+<td>Older recovery message overwrites newer live odds (the docs say this
+can happen)</td>
+<td>Send a recovery <code>odds_change</code> with an older timestamp
+after a live update and assert that the newer one wins.</td>
+</tr>
+<tr class="even">
+<td>Wallet balance off by exactly one payout</td>
+<td>Test reads the balance before an async write finishes</td>
+<td>Rollback isn't idempotent when it arrives twice, or the settlement
+is applied twice</td>
+<td>Send the same rollback twice. Reconcile the ledger entries, not just
+the balance.</td>
+</tr>
+<tr class="odd">
+<td>A dozen unrelated checks fail in the same run</td>
+<td>Broker container restarted; network hiccup</td>
+<td>Your reconnect logic doesn't suspend markets during the outage</td>
+<td><strong>Check the cluster first.</strong> Then ask: during that
+outage, did the product suspend markets as the rules require?</td>
+</tr>
+</tbody>
+</table>
+<p>The last row is the subtle one. Even when the cause really is "just
+infrastructure," the product's <strong>response</strong> to that
+infrastructure failure is something you should be testing. A dropped
+broker connection in CI is a free chaos experiment, and most teams throw
+away the result.</p>
+<p><strong>Techniques for turning "intermittent" into
+"reproducible":</strong></p>
+<ul>
+<li><strong>Loop it.</strong> Run the check 200 times in isolation, then
+200 times in the full suite. A difference between the two is a strong
+clue.</li>
+<li><strong>Squeeze it.</strong> Limit CPU, add network latency to the
+broker, or run tests in parallel. Async bugs tend to show up under
+pressure.</li>
+<li><strong>Shuffle it.</strong> Randomise test order to expose order
+dependency.</li>
+<li><strong>Record the number, not just pass/fail.</strong> For timing
+checks, log the measured latency on <strong>every</strong> run. A
+latency distribution of "40–180ms on passes, 600–1,900ms on failures" is
+much stronger evidence than "fails sometimes."</li>
+</ul>
+<p>Martin Fowler's <a
+href="https://martinfowler.com/articles/nonDeterminism.html">Eradicating
+Non-Determinism in Tests</a> covers the check-side fixes: poll or use
+callbacks instead of bare sleeps, wrap the clock, isolate state, and use
+test doubles for remote services. Use those fixes <strong>after</strong>
+you've ruled out the product hypothesis, not instead of ruling it
+out.</p>
+<hr />
+<h3 id="5-the-oracle-trap-raising-a-timeout-changes-the-requirement">5.
+The oracle trap: raising a timeout changes the requirement</h3>
+<p>The most common "fix" for a timing failure is to raise the timeout,
+say from 500ms to 3s. That doesn't fix the check. It <strong>quietly
+rewrites a business rule</strong>.</p>
+<p>How long a live market may stay open after a bet stop is a
+trading-risk decision. It shouldn't be whatever number makes CI green.
+So before accepting the change, ask the product owner or trading
+lead:</p>
+<blockquote>
+<p>"Our check says markets must suspend within 500ms of
+<code>bet_stop</code>. Under settlement load we measured up to 1.9s. Is
+1.9s acceptable exposure for in-play football? If not, what is? I'd like
+the check's threshold to come from your answer, not from what CI
+tolerates."</p>
+</blockquote>
+<p>That one question moves the conversation from "QA vs. dev arguing
+about a test" to "the business deciding how much risk it accepts." This
+is influence without authority in practice: you don't win the argument,
+you bring the right decision-maker in with the right evidence.</p>
+<hr />
+<h3 id="6-handling-the-just-retry-it-disagreement">6. Handling the "just
+retry it" disagreement</h3>
+<p>The developer who adds a retry usually isn't being careless. They're
+dealing with a real cost: blocked merges, noisy pipelines, lost trust in
+the suite. Fowler describes the same problem: once people start ignoring
+failures, a whole suite becomes useless. If your response is "retries
+are bad," you'll lose the argument, and you probably should.</p>
+<p>Offer a deal instead:</p>
+<ol type="1">
+<li><strong>Retries are allowed, but the first attempt is always
+recorded.</strong> Report "passed on retry" as its own outcome, not as a
+pass. The trend line is evidence.</li>
+<li><strong>Some checks can't be retried without a written
+hypothesis.</strong> For a sportsbook, that's anything guarding market
+suspension, settlement, rollback or wallet balance. A retry there needs
+a ticket that says what you believe is happening and how you'll confirm
+it.</li>
+<li><strong>Quarantine has limits.</strong> Fowler suggests limiting
+both the number of quarantined tests and how long they stay there, for
+example no more than eight tests and no more than a week. Pick your own
+numbers, and make them visible.</li>
+<li><strong>Triage clusters first.</strong> If ten checks failed
+together, open one investigation, not ten tickets.</li>
+</ol>
+<p>When you raise it, lead with evidence and use careful language:</p>
+<blockquote>
+<p>"Over 300 runs, <code>market_suspends_within_500ms</code> failed 14
+times. Eleven of those happened while settlement checks were running in
+the same shard, and suspend latency on those runs was 620ms–1.9s. I
+can't yet rule out that the consumer delays <code>bet_stop</code> behind
+settlements under load, and if that's true, it's an exposure window in
+production. Can we pair for an hour on a load-injection experiment
+before we merge the retry? If it turns out to be the runner, I'll help
+fix the polling."</p>
+</blockquote>
+<p>This message works because it gives numbers, names the business
+consequence, says what you don't know yet, offers a small time-boxed
+next step, and commits you to helping whichever way the evidence
+points.</p>
+<hr />
+<h3 id="practical-challenge">Practical challenge</h3>
+<p>You're the QA engineer on a sportsbook's odds-ingestion service. Over
+300 CI runs of <code>live_market_suspends_on_bet_stop</code> (threshold:
+500ms):</p>
+<ul>
+<li><strong>14 failures.</strong> Run alone, it never failed in 200
+runs.</li>
+<li><strong>11 of the 14</strong> happened while
+<code>settlement_*</code> checks ran in the same shard within the same
+~2s window. Measured suspend latency on those runs was 620–1,900ms. On
+passing runs it was 40–180ms.</li>
+<li><strong>3 of the 14</strong> happened in runs where 9 other checks
+also failed, all logging
+<code>connection refused: broker:5672</code>.</li>
+<li>A developer's PR raises the timeout to 3s and adds
+<code>retry: 2</code>.</li>
+</ul>
+<p><strong>Your tasks (aim for about 45 minutes):</strong></p>
+<ol type="1">
+<li><strong>Separate the clusters.</strong> Which failures share a
+cause? Why should the three broker failures not be dismissed, and what
+product behaviour could you check in those runs?</li>
+<li><strong>For the group of 11, write two competing
+hypotheses</strong>, one about the check or environment and one about
+the product. Note that "never fails in isolation" fits both shared-state
+leakage <strong>and</strong> load-induced latency.</li>
+<li><strong>Design one experiment that tells them apart.</strong> For
+example: run the check alone while a stub feed sends a burst of
+low-priority settlements, versus running it with settlement checks that
+touch shared state but send no feed traffic. Predict the result under
+each hypothesis <strong>before</strong> you run it.</li>
+<li><strong>Write the question for the trading or product owner</strong>
+that sets the real threshold. Include the measured worst case.</li>
+<li><strong>Write a reply of 5 sentences or fewer to the PR</strong>
+that keeps the developer's goal (a green, trustworthy pipeline),
+proposes the deal from section 6, and asks for a specific next
+step.</li>
+</ol>
+<p><strong>What separates a strong answer:</strong> your experiment
+produces different results under each hypothesis, your reply contains
+numbers rather than adjectives, and you've noticed that the broker
+outage is free evidence about whether markets suspend when the feed
+connection drops.</p>
+<hr />
+<h3 id="takeaways">Takeaways</h3>
+<ul>
+<li>An intermittent failure is reliable evidence that some model is
+wrong. Your job is to find out <strong>which</strong> one.</li>
+<li>In async, money-moving domains like live betting, payments and ad
+auctions, the root causes of flaky checks (timing, ordering,
+concurrency) are also the root causes of expensive production bugs.</li>
+<li>Raising a timeout is a requirements change. Get the threshold from
+the business.</li>
+<li>Retries are a policy about evidence. Negotiate that policy openly,
+record first-attempt results, and protect the checks that guard
+money.</li>
+</ul>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2021/02/flaky-testing">Flaky
+Testing</a>, DevelopSense, 2021</li>
+<li>James Bach &amp; Michael Bolton, <a
+href="https://www.satisfice.com/blog/archives/856">Testing and Checking
+Refined</a>, Satisfice</li>
+<li>Ministry of Testing, <a
+href="https://www.ministryoftesting.com/software-testing-glossary/flaky-test">Glossary:
+Flaky Test</a></li>
+<li>Martin Fowler, <a
+href="https://martinfowler.com/articles/nonDeterminism.html">Eradicating
+Non-Determinism in Tests</a>, 2011</li>
+<li>Luo, Hariri, Eloussi &amp; Marinov, <a
+href="https://mir.cs.illinois.edu/lamyaa/publications/fse14.pdf">An
+Empirical Analysis of Flaky Tests</a>, FSE 2014</li>
+<li>Eck, Palomba, Castelluccio &amp; Bacchelli, <a
+href="https://arxiv.org/html/1907.01466v1">Understanding Flaky Tests:
+The Developer's Perspective</a>, ESEC/FSE 2019</li>
+<li>Parry, Kapfhammer, Hilton &amp; McMinn, <a
+href="https://arxiv.org/html/2504.16777">Systemic Flakiness: An
+Empirical Analysis of Co-Occurring Flaky Test Failures</a>, EASE
+2025</li>
+<li>Sportradar, <a
+href="https://docs.sportradar.com/uof/data-and-features/messages">Unified
+Odds Feed: Messages</a></li>
+<li>Sportradar, <a
+href="https://docs.sportradar.com/uof/error-handling/recovery-using-api">Unified
+Odds Feed: Recovery Using API</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-22.html" rel="prev"><span>Previous</span>Testing Subscription Lifecycles: Your Suite Checks One Moment, but Customers Stay Subscribed for a Year</a><a href="/qa-blog/posts/qa-thinking-day-24.html" rel="next"><span>Next</span>Facilitating a Pre-Mortem: How a Tester Finds the Risks That Live Between Teams (Marketplace Seller Payouts)</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

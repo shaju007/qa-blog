@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your marketplace&#39;s product owner announces a Q4 goal: &quot;Next-day payouts for sellers.&quot; Sellers have complained for months that they wait 7 days for their money, and competitors pay faster. A developer looks at t">
+  <meta name="color-scheme" content="light">
+  <title>Facilitating a Pre-Mortem: How a Tester Finds the Risks That Live Between Teams (Marketplace Seller Payouts) | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 24</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-24">QA Thinking — Day 24</h1>
+<h2
+id="facilitating-a-pre-mortem-how-a-tester-finds-the-risks-that-live-between-teams-marketplace-seller-payouts">Facilitating
+a Pre-Mortem: How a Tester Finds the Risks That Live Between Teams
+(Marketplace Seller Payouts)</h2>
+<h3 id="the-situation">The situation</h3>
+<p>Your marketplace's product owner announces a Q4 goal:
+<strong>"Next-day payouts for sellers."</strong> Sellers have complained
+for months that they wait 7 days for their money, and competitors pay
+faster. A developer looks at the payment provider's dashboard and says,
+"It's a config change. The payout schedule is one setting." The ticket
+lands in refinement with an estimate of 2 points, and someone asks QA to
+"test that payouts arrive the next day."</p>
+<p>You could do exactly that. You'd set up a test seller, make a sale,
+and confirm the payout lands. It would pass, and you would have tested
+almost nothing that matters.</p>
+<p>The most expensive risks in this feature are not in the code. They
+sit in the gaps between the payments team, finance, fraud and risk,
+customer support, and the seller's bank. No single person in refinement
+can see all of them. Today's lesson is about a skill that strong QA
+engineers rely on and rarely get taught: <strong>facilitating a session
+that gets those risks out of people's heads and turns them into
+testable, ownable work.</strong></p>
+<hr />
+<h3
+id="part-1--domain-knowledge-why-the-payout-delay-exists-in-the-first-place">Part
+1 — Domain knowledge: why the payout delay exists in the first
+place</h3>
+<p>You can't facilitate a risk conversation if you don't understand the
+business, so start here.</p>
+<p><strong>How money moves in a marketplace.</strong> A buyer pays, and
+the money doesn't go straight to the seller. Most marketplaces use what
+Stripe calls <em>indirect charges</em> (destination charges or "separate
+charges and transfers"). In that model the <strong>platform</strong>
+processes the payment, takes its commission, and transfers the seller's
+share to the seller's connected account. The seller's balance then moves
+from <strong>pending</strong> (not yet withdrawable) to
+<strong>available</strong>, and a <strong>payout</strong> sends it to
+the seller's bank account.</p>
+<p><strong>Negative events come later than positive ones.</strong>
+Refunds, partial refunds, and chargebacks (disputes) can arrive days or
+months after the sale. <a
+href="https://docs.stripe.com/connect/account-balances">Stripe's Connect
+balance documentation</a> states plainly that refunds and chargebacks
+create <em>negative transactions</em>. The provider tries to offset them
+against future payments, but a connected account's balance can still go
+negative. Once it does:</p>
+<ul>
+<li>payouts to that seller stop until the balance is positive again</li>
+<li>the provider may try to debit the seller's bank account, but only in
+supported regions and only if that's enabled; it can't recover funds
+from a debit card</li>
+<li>if the <strong>platform</strong> is liable for losses, the provider
+holds a <strong>reserve on the platform's balance</strong> to cover the
+gap</li>
+<li>if the balance stays negative for <strong>180 days</strong>, the
+provider takes it from the platform's funds (a
+<code>connect_collection_transfer</code>)</li>
+</ul>
+<p><strong>Who carries the loss?</strong> <a
+href="https://docs.stripe.com/connect/manage-risk">Stripe's Connect risk
+guide</a> separates <strong>transaction risk</strong> (buyers charging
+back) from <strong>account risk</strong>, which is the seller being
+unable or unwilling to cover those chargebacks. Account risk breaks down
+further into credit risk (the seller goes out of business) and fraud
+risk (the seller never meant to deliver). The guide also notes that
+marketplaces using indirect charges are responsible for negative
+balances on their own platform balance, whatever they configure for
+connected accounts.</p>
+<p><strong>The insight that should change how you see the
+ticket:</strong></p>
+<blockquote>
+<p><strong>The 7-day payout delay is not just slowness. It is a risk
+buffer.</strong> It's the window in which refunds, cancellations, and
+early fraud signals arrive <em>while the money is still inside the
+platform</em>. "Next-day payouts" doesn't speed up an existing process.
+It moves money out of the platform's control before the negative events
+that would have clawed it back can arrive.</p>
+</blockquote>
+<p>A config change can shift who carries financial risk. That's the
+conversation the team needs to have, and a tester who understands the
+domain is well placed to start it.</p>
+<hr />
+<h3
+id="part-2--why-a-tester-should-facilitate-rather-than-just-critique">Part
+2 — Why a tester should facilitate rather than just critique</h3>
+<p>If you walk into refinement and say "this is risky," you're one voice
+against an estimate and a quarterly goal. You'll be seen as the blocker,
+and you'll only surface the risks <em>you</em> can imagine.</p>
+<p>Gary Klein's <strong>pre-mortem</strong> reverses that dynamic. In <a
+href="https://www.psychologytoday.com/ie/blog/seeing-what-others-dont/202101/the-pre-mortem-method">The
+Pre-Mortem Method</a>, Klein describes asking the team to assume the
+plan has <em>already failed</em> ("a fiasco") and write down why. In
+ordinary meetings, people who raise doubts look negative. In a
+pre-mortem, Klein says, people show how smart they are by the quality of
+the issues they raise. Raising doubts becomes the task instead of the
+obstacle.</p>
+<p>The Ministry of Testing community has a complementary format,
+<strong>RiskStorming</strong>, created by Beren Van Daele. In a <a
+href="https://www.ministryoftesting.com/insights/riskstorming-workshop-experience">write-up
+of running a RiskStorming workshop</a>, Uros Stanisic describes three
+phases:</p>
+<ol type="1">
+<li>Narrow about 20 quality-aspect cards down to the 6 that matter
+most.</li>
+<li>Attach risks to those aspects.</li>
+<li>Attach mitigation cards to the risks.</li>
+</ol>
+<p>Two of his observations are worth stealing. His 15-person team
+struggled to cut down to 6 aspects, and it was in the risk phase that
+they discovered how much the team didn't know about its own product.</p>
+<p>Michael Bolton's <a href="https://developsense.com/?p=848">More of
+What Testers Find, Part II</a> (DevelopSense) supplies the third piece.
+He argues that testers find <strong>risk stories</strong>, built on the
+four-part model from Rapid Software Testing: a <strong>victim</strong>
+suffers <strong>harm</strong> because of a
+<strong>vulnerability</strong> in the product that is triggered by a
+<strong>threat</strong>. He also recommends starting from the "bad
+things" and asking who would suffer, rather than starting from the
+requirements.</p>
+<p>Put together:</p>
+<ul>
+<li>the pre-mortem <strong>generates</strong> failure stories
+safely</li>
+<li>RiskStorming <strong>focuses</strong> them on the quality aspects
+that matter</li>
+<li>the four-part risk story <strong>makes them precise enough to act
+on</strong></li>
+</ul>
+<p>Your job as facilitator is to run that pipeline, not to supply all
+the answers.</p>
+<hr />
+<h3 id="part-3--the-session-step-by-step-45-minutes">Part 3 — The
+session, step by step (45 minutes)</h3>
+<p><strong>Before the session (15 minutes of your time)</strong></p>
+<ul>
+<li><strong>Invite the people who hold the missing knowledge, not just
+the delivery team.</strong> For payouts, that means the PO, a payments
+developer, someone from <strong>finance/reconciliation</strong>, someone
+from <strong>fraud/risk or trust &amp; safety</strong>, and a
+<strong>support lead</strong> who handles seller tickets. Keep it to 5–7
+people. Stanisic's 15-person session ran over time.</li>
+<li><strong>Send a five-line pre-read:</strong> the change, the current
+payout delay, the target delay, the charge model you use (direct or
+indirect), and one open question: <em>"Who is liable when a seller's
+balance goes negative?"</em> If nobody can answer that before the
+meeting, you've already found your first risk.</li>
+</ul>
+<p><strong>Step 1 — Frame the failure (2 minutes)</strong></p>
+<blockquote>
+<p>"It's March. Next-day payouts shipped in November, and it's now
+considered a serious mistake. Finance is unhappy, support is
+overwhelmed, and the PO is writing an incident review. What
+happened?"</p>
+</blockquote>
+<p>Make the failure vivid and specific to your context. "The feature
+failed" is too abstract to trigger experience.</p>
+<p><strong>Step 2 — Silent writing (4 minutes)</strong></p>
+<p>Everyone writes failure reasons alone, one per sticky note.
+<strong>Don't skip the silence.</strong> If the most senior person
+speaks first, everyone else anchors on their answer, and the quiet
+support lead who has seen every weird seller ticket never gets
+heard.</p>
+<p><strong>Step 3 — Round-robin (10 minutes)</strong></p>
+<p>Each person reads <em>one</em> note per round, and you go around
+until the notes run out. No debate yet. Your only job is to cluster
+notes on the board as they come in. Typical clusters for this
+feature:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Cluster</th>
+<th>Example notes you'd expect</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Negative balances</td>
+<td>"Seller got paid Tuesday, buyer refunded Wednesday, balance
+negative, nobody noticed"</td>
+</tr>
+<tr class="even">
+<td>Fraud</td>
+<td>"Fraudsters opened seller accounts, sold non-existent goods, cashed
+out in 24h"</td>
+</tr>
+<tr class="odd">
+<td>Reconciliation</td>
+<td>"Finance's month-end didn't match because a platform reserve
+appeared that nobody expected"</td>
+</tr>
+<tr class="even">
+<td>Seller experience</td>
+<td>"Sellers saw 'payout paused' with no explanation and flooded
+support"</td>
+</tr>
+<tr class="odd">
+<td>Operational</td>
+<td>"Bank holiday plus weekend meant 'next-day' was 4 days, so sellers
+thought we lied"</td>
+</tr>
+<tr class="even">
+<td>Failure handling</td>
+<td>"A transfer to a seller failed for insufficient platform balance and
+was never retried"</td>
+</tr>
+</tbody>
+</table>
+<p>That last row comes straight from the domain. Stripe's balance docs
+note that failed transfers between the platform and a connected account
+<strong>are not retried automatically</strong>; you have to re-send them
+explicitly. If a developer in the room didn't know that, you've just
+justified the session.</p>
+<p><strong>Step 4 — Pick what matters (5 minutes)</strong></p>
+<p>This is RiskStorming's narrowing move. Ask: <em>"Which of these
+quality aspects would hurt most: capability, reliability, security
+(fraud), usability for sellers, or supportability?"</em> Use dot-voting
+with three dots each. You're not trying to ignore the rest, only to
+agree on where depth goes first.</p>
+<p><strong>Step 5 — Turn the top clusters into risk stories (12
+minutes)</strong></p>
+<p>This is where the tester earns their place. Rewrite each top cluster
+using Bolton's four parts:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Victim</th>
+<th>Harm</th>
+<th>Vulnerability</th>
+<th>Threat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Platform (finance)</td>
+<td>Absorbs refund and chargeback losses it used to recover from pending
+funds</td>
+<td>Payout delay shortened from 7 days to 1; platform liable for
+negative balances</td>
+<td>Refund or dispute arrives after the payout has already left</td>
+</tr>
+<tr class="even">
+<td>Honest buyers and the platform</td>
+<td>Chargebacks, reputation damage</td>
+<td>New sellers get the same fast payouts as established ones</td>
+<td>Fraudster onboards, sells phantom goods, withdraws within 24h</td>
+</tr>
+<tr class="odd">
+<td>Sellers</td>
+<td>Payouts silently paused; trust lost</td>
+<td>Negative balance blocks payouts, and the seller UI doesn't explain
+why</td>
+<td>Single refund on a low-volume seller account</td>
+</tr>
+<tr class="even">
+<td>Finance</td>
+<td>Month-end reconciliation fails</td>
+<td>Reserve and collection transactions aren't mapped in the ledger
+export</td>
+<td>Platform reserve created or released by the provider</td>
+</tr>
+</tbody>
+</table>
+<p>Notice what happened: "Fraudsters cash out" became a <em>specific,
+testable vulnerability</em>: the eligibility rule for fast payouts
+doesn't distinguish new sellers from established ones.</p>
+<p><strong>Step 6 — Mitigation, owner, and "is this even a test?" (7
+minutes)</strong></p>
+<p>For each risk story, ask three questions:</p>
+<ol type="1">
+<li><strong>Prevent, detect, or recover?</strong></li>
+<li><strong>Who owns it?</strong> Name a person, not "the team."</li>
+<li><strong>Is the mitigation a test, a monitor, or a
+policy?</strong></li>
+</ol>
+<p>Many of the best mitigations here aren't tests:</p>
+<ul>
+<li><strong>Policy:</strong> fast payouts only for sellers with more
+than 90 days of history and a dispute rate under a threshold. Finance
+and risk own this, and QA tests that the eligibility rule is
+enforced.</li>
+<li><strong>Monitoring:</strong> alert on the count of connected
+accounts with negative balances, and on the platform's reserved balance.
+This is observability, owned by payments engineering.</li>
+<li><strong>Test:</strong> a seller paid out yesterday receives a full
+refund today. Check the balance, payout status, seller-facing message,
+auto-debit behaviour, and ledger entries.</li>
+<li><strong>Testability request:</strong> "Can our sandbox simulate a
+dispute <em>after</em> a payout? If not, we need a way to." File this as
+a ticket, not a hope.</li>
+</ul>
+<hr />
+<h3 id="part-4--facilitation-moves-for-when-it-gets-difficult">Part 4 —
+Facilitation moves for when it gets difficult</h3>
+<p><strong>"That can't happen."</strong> Don't argue. Ask about the
+evidence: <em>"What would have to be true for it to happen? How would we
+know if it did?"</em> If the answer is "we'd see it in the balance
+report," ask who reads that report and how often. Often "can't happen"
+really means "we've never seen it," and nobody has been watching.</p>
+<p><strong>PO and finance disagree on appetite.</strong> The PO says the
+competitive pressure justifies some losses, and finance says no losses
+are acceptable. Don't pick a side. That's a business decision, and both
+positions are legitimate. Make the trade-off explicit: <em>"So the
+question is how much loss per month we'd accept for next-day payouts,
+and for which sellers. Can we leave with a number, or with the name of
+who decides?"</em> Your role is to make sure decision-makers aren't
+guessing, not to make the decision for them.</p>
+<p><strong>The session becomes blame.</strong> If a note reads "the devs
+didn't handle X," rephrase it out loud as a system vulnerability:
+"Failed transfers aren't retried." Pre-mortems die quickly once people
+feel accused.</p>
+<p><strong>Someone dominates.</strong> The round-robin structure is your
+protection, so enforce it politely: "Let's hold that. One note per
+person per round."</p>
+<p><strong>You run out of time.</strong> Stop at the agreed time. Put
+the unclustered notes in a parking lot with an owner. A 45-minute
+session that ends on time with 4 owned risks beats a 90-minute session
+that ends with exhaustion.</p>
+<hr />
+<h3 id="part-5--reporting-out-one-paragraph-not-a-document">Part 5 —
+Reporting out: one paragraph, not a document</h3>
+<p>Afterwards, send the PO something like this:</p>
+<blockquote>
+<p><em>"Pre-mortem on next-day payouts: we found four risks worth acting
+on. The biggest is that a 1-day payout delay removes the window in which
+we currently recover refunds and disputes from pending funds, and
+because we use indirect charges, those losses land on our platform
+balance. Proposed: (1) eligibility rule for fast payouts based on seller
+tenure and dispute rate (decision needed from Finance + Risk by Friday),
+(2) monitoring on negative-balance accounts and platform reserve
+(Payments eng), (3) seller-facing message when payouts pause (Seller
+UX), (4) explicit retry for failed transfers (Payments eng). QA will
+cover the post-payout refund scenarios, the eligibility rule, and ledger
+reconciliation of reserve transactions. Board photo attached."</em></p>
+</blockquote>
+<p>This message doesn't say "QA blocks the release," and it doesn't say
+"testing will make it safe." It turns a 2-point config change into a
+decision the business can make knowingly.</p>
+<hr />
+<h3 id="practical-challenge">Practical challenge</h3>
+<p><strong>Option A — At work (recommended):</strong> Pick an upcoming
+feature that changes <strong>timing</strong>, <strong>money</strong>, or
+<strong>who is responsible for what</strong>, such as a retry policy, a
+cancellation window, a payout schedule, a billing date, or a
+data-retention period. Run a 30-minute pre-mortem with at least one
+person from <em>outside</em> the delivery team.</p>
+<p><strong>Option B — Solo, using today's scenario:</strong> Assume your
+marketplace sells event tickets and wants next-day payouts for
+organisers. Then:</p>
+<ol type="1">
+<li>Write <strong>6 failure reasons</strong> in silent mode (set a
+4-minute timer, honestly).</li>
+<li>Convert your <strong>top 3</strong> into four-part risk stories
+(victim / harm / vulnerability / threat). At least one must involve an
+event being <strong>cancelled after the organiser has been
+paid</strong>.</li>
+<li>For each one, label the mitigation <strong>test, monitor, or
+policy</strong>, and name the role that would own it.</li>
+<li>Write the <strong>one-paragraph report</strong> to the PO, in under
+120 words.</li>
+</ol>
+<p><strong>Self-review questions:</strong></p>
+<ul>
+<li>Did any of your risk stories have a victim other than the end user?
+(Look for finance, support, the platform's own balance, honest
+sellers.)</li>
+<li>How many of your mitigations were <em>not</em> tests? If the answer
+is zero, look again. A tester who only proposes tests is underselling
+what they found.</li>
+<li>If you ran a live session: who spoke least, and what did they know
+that nobody else did?</li>
+</ul>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Gary Klein, <a
+href="https://www.psychologytoday.com/ie/blog/seeing-what-others-dont/202101/the-pre-mortem-method">The
+Pre-Mortem Method</a>, <em>Psychology Today</em> (2021): the pre-mortem
+steps and why reversing meeting dynamics surfaces doubts.</li>
+<li>Uros Stanisic, <a
+href="https://www.ministryoftesting.com/insights/riskstorming-workshop-experience">RiskStorming
+Workshop Experience</a>, Ministry of Testing: the three RiskStorming
+phases and lessons from running one. See also <a
+href="https://www.ministryoftesting.com/activities/riskstorming">RiskStorming
+activity overview</a>.</li>
+<li>Michael Bolton, <a href="https://developsense.com/?p=848">More of
+What Testers Find, Part II</a>, DevelopSense (2011): risk stories built
+from victim, harm, vulnerability, and threat; starting from "bad things"
+rather than requirements.</li>
+<li>Stripe, <a
+href="https://docs.stripe.com/connect/account-balances">Understanding
+Connect account balances</a>: pending/available balances, negative
+balances, platform reserves, the 180-day collection, and transfers that
+aren't retried automatically.</li>
+<li>Stripe, <a href="https://docs.stripe.com/connect/manage-risk">Manage
+risk and liability with Connect</a>: direct vs indirect charges, who
+carries negative balances, transaction vs account risk, and credit vs
+fraud risk examples.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-23.html" rel="prev"><span>Previous</span>A Flaky Check Is a Witness You Haven&#39;t Questioned Yet: Investigating Intermittent Failures in a Live Betting-Odds Pipeline</a><a href="/qa-blog/posts/qa-thinking-day-25.html" rel="next"><span>Next</span>&quot;We Did Some Exploratory Testing&quot; Isn&#39;t Evidence Yet: Session-Based Testing of Smart-Meter Outage Detection</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

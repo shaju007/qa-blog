@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most SaaS billing test suites I&#39;ve seen check one thing very well: create a subscription, pay, see active, see the feature unlocked. That&#39;s a single moment.">
+  <meta name="color-scheme" content="light">
+  <title>Testing Subscription Lifecycles: Your Suite Checks One Moment, but Customers Stay Subscribed for a Year | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 22</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-22">QA Thinking — Day 22</h1>
+<h2
+id="testing-subscription-lifecycles-your-suite-checks-one-moment-but-customers-stay-subscribed-for-a-year">Testing
+Subscription Lifecycles: Your Suite Checks One Moment, but Customers
+Stay Subscribed for a Year</h2>
+<p>Most SaaS billing test suites I've seen check one thing very well:
+<em>create a subscription, pay, see <code>active</code>, see the feature
+unlocked.</em> That's a single moment.</p>
+<p>Customers don't stay in that moment. They start a trial, forget about
+it, get charged, upgrade halfway through the month, have their card
+expire, get dunning emails, update their card on day 12, downgrade,
+cancel "at period end," and change their mind. The expensive bugs in
+subscription software show up in the <strong>transitions between
+moments</strong>. Those transitions are spread over weeks and months,
+and a 3-minute CI run never sees them.</p>
+<p>Today's lesson combines three things: domain knowledge about SaaS
+subscription billing, an automation strategy based on James Bach and
+Michael Bolton's view of tools, and a time-related risk that is 19 days
+away for anyone working from Hamburg.</p>
+<hr />
+<h2
+id="1-domain-primer-whats-actually-going-on-in-subscription-billing">1.
+Domain primer: what's actually going on in subscription billing</h2>
+<p>You need this vocabulary before you can test the domain:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Term</th>
+<th>What it means</th>
+<th>Why a tester cares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Plan / price</strong></td>
+<td>What the customer pays for, and how often (e.g., €49/month
+Team)</td>
+<td>Price changes don't apply retroactively, so old and new customers
+can be on different terms</td>
+</tr>
+<tr class="even">
+<td><strong>Billing cycle anchor</strong></td>
+<td>The date each period renews</td>
+<td>Anchors on the 29th–31st cause trouble in short months</td>
+</tr>
+<tr class="odd">
+<td><strong>Proration</strong></td>
+<td>Credit or charge for a mid-cycle plan change</td>
+<td>Finance reconciles every cent of this</td>
+</tr>
+<tr class="even">
+<td><strong>Trial</strong></td>
+<td>A free period before the first charge</td>
+<td>What happens at trial end with <em>no</em> payment method?</td>
+</tr>
+<tr class="odd">
+<td><strong>Dunning</strong></td>
+<td>Retrying failed payments and reminding the customer</td>
+<td>This is where involuntary churn happens, and also where people get
+free access</td>
+</tr>
+<tr class="even">
+<td><strong>Entitlement</strong></td>
+<td>What the customer is <em>allowed to use</em> right now</td>
+<td>Lives in <em>your</em> app, not in the payment provider</td>
+</tr>
+<tr class="odd">
+<td><strong>Cancel at period end</strong></td>
+<td>Cancellation that takes effect at renewal</td>
+<td>Reactivating before the end is a classic edge case</td>
+</tr>
+</tbody>
+</table>
+<p>The key structural point: <strong>there are two state machines, and
+bugs live in the gap between them.</strong></p>
+<ul>
+<li>The <strong>billing state</strong> belongs to the provider: the
+subscription is <code>trialing</code>, <code>active</code>,
+<code>past_due</code>, <code>unpaid</code>, <code>canceled</code>,
+etc.</li>
+<li>The <strong>entitlement state</strong> belongs to your app: can this
+customer export reports right now?</li>
+</ul>
+<p>Your app connects the two, usually through webhooks. Stripe's <a
+href="https://docs.stripe.com/billing/subscriptions/overview">subscription
+lifecycle docs</a> show that the mapping is less obvious than people
+assume:</p>
+<ul>
+<li><code>active</code> <strong>doesn't mean every invoice is
+paid.</strong> With the default "latest invoice" status resolution,
+older open invoices don't stop a subscription from being
+<code>active</code>.</li>
+<li>A first payment that fails puts the subscription in
+<code>incomplete</code>, and the customer has <strong>23 hours</strong>
+to pay before it becomes <code>incomplete_expired</code>.</li>
+<li><code>past_due</code> <strong>doesn't guarantee another
+retry.</strong> What happens after the last retry
+(<code>canceled</code>, <code>unpaid</code>, or staying
+<code>past_due</code>) is a <strong>dashboard setting</strong>, not
+code.</li>
+<li>With delayed-confirmation methods like bank debits, a subscription
+can go straight to <code>active</code>. If the payment fails later, the
+invoice is voided, <strong>but the subscription stays
+<code>active</code>.</strong></li>
+</ul>
+<p>That last one is important for a German business, where SEPA Direct
+Debit is common. If your entitlement logic says "<code>active</code>
+means grant access," you may be giving a paid product to someone whose
+payment bounced days ago, and nothing in your green test suite would
+show it.</p>
+<p><strong>The tester's question isn't "does the status change
+correctly?"</strong> It's: <em>"For each billing state, what has the
+business decided the customer can do, and does our code implement that
+decision or just an accident of our webhook handler?"</em></p>
+<hr />
+<h2 id="2-the-automation-trap-building-a-longer-checklist">2. The
+automation trap: building a longer checklist</h2>
+<p>The common way to "automate subscription testing" is to write more
+end-to-end scripts: one for trial, one for upgrade, one for
+cancellation. Each runs in seconds and checks a few statuses. The suite
+grows, the dashboard stays green, and the gap between the two state
+machines is still untested.</p>
+<p>Bach and Bolton's paper <a
+href="https://developsense.com/blog/2016/01/a-context-driven-approach-to-automation-in-testing"><em>A
+Context-Driven Approach to Automation in Testing</em></a> gives the
+right reframing. <strong>Checking</strong> is algorithmic verification
+of a specific expectation, and machines can do it.
+<strong>Testing</strong> is learning about the product through
+exploration, experiment, and judgment, and it can't be handed to a
+machine. Their argument isn't anti-tool. It's that tools amplify
+whatever the person using them is doing. In Bach's <a
+href="https://www.satisfice.com/blog/archives/1598"><em>We. Use.
+Tools.</em></a> he lists logging, coverage analysis, and homemade
+utilities as tools in service of testing, not substitutes for it.</p>
+<p>Applied to subscriptions, this gives you a sharper strategy.
+<strong>The most valuable tool here isn't a test runner. It's a time
+machine.</strong></p>
+<p>Stripe's <a
+href="https://docs.stripe.com/billing/testing/test-clocks">test
+clocks</a> (and similar features in other billing providers, or an
+injectable clock in your own code) let you create a customer at a frozen
+time and move it forward. You can reach the trial end, renewal, failed
+payment, and retries in minutes. The usual way to use this is "automate
+the lifecycle scenarios." The better way, following Bach and Bolton,
+is:</p>
+<ol type="1">
+<li><strong>Use the time machine for exploration first.</strong> Run a
+session where you move a customer through six months of life and
+<strong>watch everything</strong>: webhooks received, entitlement
+changes, emails sent, invoice PDFs, the admin UI, finance exports.
+You're learning what the system does, not confirming what you
+expected.</li>
+<li><strong>Turn the stable, high-value, clearly-specified parts into
+checks.</strong> Proration amounts, the state→entitlement mapping, "no
+access after <code>unpaid</code>." These are deterministic rules with a
+clear oracle.</li>
+<li><strong>Keep the judgment-heavy parts with people.</strong> Does
+this dunning sequence make sense to a customer? Is it reasonable that
+someone who upgraded on day 29 gets charged twice in 48 hours? A script
+can't decide that.</li>
+</ol>
+<hr />
+<h2 id="3-know-your-time-machines-blind-spots">3. Know your time
+machine's blind spots</h2>
+<p>This is where testers add value that "write more scripts" never will.
+<strong>Every tool distorts reality somewhere. Find where before you
+trust a green run.</strong> From Stripe's <a
+href="https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage">advanced
+test clock docs</a>:</p>
+<ul>
+<li><strong>You can only advance about two billing intervals at a
+time.</strong> On a monthly plan, that means two months per step. A
+"simulate a full year" helper has to step through it, and each step is a
+point where webhooks pile up.</li>
+<li><strong>Advancing takes a few seconds and is asynchronous.</strong>
+The clock goes through <code>advancing</code> before <code>ready</code>.
+A check that does <code>advance(); sleep(2); assertInvoicePaid()</code>
+will become a flaky test. Wait for
+<code>test_helpers.test_clock.ready</code> or poll the clock's
+status.</li>
+<li><strong>Limits: 3 customers per clock, 3 subscriptions per customer,
+auto-deletion after 30 days.</strong> You can't use this for load
+testing, and long-lived "golden" fixtures will disappear.</li>
+<li><strong>List endpoints leave out test-clock objects unless you
+filter for them.</strong> <code>GET /v1/invoices</code> won't return
+invoices generated by a test clock unless you query by customer,
+subscription, or clock. Consider your nightly revenue reconciliation
+job: it lists invoices, finds none of your simulated ones, finds no
+discrepancies, and <strong>passes.</strong> That's a false oracle: a
+check that can't fail.</li>
+<li><strong>Bank-debit collection isn't attempted during the
+advance.</strong> The docs give <code>us_bank_account</code> as the
+example: after advancing, the subscription stays <code>active</code> and
+the failure arrives later through <code>invoice.payment_failed</code>.
+Before you trust a "renewal with failed SEPA debit" scenario, confirm
+whether your payment method behaves the same way. Otherwise you're
+testing a timeline that doesn't exist in production.</li>
+<li><strong>Rate limits apply in frozen time.</strong> Many API calls
+against a frozen subscription all count at the same instant. The docs
+suggest advancing a few minutes between bursts.</li>
+</ul>
+<h3 id="the-two-clocks-problem">The two-clocks problem</h3>
+<p>This is the most important one, and no vendor doc will say it plainly
+for you. <strong>The test clock only moves the provider's time. Your
+application still runs in real time.</strong></p>
+<p>Advance the provider to March 2027 and your entitlement service,
+which compares <code>current_period_end</code> against its own
+<code>now()</code>, still thinks it's October 2026. Your scheduled
+"trial ends in 3 days" email job runs on the server's clock, not the
+provider's. You end up with a world where Stripe is in the future and
+your code is in the past. Results from that world can look completely
+plausible and be completely wrong.</p>
+<p>To test lifecycles properly, <strong>your own system needs a
+controllable clock too.</strong> That's a testability request you take
+to the developers, framed as a risk: <em>"Right now we can only verify
+renewal behavior in production, at the speed of real time."</em></p>
+<hr />
+<h2 id="4-a-lifecycle-risk-catalog-you-can-use-tomorrow">4. A lifecycle
+risk catalog you can use tomorrow</h2>
+<p>Use these as charters for time-compressed exploratory sessions, not
+as test cases to copy.</p>
+<p><strong>Trial end</strong></p>
+<ul>
+<li>Trial ends with no payment method: <code>paused</code>,
+<code>canceled</code>, or something else? Does the entitlement match?
+Can the customer resume cleanly?</li>
+<li>Stripe sends <code>customer.subscription.trial_will_end</code>
+<strong>3 days</strong> before trial end. Does your reminder email go
+out once, to the right person, with the right date in <em>their</em>
+time zone?</li>
+</ul>
+<p><strong>Mid-cycle change</strong></p>
+<ul>
+<li>Stripe's docs show a €50→€100 upgrade on Jan 16 as −25 / +50, giving
+a next invoice of 125. That's an <em>illustrative</em> half-month. Work
+it out independently: Jan 16 leaves 16 of 31 days, so −25.81 / +51.61
+and a next invoice of about <strong>125.80</strong>. If finance's
+spreadsheet uses "days ÷ 30" and the provider prorates by exact elapsed
+time, you'll get cent-level differences that reconciliation flags every
+month. <strong>Your oracle needs a documented proration formula, not a
+feeling.</strong></li>
+<li>Downgrade mid-cycle: credit balance, refund, or nothing? That's a
+business decision. Find out who made it.</li>
+</ul>
+<p><strong>Dunning</strong></p>
+<ul>
+<li>Renewal fails → <code>past_due</code> → retries. Does the customer
+keep access during retries? Was that <strong>decided</strong> or
+<strong>inherited</strong>?</li>
+<li>The customer updates their card on day 12 of dunning. Does the open
+invoice get paid, does access return immediately, and does the dunning
+sequence stop?</li>
+<li>After the final retry: does your app react to the
+<em>configured</em> final state, or does it hard-code
+<code>canceled</code>?</li>
+</ul>
+<p><strong>Calendar edges</strong> (Noah Sussman's <a
+href="https://infiniteundo.com/post/25326999628/falsehoods-programmers-believe-about-time"><em>Falsehoods
+programmers believe about time</em></a> is a great idea generator
+here)</p>
+<ul>
+<li>Monthly anchor on Jan 31. What is the February renewal date, and
+what does <em>your</em> invoice email, account page, and "next billing
+date" widget say? All three must agree.</li>
+<li>A customer signs up at 23:30 in Hamburg on the last day of a month.
+Which month is that in UTC, and which month does the finance export
+assign it to?</li>
+</ul>
+<p><strong>The DST week, which is coming up soon</strong></p>
+<ul>
+<li>Central Europe falls back on <strong>Sunday, 25 October
+2026</strong>. The US falls back on <strong>Sunday, 1 November
+2026</strong>. For that one week, Hamburg is 5 hours ahead of New York
+instead of 6.</li>
+<li>In Hamburg, 25 October has <strong>25 hours</strong>, and local
+times from 02:00 to 02:59 happen twice. If you bill usage per day (API
+calls, seats, kWh in an energy SaaS), is that day's usage aggregated
+over 25 hours, double-counted, or cut off?</li>
+<li>"Send the renewal reminder at 09:00 customer-local time": does it
+fire once, at the right time, for a US customer during that week?</li>
+<li>A Ministry of Testing <a
+href="https://club.ministryoftesting.com/t/how-to-learn-about-time-zones-and-testing-time-zones/82354">Club
+thread on time-zone testing</a> makes a point worth using: a user's
+language and location are bad proxies for their time zone. When a user
+sets a time-zone preference, check <strong>every</strong> surface it
+should affect: web, email, mobile push, PDF invoices. Inconsistency
+between surfaces is the bug that's most likely to slip through.</li>
+</ul>
+<hr />
+<h2 id="5-deciding-what-becomes-a-check">5. Deciding what becomes a
+check</h2>
+<p>A simple test for each candidate:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Question</th>
+<th>If yes, lean toward…</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Is the rule written down and agreed (e.g., proration formula, "no
+access when <code>unpaid</code>")?</td>
+<td>Automated check</td>
+</tr>
+<tr class="even">
+<td>Is the oracle deterministic (a number, a state, an entitlement
+flag)?</td>
+<td>Automated check</td>
+</tr>
+<tr class="odd">
+<td>Would a regression cost money or trust quietly, before anyone
+notices?</td>
+<td>Automated check, plus monitoring in production</td>
+</tr>
+<tr class="even">
+<td>Is the right behavior still unclear, or a matter of taste or
+customer experience?</td>
+<td>Human exploration, then a conversation</td>
+</tr>
+<tr class="odd">
+<td>Does it depend on event ordering, bursts, or timing you don't fully
+understand yet?</td>
+<td><strong>Explore first.</strong> Encode each bug you find as a check
+afterwards</td>
+</tr>
+</tbody>
+</table>
+<p>The last row matters most. When you jump two months at once, a burst
+of webhooks arrives together: <code>invoice.created</code>,
+<code>invoice.finalized</code>, <code>invoice.paid</code>,
+<code>customer.subscription.updated</code>, sometimes out of order and
+sometimes retried. That's a realistic stress test of your event handling
+that you get almost for free. <strong>Don't script it before you've
+watched it.</strong></p>
+<hr />
+<h2
+id="6-the-conversation-questions-that-turn-accidents-into-decisions">6.
+The conversation: questions that turn accidents into decisions</h2>
+<p>You'll find that much of the behavior is unspecified: access during
+<code>past_due</code>, downgrade refunds, the final dunning state. Don't
+file these as bugs. They aren't bugs yet. They're <strong>undecided
+business rules that the code decided by default.</strong></p>
+<p>Take them to the product owner and someone from finance together,
+framed like this:</p>
+<blockquote>
+<p>"When a renewal fails, our app currently keeps full access for the
+whole retry period, which is up to [N] days under our current settings.
+As far as I can tell, nobody chose that. It's how the webhook handler
+happens to work. Is that the policy we want? If so, I'll turn it into a
+check so it can't change by accident. If not, what should happen on day
+1, day 7, and after the last retry?"</p>
+</blockquote>
+<p>This works for three reasons:</p>
+<ul>
+<li><strong>It's based on evidence</strong>: you saw it in a
+time-compressed session, so you're not speculating.</li>
+<li><strong>It gives the decision to the people who own it</strong>:
+product and finance, not QA.</li>
+<li><strong>It offers something concrete in return</strong>: a
+protecting check once the rule is decided.</li>
+</ul>
+<p>You're not arguing about whether it's a bug. You're making sure
+someone with authority is deciding, not guessing.</p>
+<hr />
+<h2 id="-todays-challenge">🧪 Today's challenge</h2>
+<p><strong>Scenario:</strong> A Hamburg-based B2B SaaS sells
+<strong>Team (€49/month)</strong> and <strong>Business
+(€99/month)</strong> plans, with a <strong>14-day trial</strong>, card
+and SEPA Direct Debit, and usage-based add-ons aggregated daily. A
+customer starts a trial on <strong>Saturday 17 October 2026 at 23:40
+Berlin time</strong> with SEPA as their payment method.</p>
+<ol type="1">
+<li><strong>Draw the timeline</strong> from trial start to the second
+renewal. Mark every point where time, money, or access changes,
+including the <strong>25 October DST change</strong> inside the trial
+and the <strong>31 October / 1 November</strong> month boundary. What is
+the trial end date in Berlin time? What is it in UTC?</li>
+<li><strong>Write a 60-minute exploratory charter</strong> that uses a
+time-machine tool (test clocks or your own injectable clock) to explore
+this customer's first 70 days. List at least six things you'll
+<em>observe</em>, beyond the subscription status.</li>
+<li><strong>Name two blind spots</strong> where your simulation might
+differ from production. Hint: think about SEPA collection timing and the
+two-clocks problem.</li>
+<li><strong>Sort your findings:</strong> pick three behaviors that
+should become automated checks and two that should stay in human
+exploration. Give one sentence of reasoning for each.</li>
+<li><strong>Draft one message</strong> to the PO and finance about an
+undecided rule you'd expect to find (e.g., access while a SEPA debit is
+pending or after it bounces). Use the "decided or inherited?"
+framing.</li>
+</ol>
+<p><strong>Stretch:</strong> Work out the prorated invoice if the
+customer upgrades from Team to Business on 16 November at 10:00 Berlin
+time. Then write down the <em>assumptions</em> your calculation depends
+on (proration granularity, time zone of the period boundary, rounding).
+Those assumptions are your real test ideas.</p>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>James Bach &amp; Michael Bolton: <a
+href="https://developsense.com/blog/2016/01/a-context-driven-approach-to-automation-in-testing">A
+Context-Driven Approach to Automation in Testing</a> (DevelopSense)</li>
+<li>James Bach: <a
+href="https://www.satisfice.com/blog/archives/1598">We. Use. Tools.</a>
+(Satisfice)</li>
+<li>Ministry of Testing Club: <a
+href="https://club.ministryoftesting.com/t/how-to-learn-about-time-zones-and-testing-time-zones/82354">How
+to learn about time zones and testing time zones?</a></li>
+<li>Stripe Docs: <a
+href="https://docs.stripe.com/billing/subscriptions/overview">How
+subscriptions work: lifecycle and statuses</a></li>
+<li>Stripe Docs: <a
+href="https://docs.stripe.com/billing/testing/test-clocks">Test
+clocks</a> and <a
+href="https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage">API
+and advanced usage, including limitations</a></li>
+<li>Noah Sussman: <a
+href="https://infiniteundo.com/post/25326999628/falsehoods-programmers-believe-about-time">Falsehoods
+programmers believe about time</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-21.html" rel="prev"><span>Previous</span>Testing a Forecast: Why &quot;The Number Looks Wrong&quot; Doesn&#39;t Work When There&#39;s No Ground Truth Yet</a><a href="/qa-blog/posts/qa-thinking-day-23.html" rel="next"><span>Next</span>A Flaky Check Is a Witness You Haven&#39;t Questioned Yet: Investigating Intermittent Failures in a Live Betting-Odds Pipeline</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

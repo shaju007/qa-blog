@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Context: A Hamburg-based home-and-garden shop with a custom card form that calls its payment provider&#39;s API. Most of the attack used a €1.49 seed-packet product, and about 96% of the attempts were declined. The">
+  <meta name="color-scheme" content="light">
+  <title>Over a weekend, bots pushed 38,000 stolen-card authorizations through your guest checkout. By Monday afternoon the team has added a CAPTCHA and a per-IP rate limit, and the security lead wants QA to &quot;sign off&quot; by 9 a.m. Tuesday. You have one afternoon. What do you test, and what does your sign-off actually say? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 9</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-9">QA Interview Q&amp;A — Day 9</h1>
+<h2
+id="question-over-a-weekend-bots-pushed-38000-stolen-card-authorizations-through-your-guest-checkout-by-monday-afternoon-the-team-has-added-a-captcha-and-a-per-ip-rate-limit-and-the-security-lead-wants-qa-to-sign-off-by-9-am-tuesday-you-have-one-afternoon-what-do-you-test-and-what-does-your-sign-off-actually-say">Question:
+Over a weekend, bots pushed 38,000 stolen-card authorizations through
+your guest checkout. By Monday afternoon the team has added a CAPTCHA
+and a per-IP rate limit, and the security lead wants QA to "sign off" by
+9 a.m. Tuesday. You have one afternoon. What do you test, and what does
+your sign-off actually say?</h2>
+<p><strong>Context:</strong> A Hamburg-based home-and-garden shop with a
+custom card form that calls its payment provider's API. Most of the
+attack used a €1.49 seed-packet product, and about 96% of the attempts
+were declined. The fix has two parts: a visible CAPTCHA widget on the
+payment step and a CDN rule allowing five payment attempts per IP every
+ten minutes.</p>
+<hr />
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>This is a security change, but it is also a performance change and an
+accessibility change. The fix can fail in four ways:</p>
+<ol type="1">
+<li><strong>It doesn't stop the attack.</strong> The bots get around
+it.</li>
+<li><strong>It blocks or slows real customers.</strong> Shared IPs,
+retries after a decline and slow third-party scripts all hit genuine
+buyers.</li>
+<li><strong>It shuts out disabled customers.</strong> CAPTCHA has been
+the top barrier in WebAIM's screen reader user surveys for years.</li>
+<li><strong>It breaks checkout when the CAPTCHA provider is slow or
+down.</strong></li>
+</ol>
+<p>With one afternoon I can't test all of this deeply. So I spend the
+first 15 minutes asking questions that tell me where to look. Most of
+the remaining time goes to the "doesn't actually stop it" risk, because
+that is the reason for the change. Then I take quick, targeted looks at
+the other three. By morning I write a test report, not a permission
+slip. Whether to deploy is the security lead's and the product owner's
+call. My job is to make sure they know what they're deciding.</p>
+<h3 id="first-15-minutes-questions-that-set-the-test-plan">First 15
+minutes: questions that set the test plan</h3>
+<p>I ask the security lead and the developer who built the fix:</p>
+<ul>
+<li><strong>Which endpoints did the bots hit?</strong> Did they go
+through the browser form, or call our payment endpoint directly? If they
+skipped the browser, a widget on the page means nothing unless the
+server checks the token. Stripe's card-testing guide makes the same
+point. If the CAPTCHA didn't stop card testing, check that
+<strong>every</strong> request that validates a card or creates a
+payment requires it, and that the check happens
+<strong>server-side</strong>.</li>
+<li><strong>Which endpoints are covered?</strong> Card testers like
+card-setup and "save card" flows as much as payments, because setup
+checks rarely show up on cardholders' statements. Is the CAPTCHA on
+create-customer and save-card too, or only on "Pay now"?</li>
+<li><strong>What is the rate limit keyed on?</strong> Behind a CDN, do
+we read the client IP from the right header? Can a client fake that
+header? And what does the limit do to many people sharing one address,
+such as an office network or a mobile carrier's NAT?</li>
+<li><strong>What happens if the CAPTCHA provider times out?</strong>
+Does checkout fail open (let people through) or fail closed (block
+everyone)? Who decided that, and does the product owner know it was a
+decision?</li>
+<li><strong>What else is in place?</strong> Are the payment provider's
+own fraud rules switched on? Are we refunding the fraudulent charges
+that did succeed, so they don't turn into disputes?</li>
+</ul>
+<p>The answers often change the plan. If the bots called the API
+directly and the token check is client-side only, I have a high-severity
+finding before I've run a single test.</p>
+<h3 id="the-afternoon-in-priority-order">The afternoon, in priority
+order</h3>
+<p><strong>1. Does it stop the attack? (about 2 hours, highest
+priority)</strong></p>
+<p>I test the way the attacker works, not the way a customer does: with
+an HTTP client, skipping the UI, against staging.</p>
+<ul>
+<li><strong>No token.</strong> Payment request with no CAPTCHA token. It
+should be rejected server-side. Repeat on save-card and
+create-customer.</li>
+<li><strong>Replayed token.</strong> Reuse one valid token for a second
+request. Cloudflare's Turnstile docs, for example, say tokens are
+single-use and expire after 300 seconds. Whatever vendor we use, I check
+that our server rejects reused and expired tokens, and doesn't just pass
+along whatever the widget gave it.</li>
+<li><strong>Wrong token.</strong> A token from a different site key, or
+a made-up string.</li>
+<li><strong>Rate limit edge cases.</strong> Rotate the forwarded-IP
+header. Spread requests across IPs if staging tooling allows it. Check
+whether the limit counts per payment attempt or per page load.</li>
+<li><strong>Responses.</strong> Compare our error messages. If a
+declined card gives a different message from a stolen-but-valid card
+that failed for another reason, we're helping the attacker sort their
+list.</li>
+</ul>
+<p>I say plainly what IP limits can't do. Stripe's guidance is that
+rules built on one signal, such as IP address, usually aren't enough,
+and serious carders rotate through residential proxies. OWASP's OAT-001
+(Carding) entry lists <strong>interaction frequency control</strong> as
+one countermeasure class among several, not a fix on its own. I don't
+need to prove the rate limit fails against a botnet. I need the
+decision-makers to understand it mostly raises the attacker's cost.</p>
+<p><strong>2. What does it do to real customers and to speed? (about 1
+hour)</strong></p>
+<ul>
+<li><strong>Legitimate retries.</strong> A real customer mistypes the
+security code (CVC) twice, then tries a second card. Do they hit the
+limit? What do they see: a raw 429 error, an empty page, or a message
+that tells them what to do?</li>
+<li><strong>Shared IPs.</strong> Five colleagues in one office ordering
+for a team event, or customers on a mobile carrier that puts many users
+behind one IP. I can't fully simulate that in an afternoon, but I can
+describe the scenario and ask what share of our checkout traffic comes
+from IPs that already show several sessions.</li>
+<li><strong>Added latency.</strong> Throttle a mid-range Android profile
+in DevTools and compare how long the payment step takes to become
+usable, with and without the widget script.</li>
+<li><strong>Blocked or slow provider.</strong> Block the CAPTCHA domain
+in DevTools, as an ad blocker, privacy browser or corporate proxy might,
+then add a long delay. Does the Pay button stay disabled forever? Does
+checkout fail open? Either way, I report what actually happens, not what
+was intended.</li>
+</ul>
+<p>I'm not running a full load test. It wouldn't finish in time, and the
+more urgent performance question is what the change does to individual
+customers, not overall throughput.</p>
+<p><strong>3. Can disabled customers still buy? (about 1
+hour)</strong></p>
+<ul>
+<li><strong>Keyboard only.</strong> Tab through the full payment step.
+Can I reach the widget, operate it and get past it? Does focus land
+somewhere sensible after an error?</li>
+<li><strong>Screen readers.</strong> Use one desktop pairing (NVDA with
+Firefox) and VoiceOver on iOS. Is the challenge announced? Does it say
+what it's for? If it escalates to a visual puzzle, is there a non-visual
+alternative? WCAG 1.1.1 exempts CAPTCHAs from the text-alternative
+requirement only if their purpose is described and alternative forms in
+different sensory modes are provided.</li>
+<li><strong>Timing.</strong> Solve the CAPTCHA, then take six minutes to
+fill in the address, as a screen reader user or someone using switch
+access might. Submit. Does the expired token produce a clear message and
+a fresh challenge, or a generic failure that clears the form?</li>
+<li><strong>Zoom and reflow.</strong> At 400% zoom, does the widget
+overlap the Pay button?</li>
+</ul>
+<p>I'd add context, without making legal claims. Since 28 June 2025 the
+European Accessibility Act has covered consumer e-commerce services in
+the EU. In Germany that happens through the BFSG, and there are
+exemptions such as one for microenterprises. A checkout that some
+customers can't complete may be more than a usability problem. Whether
+it's a compliance problem is a question for legal, not for me. My job is
+to show the barrier with evidence.</p>
+<p>The W3C note <em>Inaccessibility of CAPTCHA</em> is useful in this
+conversation. It lists approaches that put no task on the user at all:
+honeypots, heuristics, rate limiting and the payment provider's own risk
+models. That moves the discussion from "QA is blocking a security fix"
+to "here are options that protect us without excluding people."</p>
+<p><strong>4. How will we know on Tuesday whether it's working? (30
+minutes)</strong></p>
+<p>Before launch, I'd agree with the team on what we'll watch:</p>
+<ul>
+<li>authorization decline rate and generic-decline errors</li>
+<li>429 counts</li>
+<li>CAPTCHA pass and fail rates</li>
+<li>checkout conversion by browser and device</li>
+<li>support tickets that mention "robot," "can't pay" or
+"verification"</li>
+</ul>
+<p>I'd also ask for a rollback trigger to be agreed in advance, so
+nobody has to argue about it mid-incident.</p>
+<h3 id="what-not-to-do">What not to do</h3>
+<ul>
+<li><strong>Don't try to beat the real CAPTCHA with automation.</strong>
+It's built to resist that. Ask whether the vendor provides test keys or
+a staging bypass. Then <strong>check that the bypass can't be switched
+on in production.</strong> A bypass flag that leaks to production is a
+worse hole than the one we're closing.</li>
+<li><strong>Don't use HTSM as bureaucracy.</strong> I keep Bach's
+Heuristic Test Strategy Model in mind as a quick check against tunnel
+vision. Its quality criteria list Security, Performance, Reliability and
+Usability, with accessibility under Usability. Ten seconds with that
+list is enough to notice that a "security fix" touches all four.</li>
+</ul>
+<h3 id="what-the-sign-off-says">What the "sign-off" says</h3>
+<p>Michael Bolton's <em>Signing Off</em> fits this situation: testers
+can sign for the quality of their testing, but the business doesn't need
+their permission to ship. So my message at 9 a.m. looks like this:</p>
+<blockquote>
+<p><strong>Testing of checkout anti-carding change: status at
+08:45</strong></p>
+<p><strong>What I covered:</strong> Server-side token enforcement on
+pay, save-card and create-customer (missing, replayed, expired and
+wrong-site-key tokens). Rate limit behavior including a spoofed
+forwarded-IP header. Keyboard and NVDA/VoiceOver walkthrough.
+Expired-token recovery. Behavior with the CAPTCHA domain blocked.</p>
+<p><strong>What I found:</strong> (1) Save-card accepts requests without
+a token. <em>High severity: this is the attack's most likely path.</em>
+(2) Three legitimate retries after a mistyped CVC trigger a 429 page
+with no explanation. (3) With the provider blocked, the Pay button stays
+disabled with no message (fails closed, silently). (4) The visual
+challenge has no audio or alternative mode in our configuration.</p>
+<p><strong>What I did not cover:</strong> Distributed-IP attacks at
+realistic scale. Real carrier-NAT traffic. iOS Safari with content
+blockers. Load.</p>
+<p><strong>What I'd want before or right after deploy:</strong> Fix (1).
+Agree the fail-open/closed decision explicitly. Agree a rollback trigger
+based on conversion and decline-rate dashboards.</p>
+<p>The release decision is yours. I'm happy to walk through any of
+this.</p>
+</blockquote>
+<p>In the meeting I'd lead with the finding that matters most to the
+security lead: <em>"The fix may not stop this attack, because save-card
+is still open."</em> Then the customer-impact findings, framed as
+tradeoffs rather than objections: <em>"We're probably turning away some
+real buyers and some disabled customers. Here's roughly where, and here
+are options with less friction."</em> I don't say "I can't approve
+this," and I don't say "looks good." Neither describes what I actually
+know.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"I'd test that the CAPTCHA appears and the rate limit
+returns 429."</strong> That checks the fix's happy path and ignores the
+attacker, who never loads the page.</li>
+<li><strong>"Security is the security team's job. I'd regression-test
+checkout."</strong> That misses the biggest risk entirely.</li>
+<li><strong>"I'd refuse to sign off until it's WCAG compliant."</strong>
+That claims authority the tester doesn't have, and it frames
+accessibility as an obstacle to security rather than as information
+about who gets locked out.</li>
+<li><strong>"I'd run a load test."</strong> Wrong question for the time
+available. The performance risk here is to individual customers, not
+throughput.</li>
+<li><strong>"Sure, signed off. It's urgent."</strong> Urgency is a
+reason to report quickly and clearly, not a reason to imply coverage you
+don't have.</li>
+</ul>
+<hr />
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><strong>The product owner asks you: "If the CAPTCHA provider goes
+down, should checkout fail open or fail closed?"</strong> How do you
+answer without making the decision yourself? What data would help them
+choose?</li>
+<li><strong>Three weeks later, iOS Safari checkout conversion is down
+4%, but support hasn't seen a spike in tickets.</strong> How would you
+find out whether the new controls are the cause, and what would you hold
+back from claiming until you know?</li>
+</ol>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://developsense.com/blog/2018/03/signing-off">Michael
+Bolton (DevelopSense): <em>Signing Off</em></a>: Bolton argues testers
+should sign for the coverage and findings of their testing, not for the
+business decision to ship. The 9 a.m. report follows his structure:
+covered, found, not covered.</li>
+<li><a href="https://developsense.com/htsm">James Bach, <em>Heuristic
+Test Strategy Model</em> (hosted by DevelopSense)</a>: Its quality
+criteria (Security, Performance, Reliability, Usability with
+accessibility) are the quick check used here to see that one "security
+fix" affects several quality areas.</li>
+<li><a href="https://www.w3.org/TR/turingtest/">W3C APA Working Group
+Note: <em>Inaccessibility of CAPTCHA</em></a>: Explains why each CAPTCHA
+type excludes some disabled users and lists alternatives with no user
+task (honeypots, heuristics, rate limiting). Used to reframe the meeting
+around less exclusionary options.</li>
+<li><a
+href="https://w3c.github.io/wcag/understanding/non-text-content.html">W3C:
+Understanding WCAG Success Criterion 1.1.1 Non-text Content</a>: The
+primary source for the CAPTCHA exception's conditions (purpose
+described, alternative sensory modes) and the extra recommendations,
+such as a human support path.</li>
+<li><a
+href="https://webaim.org/blog/screen-reader-user-survey-10-results/">WebAIM:
+Screen Reader User Survey #10 Results</a>: Shows CAPTCHA as the most
+problematic item reported by screen reader users. Evidence that the
+accessibility risk is real, not hypothetical.</li>
+<li><a href="https://docs.stripe.com/card-testing">Stripe Docs: Protect
+yourself from card testing</a>: Payment-provider documentation saying
+the CAPTCHA must be enforced server-side on every card-validating
+endpoint, that card setup is a favored path, and that single-signal
+rules such as IP limits are usually not enough. The basis for the "does
+it actually stop the attack" tests.</li>
+<li><a
+href="https://developers.cloudflare.com/turnstile/get-started/server-side-validation/">Cloudflare
+Turnstile: Server-side validation</a>: Vendor documentation for
+single-use tokens and the 300-second expiry. The basis for the replay
+and expired-token tests, and for the accessibility timing scenario.</li>
+<li><a
+href="https://owasp.github.io/www-project-automated-threats-to-web-applications/assets/oats/EN/OAT-001_Carding.html">OWASP
+Automated Threats: OAT-001 Carding</a>: Defines the threat and its
+countermeasure classes. Supports the point that frequency control is one
+layer, not a complete defense.</li>
+<li><a
+href="https://www.twobirds.com/en/insights/2025/a-guide-to-navigating-the-european-accessibility-act-for-online-retailers-service-providers-and-plat">Bird
+&amp; Bird: A guide to navigating the European Accessibility Act for
+online retailers</a>: Background on the EAA covering consumer e-commerce
+from 28 June 2025. Used only to explain why the barrier should go to
+legal, not as a legal conclusion.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-08.html" rel="prev"><span>Previous</span>Every contract test against your sports-data provider is green, but on the first live Saturday your app kept showing a goal for nine minutes after VAR had disallowed it, and some users got two &quot;GOAL!&quot; push notifications. The engineering manager asks: &quot;So do we just need more contract tests?&quot; What do you answer?</a><a href="/qa-blog/posts/qa-interview-day-10.html" rel="next"><span>Next</span>Your energy supplier&#39;s dynamic-tariff feature has been live since November 2025. It bills households for each 15-minute interval, using day-ahead prices and smart-meter readings. On 25 October 2026 the clocks go back, and the feature has never been through that change. The developers say: &quot;Everything&#39;s stored in UTC, so DST isn&#39;t an issue.&quot; You have 17 days. What do you do?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
