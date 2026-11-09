@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario: You&#39;re the QA lead at a Hamburg online fashion retailer. Orders of €50 or more get free shipping. In March, customers found that the threshold was checked against the basket total before vouchers. A €">
+  <meta name="color-scheme" content="light">
+  <title>The same free-shipping bug has reached production twice this year. Your VP of Engineering announces: &quot;From Monday, no bug ticket gets closed without an automated test that would have caught it.&quot; Is that a good rule? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 21</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-21">QA Interview Q&amp;A — Day 21</h1>
+<h2
+id="question-the-same-free-shipping-bug-has-reached-production-twice-this-year-your-vp-of-engineering-announces-from-monday-no-bug-ticket-gets-closed-without-an-automated-test-that-would-have-caught-it-is-that-a-good-rule">Question:
+The same free-shipping bug has reached production twice this year. Your
+VP of Engineering announces: "From Monday, no bug ticket gets closed
+without an automated test that would have caught it." Is that a good
+rule?</h2>
+<p><strong>Scenario:</strong> You're the QA lead at a Hamburg online
+fashion retailer. Orders of €50 or more get free shipping. In March,
+customers found that the threshold was checked against the basket total
+<em>before</em> vouchers. A €55 basket with a €10 voucher still shipped
+free. The bug was fixed. In September it came back after the voucher
+service was refactored. Code freeze for Black Friday (27 November)
+starts on 16 November. The VP announces the new rule at the engineering
+all-hands and asks for objections by Friday.</p>
+<h2 id="answer">Answer</h2>
+<h3 id="short-version">Short version</h3>
+<p>The VP is right to worry about recurrence, but I'd change how the
+rule is written. Taken literally, it says three things:</p>
+<ul>
+<li>A test is the only valid kind of prevention.</li>
+<li>Every bug is best caught by an automated check.</li>
+<li>Compliance is measured by counting new artifacts.</li>
+</ul>
+<p>I'd propose a different rule: <strong>every fixed bug closes with an
+explicit prevention decision.</strong> By default, that decision is an
+automated check at the lowest layer that can fail for the right reason.
+There's also a short list of legitimate alternatives, and each one needs
+a recorded reason. That keeps what's good about the VP's rule and avoids
+most of the harm.</p>
+<h3 id="1-find-out-which-problem-the-rule-is-meant-to-solve">1. Find out
+which problem the rule is meant to solve</h3>
+<p>Before arguing for or against anything, I'd want two pieces of
+evidence. Ideally I'd discuss them with the VP privately before Friday
+rather than in front of everyone.</p>
+<p><strong>Why did the free-shipping bug come back?</strong> This one
+fact shapes the whole conversation.</p>
+<ul>
+<li><strong>No test after the March fix:</strong> the VP's rule targets
+exactly this gap.</li>
+<li><strong>A test existed but lived in the old voucher
+service:</strong> it was deleted or rewritten during the refactor. The
+rule wouldn't have helped. The real problem is tests tied to
+implementation details instead of behavior. Google's <em>Software
+Engineering at Google</em> calls these brittle tests. The ideal test
+only changes when the requirements change.</li>
+<li><strong>There was a UI end-to-end test, but it was quarantined as
+flaky months ago:</strong> in that case the problem is how the suite is
+looked after, not a missing rule.</li>
+</ul>
+<p><strong>How often do escaped bugs come back?</strong> I'd pull the
+last two quarters of production bugs, say about 40 tickets, and sort
+them:</p>
+<ul>
+<li>How many were reintroduced bugs that had been fixed before?</li>
+<li>How many were new bugs in new code?</li>
+<li>How many came from configuration, data, or third parties?</li>
+</ul>
+<p>A regression check written when bug X is fixed protects against bug X
+returning. It says nothing about the next new bug. If 3 of the 40 were
+recurrences, the rule spends a lot of effort on a small slice of the
+risk. Michael Bolton makes this point in <em>Regression Obsession</em>:
+testers can end up buried under an ever-growing regression suite while
+the other product risks go unexamined. If 15 of the 40 were recurrences,
+the VP has found a real pattern, and I'd say so openly.</p>
+<h3 id="2-sort-real-bugs-by-what-would-actually-have-prevented-them">2.
+Sort real bugs by what would actually have prevented them</h3>
+<p>This is the most persuasive part of the meeting. Instead of arguing
+in the abstract, I'd take a handful of real tickets. These are
+illustrative examples:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Bug</th>
+<th>Test that "would have caught it"</th>
+<th>Better prevention</th>
+<th>Automated check?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Free-shipping threshold uses the pre-voucher total</td>
+<td>UI test: €55 basket, voucher, check shipping</td>
+<td>Table-driven service test of the rule "shipping is based on the
+post-discount merchandise total" for every discount type (voucher,
+bundle, staff, gift card)</td>
+<td>Yes, but covering the rule, not the single incident</td>
+</tr>
+<tr class="even">
+<td>Austrian VAT rate wrong after a config edit</td>
+<td>A test asserting "AT = 20%"</td>
+<td>Validate the tax config against its source during deploy, and get a
+second pair of eyes on config changes</td>
+<td>The hard-coded assertion just repeats the config. Validate the
+pipeline instead</td>
+</tr>
+<tr class="odd">
+<td>Double order when a customer taps "Buy" twice on a slow
+connection</td>
+<td>UI test with simulated network latency</td>
+<td>API test showing that a repeated request with the same idempotency
+key creates one order, plus a database uniqueness constraint</td>
+<td>Yes, at the API layer. A timing-dependent UI test would be
+flaky</td>
+</tr>
+<tr class="even">
+<td>Payment provider changed the casing of its webhook signature
+header</td>
+<td>A test against our own mock, which would never fail</td>
+<td>Alert on the webhook rejection rate, accept headers
+case-insensitively, and review provider changelogs</td>
+<td>Mostly a production monitor. Our own test can't see a change made by
+the provider</td>
+</tr>
+<tr class="odd">
+<td>"Buy now" button hidden behind the cookie banner on small iPhones in
+German</td>
+<td>Screenshot test on every device</td>
+<td>Layout fix, a design-review note about long German labels, and
+possibly one visual check for the narrowest supported viewport</td>
+<td>Maybe one check. Not one per device</td>
+</tr>
+<tr class="even">
+<td>Typo in a transactional email</td>
+<td>Assert on the email text</td>
+<td>Fix it</td>
+<td>No. A check would just copy the text</td>
+</tr>
+</tbody>
+</table>
+<p>For most bugs, the useful question isn't "is there a test?" It's
+"what is the cheapest reliable thing that stops this kind of bug from
+reaching customers?"</p>
+<h3 id="3-what-the-rule-gets-right">3. What the rule gets right</h3>
+<p>I'd say this clearly so nobody thinks I'm against automation:</p>
+<ul>
+<li><strong>When you fix a bug, a regression check costs very
+little.</strong> The developer already understands the failure, has a
+reproduction, and has the code open. Martin Fowler's test pyramid makes
+a related point: if a high-level test finds a bug, you also have a
+missing or wrong lower-level test. Replicate the bug there before fixing
+it.</li>
+<li><strong>Rules like this can work.</strong> In 2017, the Tor project
+proposed requiring regression tests for bug fixes in Core Tor. It also
+proposed a procedure for exceptions, decided during patch review. The
+exception path was part of the design from the start.</li>
+<li><strong>It forces a useful conversation</strong> about why the bug
+happened and where it could have been caught.</li>
+</ul>
+<h3 id="4-how-it-goes-wrong-if-adopted-literally">4. How it goes wrong
+if adopted literally</h3>
+<ol type="1">
+<li><strong>Tests at the wrong layer.</strong> Bugs are usually reported
+through the UI, so the easiest reproduction is a UI test. Forty of those
+a quarter add minutes to every pipeline run and create new sources of
+flakiness, just before a code freeze.</li>
+<li><strong>Tests that preserve the incident instead of the
+rule.</strong> "Voucher SPRING10 on SKU 4471 gives €4.95 shipping" turns
+into a museum of old bugs. The September version of the bug involved a
+bundle discount, not a voucher, and a test copied from the March
+incident would probably have missed it. A test of the rule itself, run
+across all discount types, would have caught it.</li>
+<li><strong>Tests that never failed.</strong> A test written after the
+fix that passes both with and without the fix proves nothing. Require
+evidence that it fails without the fix: write the test first, or revert
+the fix on a branch and show the check goes red.</li>
+<li><strong>Change-detector tests</strong> for config, copy, and
+constants. They break whenever someone makes a legitimate change and
+protect against nothing.</li>
+<li><strong>Bad incentives.</strong> When closing a bug costs more,
+people find workarounds. Bugs get relabelled as "tasks" or
+"improvements". Testers feel pressure to log fewer bugs. Worst of all,
+in the week before Black Friday, an urgent fix waits because the check
+is hard to write. The rule would be adding risk in the period we care
+about most.</li>
+<li><strong>A bottleneck.</strong> If "automated test" quietly means "QA
+writes it", every fix waits in a queue. Bolton also asks whether testers
+are even best placed to maintain regression suites.</li>
+<li><strong>False confidence.</strong> A green suite of old bugs feels
+like evidence about the next release, but it isn't. Bolton's <em>The
+Secret Life of Automation</em> puts it this way: automated checking
+exists, but it cannot do the testing. James Bach's <em>Test Automation
+Snake Oil</em> has been taking apart the "machines are faster, cheaper,
+more reliable, so automate" argument since 1996. That argument is hiding
+inside this rule too.</li>
+</ol>
+<h3 id="5-the-rule-id-propose-instead">5. The rule I'd propose
+instead</h3>
+<blockquote>
+<p><strong>Every bug fix records a prevention decision, agreed between
+the developer and a tester in review:</strong></p>
+<ul>
+<li><strong>A. Automated check (default):</strong> written at the lowest
+layer that fails for the right reason, against behavior or a public API,
+and shown to fail without the fix.</li>
+<li><strong>B. Check for the whole class of bug:</strong> a rule, table,
+or property check instead of one example.</li>
+<li><strong>C. Structural fix that makes the bug impossible:</strong> a
+constraint, an idempotency key, a type, or schema validation.</li>
+<li><strong>D. Detection in production:</strong> an alert or
+reconciliation job, when the failure comes from outside our code.</li>
+<li><strong>E. No new check:</strong> with a one-line reason, such as
+"code deleted" or "one-off data fix". The reason has to be visible, not
+silently skipped.</li>
+</ul>
+<p>During the freeze, a missing check never blocks an urgent fix. The
+ticket for the check stays open, and someone owns it.</p>
+</blockquote>
+<p>Then I'd suggest a <strong>six-to-eight-week pilot</strong> and
+measuring:</p>
+<ul>
+<li>recurrences of fixed bugs</li>
+<li>the split between options A–E</li>
+<li>changes in pipeline time and flaky-test rate</li>
+<li>time to close fixes</li>
+</ul>
+<p>If option E turns into a dumping ground, that shows up in the data
+and the rule can be tightened.</p>
+<h3 id="6-what-to-say-in-the-meeting">6. What to say in the meeting</h3>
+<blockquote>
+<p>"I support the goal. The free-shipping bug coming back twice is
+embarrassing, and we should stop that. I looked at the last 40
+production bugs. Here's how many were recurrences, and here's what would
+actually have stopped each of the six I've shown you. For most of them,
+the right protection is a check at the API or service level. For a few
+it's a database constraint or an alert, and for one it's nothing. I'm
+worried that a literal 'test for every ticket' rule will add slow UI
+tests and relabelled tickets right before the freeze. Can we try a
+version where every fix records how we'll prevent it, with an automated
+check as the default? Then let's review the numbers in December."</p>
+</blockquote>
+<p>Notice what this script avoids: "you can't automate everything", "QA
+won't accept this", or any claim that I have a veto. The policy belongs
+to the VP. My job is to give them better evidence than they had when
+they wrote it.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Yes, every bug should have a test. It's best
+practice."</strong> This ignores where the test lives, what it costs,
+and bugs a test can't catch.</li>
+<li><strong>"No, you can't automate everything."</strong> A slogan with
+no evidence and no alternative.</li>
+<li><strong>"QA will add an end-to-end test for each bug."</strong> This
+makes the suite slower and QA the bottleneck.</li>
+<li><strong>Measuring success by test count or coverage</strong> instead
+of by recurrences and escaped bugs.</li>
+<li><strong>Treating this as a fight with the VP</strong> instead of
+improving a rule whose intent is sound.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li>Six weeks into the pilot, the regression check for the free-shipping
+fix has failed intermittently five times. A developer wants to delete
+it. What do you do? <em>(Look for an answer that finds out whether the
+flakiness is in the check, the test data, or the product. Concurrency in
+the voucher service would be a real bug. If it's the check, the answer
+should consider moving it down a layer before deleting it.)</em></li>
+<li>Six months from now, how would you tell whether the rule, or your
+version of it, actually reduced risk instead of just producing more
+tests?</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2019/08/regression-obsession">Regression
+Obsession</a>, DevelopSense (2019). Argues that testers get buried in
+maintaining ever-growing regression suites while non-regression risks
+are neglected, and questions whether testers should own that work. It
+underpins the "find out which problem we're solving" step and the
+bottleneck warning.</li>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2019/12/the-secret-life-of-automation">The
+Secret Life of Automation</a>, DevelopSense (2019, updated 2022).
+Distinguishes automated checking from testing: checks exist, but they
+don't do the testing. It supports the false-confidence point.</li>
+<li>James Bach, <a
+href="https://www.satisfice.com/download/test-automation-snake-oil">Test
+Automation Snake Oil</a>, Satisfice (1996, revised 1999). A classic
+rebuttal of the "machines are faster, cheaper, more reliable, so
+automate" argument that sits under blanket automation mandates.</li>
+<li>Martin Fowler, <a
+href="https://www.martinfowler.com/bliki/TestPyramid.html">Test
+Pyramid</a> (2012). Says a bug found by a high-level test reveals a
+missing lower-level test, and recommends reproducing it there before
+fixing. It's the basis for "lowest layer that fails for the right
+reason."</li>
+<li>Google, <a
+href="https://abseil.io/resources/swe-book/html/ch12.html">Software
+Engineering at Google, Chapter 12: Unit Testing</a>. Defines brittle
+tests, recommends testing behavior through public APIs, and describes
+the ideal test as one that changes only when requirements change. It
+explains how a bug's regression test can disappear in a refactor.</li>
+<li>Taylor Yu, <a
+href="https://archive.torproject.org/websites/lists.torproject.org/pipermail/tor-dev/2017-June/012361.html">Moving
+toward requiring regression tests for bug fixes</a>, tor-dev mailing
+list (June 2017). A real project proposing this kind of rule, with an
+exception procedure decided during patch review. It shows the rule works
+better when exceptions are part of the design.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-20.html" rel="prev"><span>Previous</span>Your retail-media platform caps a campaign at 3 impressions per user per day. The advertiser&#39;s report for Tuesday shows an average frequency of 3.4. A developer says, &quot;Caps are best-effort in distributed systems. That&#39;s expected.&quot; Is it a bug?</a><a href="/qa-blog/posts/qa-interview-day-22.html" rel="next"><span>Next</span>You spent a full day exploring a new feature and found zero bugs. At the debrief, your engineering manager asks: &quot;So it&#39;s ready — or was that a wasted day?&quot; What do you say?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

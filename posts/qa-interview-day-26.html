@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Context: You test a sports-data app. The redesigned match-centre screen shows live scores, the match clock, goal and card events, and lineups. It ships Thursday, and the club partners&#39; marketing has been timed">
+  <meta name="color-scheme" content="light">
+  <title>Two days before release, your designer files 47 &quot;design QA&quot; tickets against the redesigned live match centre. In triage, the engineering lead says: &quot;QA, can you close the cosmetic ones so we can ship?&quot; What do you do? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 26</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-26">QA Interview Q&amp;A — Day 26</h1>
+<h2
+id="question-two-days-before-release-your-designer-files-47-design-qa-tickets-against-the-redesigned-live-match-centre-in-triage-the-engineering-lead-says-qa-can-you-close-the-cosmetic-ones-so-we-can-ship-what-do-you-do">Question:
+Two days before release, your designer files 47 "design QA" tickets
+against the redesigned live match centre. In triage, the engineering
+lead says: "QA, can you close the cosmetic ones so we can ship?" What do
+you do?</h2>
+<p><strong>Context:</strong> You test a sports-data app. The redesigned
+match-centre screen shows live scores, the match clock, goal and card
+events, and lineups. It ships Thursday, and the club partners' marketing
+has been timed around that date. On Tuesday afternoon the designer
+finally got time on staging and went through every screen against Figma.
+The next morning the backlog has 47 new tickets, all labelled
+<code>design-qa</code>, with no priorities set.</p>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-answer">The short answer</h3>
+<p>No, I won't bulk-close them. I don't own the design intent and I
+don't own the release decision, so neither "cosmetic" nor "close" is my
+call to make alone. What I can offer is to make those 47 tickets
+something the team can decide on within about an hour. I'll sit with the
+designer, sort the tickets by what they do to users, and bring back a
+short list. Calling something "cosmetic" is a severity judgment, not a
+category, and in a live-score product many visual details carry the data
+itself.</p>
+<h3 id="why-close-the-cosmetic-ones-is-the-wrong-instruction">Why "close
+the cosmetic ones" is the wrong instruction</h3>
+<p>The lead's request assumes the tickets split cleanly into
+"functional" and "looks". On a match centre they usually don't. When I
+read 47 tickets like these, I'd expect some of the following to be
+hiding among the spacing complaints:</p>
+<ul>
+<li><strong>The losing team's score is in a muted grey on dark
+mode.</strong> The ticket says "wrong grey token." The real problem is
+that the score, the most important number on the screen, may fall below
+the 4.5:1 contrast WCAG asks for normal text. Users in sunlight, or with
+low vision, may misread it.</li>
+<li><strong>The stoppage-time clock truncates.</strong> "90+4'" shows as
+"90+". That's a data-display defect, not a styling one.</li>
+<li><strong>Long team names collide.</strong> "Borussia Mönchengladbach"
+truncates to "Borussia M…". The designer filed it as "ellipsis looks
+ugly." In a fixtures list that also has Borussia Dortmund, users can't
+tell which match they're looking at.</li>
+<li><strong>The red-card icon is 16×16 px.</strong> It opens the player
+sheet and sits right next to the substitution icon. The ticket says
+"icon misaligned by 2px." The bigger issue is that the target is
+probably too small. WCAG 2.2 SC 2.5.8 (Level AA) asks for 24×24 CSS px
+unless the spacing exception applies. If your organisation targets AA,
+that's a conformance question, not polish.</li>
+<li><strong>There's no design for a disallowed goal.</strong> The ticket
+reads "VAR state doesn't match Figma." It can't match, because Figma has
+no such state. The developer improvised, and the goal stays visually
+highlighted after it has been overturned. This is a missing requirement
+found by design review.</li>
+<li><strong>Then the genuinely cosmetic ones:</strong> 12px gaps where
+the spec says 16px, an icon corner radius, a slightly different shade of
+the brand green on one tab.</li>
+</ul>
+<p>Michael Bolton's FEW HICCUPPS oracles help me explain this in triage.
+A design ticket can point at several different kinds of
+inconsistency:</p>
+<ul>
+<li><strong>Claims:</strong> it doesn't match the Figma file.</li>
+<li><strong>Product:</strong> it's inconsistent with the rest of the
+app.</li>
+<li><strong>Image:</strong> it's inconsistent with the brand the club
+partners are paying to see.</li>
+<li><strong>Purpose:</strong> it gets in the way of what users came for,
+which is knowing the score right now.</li>
+<li><strong>Statutes and standards:</strong> it misses accessibility
+requirements.</li>
+</ul>
+<p>A pure "Claims" mismatch is often cheap to defer. A "Purpose" or
+"Statutes" problem is not, whatever the ticket title says.</p>
+<h3 id="what-i-do-in-the-next-hour">What I do in the next hour</h3>
+<ol type="1">
+<li><strong>Book 45 minutes with the designer, plus one developer if
+possible.</strong> I don't triage their tickets without them. They know
+what each ticket was about. I know how the screen behaves with real
+data, odd states and assistive tech.</li>
+<li><strong>Cluster before rating.</strong> In my experience, 47 tickets
+rarely mean 47 problems. Twenty of them might come from one wrong
+spacing token or one component that wasn't updated. If so, that's one
+fix with a large visible payoff, and the developer can tell us how big
+it is. I'd make this the first thing the engineering lead hears.</li>
+<li><strong>Sort by user impact using a shared scale.</strong> Nielsen
+Norman Group's severity model is useful here. It weighs frequency,
+impact, persistence and market impact, and it warns that one evaluator's
+severity rating is unreliable. That backs up rating together rather than
+letting any one person (me, the designer or the lead) label things
+"cosmetic." I'd use three buckets:
+<ul>
+<li><strong>A: Changes what users understand or can do.</strong> Misread
+data, unreachable controls, missing states, accessibility
+conformance.</li>
+<li><strong>B: Visible inconsistency on high-traffic or partner-branded
+surfaces.</strong> The Image oracle; the team has to decide whether
+that's acceptable for launch.</li>
+<li><strong>C: Polish.</strong> Real, but the user experience is the
+same either way.</li>
+</ul></li>
+<li><strong>Gather evidence for bucket A, not opinions.</strong> I'd
+collect:
+<ul>
+<li>Screenshots from real devices, with dark mode, 200% text size and
+the German locale switched on.</li>
+<li>Real-world fixture data: extra time, penalty shoot-outs, postponed
+and abandoned matches, overturned goals, long team names.</li>
+<li>A contrast ratio measured from the rendered screen, not taken from
+Figma.</li>
+<li>Traffic data showing which screens matter. Lineups get a fraction of
+the views the live scoreboard gets.</li>
+</ul></li>
+<li><strong>Agree with the designer what to propose, then write it
+down.</strong> Bucket A becomes candidate release blockers with clear
+repro steps. Bucket B gets a recommendation either way. Bucket C moves
+to a named follow-up release with an owner. Nothing gets closed. Closing
+tells the designer their review was noise, and it destroys the record we
+need afterwards.</li>
+</ol>
+<h3 id="what-id-say-in-triage">What I'd say in triage</h3>
+<blockquote>
+<p>"We didn't close anything. Sarah and I went through all 47 tickets.
+Twenty-three come from one spacing token, and Dev says that's about a
+two-hour fix. Five tickets change what users see or can do: the
+stoppage-time clock truncates, the losing score may fail contrast on
+dark mode, the red-card target is 16px next to another control, long
+team names become ambiguous, and an overturned goal stays highlighted.
+We'd recommend fixing those five before Thursday. We have screenshots
+and the fixture data that reproduces each one. Six tickets are brand
+inconsistencies on the partner-branded header. That's Product's call,
+and Sarah has a view on it. The remaining thirteen are polish, and we've
+moved them to the next sprint with her agreement. The release decision
+is yours. Here's what you'd be shipping with if we defer each
+group."</p>
+</blockquote>
+<p>This keeps me in my role. I describe the risk, I bring evidence, and
+I make a recommendation. I don't claim authority I don't have. It also
+doesn't let me quietly speak for the designer: the six brand tickets go
+to the product owner with both views stated.</p>
+<h3 id="what-id-raise-after-release">What I'd raise after release</h3>
+<p>Forty-seven tickets two days before release is a scheduling symptom,
+not a design-team problem. The designer reviewed the product only once
+it was finished, against static mocks, using demo data. I'd suggest:</p>
+<ul>
+<li><strong>Design review per pull request,</strong> on preview builds
+or component stories, while changes are still cheap.</li>
+<li><strong>Stress fixtures in the design file:</strong> long names,
+"90+12'", a 7–6 score after penalties, a disallowed goal. Missing states
+then show up in refinement instead of on staging.</li>
+<li><strong>Visual regression for drift only.</strong> Snapshot tests
+catch unintended changes after a baseline is approved. They don't tell
+you whether the baseline was right, so they don't replace the designer's
+review.</li>
+</ul>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"Sure, I'll close the cosmetic ones."</strong> This treats a
+ticket's title as its severity and takes over a decision that belongs to
+the designer and the product owner.</li>
+<li><strong>"All 47 are bugs, so we can't ship."</strong> This is
+gatekeeping without prioritising, and it burns credibility with the
+lead.</li>
+<li><strong>"Design issues aren't QA's job."</strong> In a data product,
+the display is where data defects become visible to users.</li>
+<li><strong>"We'll catch it with visual regression tests."</strong> They
+detect change, not correctness.</li>
+<li><strong>Triaging the designer's tickets without the
+designer.</strong> You lose their intent and their trust in the same
+move.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><em>The designer insists all 47 tickets are blockers because "the
+partners signed off on these exact screens." How do you respond?</em>
+Treat the partner sign-off as a Claims oracle with real commercial
+weight. Ask which differences the partner would actually notice, and
+escalate that question to the product owner, who owns the partner
+relationship. Don't argue about it as a testing matter.</li>
+<li><em>After release, a club complains about the brand-green mismatch
+you'd put in bucket B. What do you take from that?</em> That the Image
+and market-impact factors were underweighted. Adjust how you rate
+partner-branded surfaces next time, not just this ticket.</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://developsense.com/blog/2012/07/few-hiccupps">Michael
+Bolton, "FEW HICCUPPS" (DevelopSense)</a>: defines the Claims, Image,
+Product, Purpose and Statutes oracles used above to show that a "design"
+ticket can be a brand, consistency or standards problem, not just a
+mismatch with Figma.</li>
+<li><a
+href="https://www.nngroup.com/articles/how-to-rate-the-severity-of-usability-problems/">Nielsen
+Norman Group, "Severity Ratings for Usability Problems"</a>: the
+frequency, impact, persistence and market-impact factors, the 0–4 scale
+where "cosmetic" is just one rating, and the warning that one
+evaluator's severity rating is unreliable. Together these support
+sorting the tickets jointly with the designer rather than having anyone
+label them alone.</li>
+<li><a
+href="https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html">W3C,
+Understanding WCAG 2.2 SC 2.5.8 Target Size (Minimum)</a>: the Level AA
+24×24 CSS px minimum and its spacing exception, behind the red-card icon
+example.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-25.html" rel="prev"><span>Previous</span>Your engineering manager wants QA to approve every pull request before it merges. Do you say yes?</a><a href="/qa-blog/posts/qa-interview-day-27.html" rel="next"><span>Next</span>&quot;Can you just change it from Critical to Major? The release gate only blocks on Criticals, and we&#39;ll fix it next sprint.&quot; Do you change the label?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

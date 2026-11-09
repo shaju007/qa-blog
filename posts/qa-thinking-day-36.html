@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Suppose you work on a bidder at a DSP, or on an SSP that forwards bid requests into real-time bidding. Every European bid request carries a TC string (the IAB TCF consent string) in gdpr_consent or the OpenRTB">
+  <meta name="color-scheme" content="light">
+  <title>Testing Consent Signals in Ad Tech: A Consent String Is a Record With a Birth Date, Not a Yes/No Flag | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 36</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-36">QA Thinking — Day 36</h1>
+<h2
+id="testing-consent-signals-in-ad-tech-a-consent-string-is-a-record-with-a-birth-date-not-a-yesno-flag">Testing
+Consent Signals in Ad Tech: A Consent String Is a Record With a Birth
+Date, Not a Yes/No Flag</h2>
+<p>Suppose you work on a bidder at a DSP, or on an SSP that forwards bid
+requests into real-time bidding. Every European bid request carries a TC
+string (the IAB TCF consent string) in <code>gdpr_consent</code> or the
+OpenRTB equivalent. Your service decodes it and makes a decision: bid
+with personalised ads, bid contextually, or drop the request.</p>
+<p>Most consent test suites look the same. Someone generates a dozen
+strings ("all consent", "no consent", "purpose 1 only") and checks that
+the decision function returns the right answer for each. Everything
+passes.</p>
+<p>These suites miss something. A TC string records what was shown to
+one person, on one day, under one version of the rules, using one
+version of the vendor list. You make your decision months later, under
+rules that may have changed since. Today's lesson covers how to test
+that time gap and how to talk about it with the privacy counsel who owns
+the rules.</p>
+<hr />
+<h3 id="1-a-short-domain-primer">1. A short domain primer</h3>
+<p>Here is what you need before the testing makes sense:</p>
+<ul>
+<li><strong>CMP (Consent Management Platform):</strong> shows the
+consent UI on the publisher's site and writes the TC string. CMPs
+usually run in the user's browser.</li>
+<li><strong>TC string:</strong> a base64url-encoded bit structure. The
+core segment holds purpose consents, legitimate-interest (LI) signals,
+per-vendor bits, the CMP ID, the version of the vendor list used, and
+the <code>Created</code>/<code>LastUpdated</code> timestamps. Optional
+or newly mandatory segments follow, separated by dots.</li>
+<li><strong>GVL (Global Vendor List):</strong> the registry of vendors
+and the purposes and legal bases each one declares. It is versioned. The
+spec requires CMPs to use the <em>latest</em> GVL when they show the UI,
+and requires vendors to interpret a string using <em>the GVL version
+encoded in that string</em>, not today's list.</li>
+<li><strong>Purposes vs. special purposes:</strong> purposes
+(store/access information on a device, personalised ads, measurement,
+and so on) need a legal basis, either consent or LI. Special purposes
+(such as security and fraud prevention, or technically delivering an ad)
+don't depend on the user's choice in the same way. A vendor still has to
+have been disclosed to the user before it can rely on them.</li>
+<li><strong>The 2.2 change:</strong> since TCF v2.2 (May 2023), LI is no
+longer an allowed basis for the purposes behind personalised ad and
+content profiles.</li>
+<li><strong>The 2.3 change:</strong> this is today's topic. The
+<code>disclosedVendors</code> segment used to be optional and is now
+mandatory. IAB Europe made the change to remove ambiguity about how LI
+and special-purpose disclosure were represented. The rule has a date in
+it. Strings <strong>created before 1 March 2026</strong> without the
+segment stay valid "until they progressively get replaced". Strings
+<strong>created after the deadline</strong> without it are invalid.
+Vendors check their own bit in <code>disclosedVendors</code> (1 =
+disclosed, 0 = not disclosed) to decide whether they can process data
+for special purposes.</li>
+</ul>
+<p>The tester's reading of that rule: one string can be valid or invalid
+depending on when it was created. Seven months after the deadline, both
+kinds of string are still arriving in your traffic.</p>
+<hr />
+<h3 id="2-use-htsm-to-find-what-the-example-based-suite-misses">2. Use
+HTSM to find what the example-based suite misses</h3>
+<p>James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a> is a checklist of guidewords for test strategy.
+Version 6.3 puts extra emphasis on state-based testing and boundaries.
+Three of its Product Factors are useful here.</p>
+<p><strong>Data, and its lifecycle.</strong> A TC string is created,
+stored in a cookie or local storage, re-sent on each request, sometimes
+updated, and eventually replaced. Ask what happens at each stage:</p>
+<ul>
+<li><em>Creation:</em> which CMP wrote it, and on which GVL
+version?</li>
+<li><em>Persistence:</em> how old is the string you received today?
+(Many teams don't log this.)</li>
+<li><em>Transformation:</em> did a macro, a URL-encoding step, or a
+proxy change it? Truncation and <code>+</code>/<code>/</code> vs
+<code>-</code>/<code>_</code> handling are old bugs in base64url
+systems.</li>
+<li><em>Replacement:</em> when a user returns, does the CMP rewrite the
+string with the new segment, or keep re-sending the old one?</li>
+</ul>
+<p><strong>Time.</strong> HTSM's Time factor covers timing, timeouts,
+and the passage of time. Every relevant timing question applies
+here:</p>
+<ul>
+<li><strong>Day-level timestamps.</strong> The spec says
+<code>Created</code> and <code>LastUpdated</code> now carry the same
+day-level value. "Created before 1 March 2026" is therefore a comparison
+of whole UTC days. Test the last day before the cut-off, the cut-off
+day, and the day after. Check whether your code compares against
+midnight UTC or midnight in your server's zone. A Hamburg server on CET
+treats the boundary an hour off unless someone thought about it.</li>
+<li><strong>Who wrote the clock.</strong> CMPs usually run in the
+browser, so <code>Created</code> may come from the user's device clock.
+Ask your team how the decision function treats a string without
+<code>disclosedVendors</code> whose <code>Created</code> date is in
+February 2026 when it first appears in your logs this week. What about a
+<code>Created</code> date in the future? This is a question for the
+team. I'm not claiming a known exploit.</li>
+<li><strong>Version drift.</strong> The string says "GVL version N".
+Your service caches GVL version N+40. If you evaluate the vendor's
+declared purposes against today's list, the code is simpler and wrong.
+Vendors change their declarations between versions, so the encoded
+version is the oracle.</li>
+</ul>
+<p><strong>Interfaces.</strong> The same string reaches you through
+different paths: OpenRTB fields, URL macros, a server-side wrapper, an
+app SDK. Test the decision once per path. A string that decodes
+correctly in the JSON body can arrive truncated in a GET macro.</p>
+<hr />
+<h3
+id="3-design-the-tests-as-a-decision-table-not-a-list-of-examples">3.
+Design the tests as a decision table, not a list of examples</h3>
+<p>Model the rule explicitly. These are the conditions:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Condition</th>
+<th>Values worth testing</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Created</code> day</td>
+<td>before 2026-03-01 / 2026-03-01 / after / future-dated</td>
+</tr>
+<tr class="even">
+<td><code>disclosedVendors</code> segment</td>
+<td>absent / present / present but malformed</td>
+</tr>
+<tr class="odd">
+<td>Our bit in <code>disclosedVendors</code></td>
+<td>1 / 0 / our ID beyond the encoded range</td>
+</tr>
+<tr class="even">
+<td>Our basis for purpose X in the encoded GVL</td>
+<td>consent / LI / not declared</td>
+</tr>
+<tr class="odd">
+<td>User signal for purpose X</td>
+<td>consent=1 / consent=0 / LI objection</td>
+</tr>
+<tr class="even">
+<td>Special purposes declared by us</td>
+<td>yes / no</td>
+</tr>
+</tbody>
+</table>
+<p>You don't need every combination. You do need every row where the
+rule's outcome changes. These are the rows I would write first, because
+each one corresponds to a real failure mode:</p>
+<ol type="1">
+<li><strong>Legacy string, no segment, created February 2026, full
+consent.</strong> Expected: valid. A bidder that "upgraded to 2.3" by
+rejecting every string without the segment silently drops legitimate
+traffic. Nobody files a bug about bids that never happen.</li>
+<li><strong>Same string, but <code>Created</code> = 2026-03-01.</strong>
+Expected: invalid. Note that this is about whether the string is
+<em>valid</em>, which is a separate question from what your business
+does with an invalid one.</li>
+<li><strong>Segment present, our disclosure bit = 0, we declare a
+special purpose.</strong> Expected: we can't rely on the special
+purpose. This is the case 2.3 was written for.</li>
+<li><strong>Our vendor ID is higher than the maximum encoded in a
+range-encoded segment.</strong> A naive decoder throws, returns
+<code>true</code>, or returns <code>undefined</code>. Each of those
+leads to a different business outcome.</li>
+<li><strong>The encoded GVL version shows us declaring LI for a purpose;
+today's GVL shows consent only (or the reverse).</strong> Expected:
+follow the encoded version. This test exists to catch someone
+"simplifying" the cache.</li>
+</ol>
+<p>Get oracles from more than one place. The spec is one. An
+<strong>independent decoder</strong> is another: an open-source TCF
+library, or the decoding function in a data-platform SQL engine such as
+AWS Clean Rooms' <code>consent_tcf_v2_decode</code>. If your decoder and
+an independent one disagree on a string, that's worth investigating even
+when your test is green. A sample of <strong>real production
+strings</strong>, bucketed by <code>Created</code> month, is a third. It
+tells you which rows of your table actually occur in traffic.</p>
+<hr />
+<h3 id="4-observability-shows-how-exposed-you-are">4. Observability
+shows how exposed you are</h3>
+<p>Add one dimension to your existing metrics: <strong>the share of
+incoming strings with no <code>disclosedVendors</code> segment, broken
+down by <code>Created</code> month.</strong></p>
+<ul>
+<li>If that share is still large for strings created months before the
+deadline, many users haven't been re-prompted. Your legacy-validity
+branch is load-bearing code, not dead code.</li>
+<li>If strings without the segment carry recent <code>Created</code>
+dates, some publisher's CMP never migrated. That's a supply-side partner
+conversation, not a bug in your bidder.</li>
+<li>If the decision outcome ("bid personalised / contextual / drop")
+shifted sharply around 1 March 2026 and nobody can explain why, that is
+your most important test result, and no test case produced it.</li>
+</ul>
+<hr />
+<h3
+id="5-the-soft-skill-part-turn-privacy-counsels-rules-into-decisions-someone-owns">5.
+The soft-skill part: turn privacy counsel's rules into decisions someone
+owns</h3>
+<p>Testers who meet consent rules tend to fall into one of two traps.
+One is acting as a junior lawyer ("I think this is non-compliant"). The
+other is staying silent because "legal owns that." Neither helps.</p>
+<p>What helps is translation. Counsel thinks in legal bases and
+obligations. Engineers think in branches. You can show both groups the
+same table.</p>
+<p><strong>Bring cells, not opinions.</strong> Don't say "I'm worried
+about legacy strings." Say this instead:</p>
+<blockquote>
+<p>"Row 2 in this table: string without <code>disclosedVendors</code>,
+created 1 March or later. The spec calls it invalid. Our code currently
+drops the request entirely. The alternative is to bid contextually, with
+no personal data processing. Which of those do you want? I'm not asking
+whether the string is valid. I'm asking what we do with an invalid
+one."</p>
+</blockquote>
+<p><strong>Make the asymmetry visible.</strong> In consent logic, both
+failure modes are quiet. Over-blocking shows up as lower fill rate,
+which someone will blame on the market. Under-blocking shows up much
+later, in an audit or complaint. Neither one throws an error. Say this
+out loud, because stakeholders tend to assume "no alerts" means "no
+problem."</p>
+<p><strong>Get an owner for every ambiguous cell.</strong> For each row
+where the spec is clear, the code should follow the spec, and you test
+it. For each row where the spec leaves a choice to the business (what to
+do with an invalid string, how to treat a future-dated
+<code>Created</code>, whether to trust a CMP known to be misconfigured),
+write down who made the decision and when. This gives you an oracle for
+future regressions. It also protects you when someone later asks why the
+bidder behaved the way it did.</p>
+<p><strong>Report uncertainty precisely.</strong> "Consent handling is
+tested" is not a test report. This is:</p>
+<blockquote>
+<p>"We verified the 2.3 validity rule at the 1 March boundary for
+OpenRTB and GET-macro paths. We haven't verified app-SDK traffic because
+we have no captured strings from it. 31% of today's strings lack the
+segment, almost all created before March. One publisher is still writing
+segmentless strings dated this month. Ad Ops has the list."</p>
+</blockquote>
+<p>The 31% is an example figure. Use your own number. The structure is
+the point: what was covered, what wasn't and why, and what production
+data shows.</p>
+<hr />
+<h3 id="practical-challenge-4560-minutes">Practical challenge (45–60
+minutes)</h3>
+<ol type="1">
+<li><strong>Build the table.</strong> Using the conditions in section 3,
+write the minimum decision table that covers every change in outcome for
+one purpose your product relies on (for example, personalised ad
+selection) and one special purpose. Mark each cell
+<strong>Spec-defined</strong> or <strong>Business choice</strong>.</li>
+<li><strong>Generate five strings</strong> for rows 1–5 above using an
+open-source TCF encoder. Decode each one with a <em>different</em>
+library and compare the results. Write down any disagreement, even a
+cosmetic one.</li>
+<li><strong>Pull a production sample</strong> (or ask the data team for
+one): 10,000 recent strings, bucketed by <code>Created</code> month and
+by segment presence. Write one paragraph on what the distribution says
+about how much traffic depends on the legacy rule.</li>
+<li><strong>Draft the message to counsel.</strong> Five sentences
+maximum, covering the "Business choice" cells, each phrased as a
+decision with an owner. Write no legal opinions of your own.</li>
+</ol>
+<p>Stretch goal: find out where your CMP's <code>Created</code> value
+comes from (browser or server) and write the one test you would add
+because of the answer.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>James Bach, Satisfice — <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model v6.3</a>: Product Factors (Data, Time, Interfaces)
+and the 6.3 emphasis on state and boundaries, applied here to the
+consent-string lifecycle.</li>
+<li>Cem Kaner — <a href="https://kaner.com/?p=190">The Oracle Problem
+and the Teaching of Software Testing</a>: background on why the spec
+alone is not enough of an oracle and why to triangulate with independent
+decoders and production data.</li>
+<li>IAB Europe — <a
+href="https://iabeurope.eu/all-you-need-to-know-about-the-transition-to-tcf-v2-3/">All
+you need to know about the transition to TCF v2.3</a>: the mandatory
+<code>disclosedVendors</code> segment, the 28 Feb / 1 March 2026
+cut-off, validity of legacy strings, and vendors' bit check for special
+purposes.</li>
+<li>IAB Tech Lab — <a
+href="https://github.com/InteractiveAdvertisingBureau/GDPR-Transparency-and-Consent-Framework/blob/master/TCFv2/IAB%20Tech%20Lab%20-%20Consent%20string%20and%20vendor%20list%20formats%20v2.md">Consent
+string and vendor list formats v2 (GitHub spec)</a>: day-level
+<code>Created</code>/<code>LastUpdated</code>, the definition of the
+<code>disclosedVendors</code> segment, and the rule to interpret strings
+using the encoded GVL version.</li>
+<li>Consently — <a
+href="https://consently.net/blog/how-iab-tcf-works">How the IAB TCF
+Works: TC Strings, Vendors, Purposes</a> (vendor blog, used only for the
+primer on string transport via <code>__tcfapi</code>, bid requests, and
+the <code>gdpr_consent</code> macro, and for the v2.2 removal of LI for
+purposes 3–6; checked against the IAB spec).</li>
+<li>AWS — <a
+href="https://docs.aws.amazon.com/clean-rooms/latest/sql-reference/consent_tcf_v2_decode.html"><code>consent_tcf_v2_decode</code>
+(Clean Rooms SQL reference)</a>: an example of an independent decoder to
+use as a comparison oracle.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-35.html" rel="prev"><span>Previous</span>Follow One Kilowatt-Hour: How to Learn an Unfamiliar Domain by Asking Questions That Expose Risk (EV Charging Roaming)</a><a href="/qa-blog/posts/qa-thinking-day-37.html" rel="next"><span>Next</span>Testing SCA Exemptions: You Can Ask for a Frictionless Payment, but the Issuer Decides</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

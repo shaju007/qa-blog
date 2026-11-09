@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Someone in planning says, &quot;Let&#39;s automate the billing regression suite.&quot; That sentence hides three decisions nobody has made. Which risks does the suite cover? What will anyone do when a check goes red? Who wil">
+  <meta name="color-scheme" content="light">
+  <title>Automate the Question, Not the Test Case: A Check Portfolio for SaaS Usage Metering | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 30</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-30">QA Thinking — Day 30</h1>
+<h2
+id="automate-the-question-not-the-test-case-a-check-portfolio-for-saas-usage-metering">Automate
+the Question, Not the Test Case: A Check Portfolio for SaaS Usage
+Metering</h2>
+<p>Someone in planning says, "Let's automate the billing regression
+suite." That sentence hides three decisions nobody has made. Which risks
+does the suite cover? What will anyone do when a check goes red? Who
+will own it in six months?</p>
+<p>Today's lesson is about making those decisions on purpose, using a
+SaaS usage-based billing example.</p>
+<h3 id="the-domain-usage-metering-in-saas">The domain: usage metering in
+SaaS</h3>
+<p>Many SaaS and API platforms charge for consumption, such as API
+calls, seats-per-day, GB stored or messages sent. The pipeline usually
+looks like this:</p>
+<ol type="1">
+<li>The product emits <strong>usage events</strong>, for example
+<code>api_call</code> with a tenant ID, timestamp and quantity.</li>
+<li>An <strong>ingestion</strong> layer deduplicates and validates
+them.</li>
+<li>An <strong>aggregation</strong> job rolls them up per tenant, per
+billing period and per meter.</li>
+<li><strong>Rating</strong> applies the plan: included allowance, tiers,
+overage price, discounts and currency.</li>
+<li>An <strong>invoice</strong> is produced, and the customer sees a
+<strong>usage dashboard</strong> along the way.</li>
+</ol>
+<p>Terms worth knowing:</p>
+<ul>
+<li><strong>Idempotency key</strong>: the event ID that stops a retried
+event from being billed twice.</li>
+<li><strong>Late-arriving events</strong>: events that reach the system
+after the period has closed.</li>
+<li><strong>Billing period cut-off</strong>: the boundary that decides
+which invoice an event lands on, and in which time zone.</li>
+<li><strong>Proration</strong>: partial-period charges after a mid-cycle
+plan change.</li>
+<li><strong>Credit and true-up</strong>: corrections applied on a later
+invoice.</li>
+</ul>
+<p>Failure modes in this domain are expensive and quiet:</p>
+<ul>
+<li>Retried events are double-counted, so customers are overbilled.</li>
+<li>Dropped events cause silent revenue leakage.</li>
+<li>Late events are assigned to the wrong period.</li>
+<li>The dashboard and the invoice disagree.</li>
+<li>A tier boundary is off by one, for example the 1,000,001st
+call.</li>
+<li>A tenant is billed under a plan they were downgraded from.</li>
+</ul>
+<p>Nothing crashes in any of these cases. That matters for the
+automation decision below.</p>
+<h3 id="what-the-sources-give-you">What the sources give you</h3>
+<p>Michael Bolton's <a
+href="https://developsense.com/blog/2019/12/the-secret-life-of-automation">"The
+Secret Life of Automation"</a> argues against the factory-floor story,
+in which tools replace "manual testing" and messy humans give way to
+reliable robots. He treats testing as investigative design work, where
+tools extend a tester's reach but don't do the testing. Behind it sits
+the testing-versus-checking distinction from <a
+href="https://developsense.com/blog/category/testing-and-checking">DevelopSense's
+testing and checking archive</a>. A check is a machine-decidable
+comparison of an observation against an expectation. Deciding which
+checks are worth having, noticing when they've stopped meaning anything,
+and interpreting a failure are all testing.</p>
+<p>The Ministry of Testing community thread <a
+href="https://club.ministryoftesting.com/t/what-maintenance-do-you-have-to-carry-out-on-automated-checks/72169">"What
+maintenance do you have to carry out on automated checks?"</a> supplies
+the cost side. Paul Grizzaffi splits maintenance into four buckets:</p>
+<ul>
+<li><strong>Bugs</strong>: automation is software, so it has bugs of its
+own.</li>
+<li><strong>Parity</strong>: the checks must follow changes in the
+product.</li>
+<li><strong>Infrastructure</strong>: OS, device and tool upgrades.</li>
+<li><strong>Results audits</strong>: someone has to look at the results.
+He asks whether automation is worth it if nobody does.</li>
+</ul>
+<p>Stefan Papusoi's list includes refreshing test data and credentials,
+and deleting flows that can't be made deterministic enough.</p>
+<p>Together these give you two lenses: what a check can and can't tell
+you, and what it costs to keep telling you.</p>
+<h3 id="apply-it-a-check-portfolio-not-a-suite">Apply it: a check
+portfolio, not a suite</h3>
+<p>Don't start from a list of test cases. Start from decisions the team
+must make, and for each one ask what evidence would change it. For
+metering:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Risk / question</th>
+<th>Cheapest honest evidence</th>
+<th>Automate?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Does rating apply tiers correctly at boundaries (0, 1, N, N+1,
+huge)?</td>
+<td>Table-driven checks on the rating function with known inputs</td>
+<td><strong>Yes.</strong> Deterministic, fast and cheap to maintain. The
+oracle is arithmetic you can write down.</td>
+</tr>
+<tr class="even">
+<td>Is a retried event counted once?</td>
+<td>Check at the ingestion API: send the same idempotency key twice and
+assert the aggregate</td>
+<td><strong>Yes.</strong> Pin it at the lowest layer where it can
+fail.</td>
+</tr>
+<tr class="odd">
+<td>Do late events land in the right period?</td>
+<td>Checks with injected clocks and fixed time zones around the
+cut-off</td>
+<td><strong>Yes, but</strong> time handling is a classic source of
+flakiness. Control the clock and don't rely on the wall clock.</td>
+</tr>
+<tr class="even">
+<td>Does the invoice PDF look right to a finance person?</td>
+<td>Human review of a few real-shaped invoices per release</td>
+<td><strong>Mostly no.</strong> A pixel diff tells you something
+changed, not whether it's wrong.</td>
+</tr>
+<tr class="odd">
+<td>Does the dashboard match the invoice for real tenants?</td>
+<td><strong>Reconciliation job in production</strong> (see below)</td>
+<td>Yes, as monitoring and not as a pre-release check.</td>
+</tr>
+<tr class="even">
+<td>Is the pricing model itself sensible for a tenant with spiky
+usage?</td>
+<td>Exploratory session with weird tenants: downgrade mid-month,
+multiple currencies, zero usage, a backfill</td>
+<td><strong>No.</strong> This is investigation. A script only repeats
+what you already thought of.</td>
+</tr>
+</tbody>
+</table>
+<p>The last two rows show the point of the exercise. Some of the
+highest-value evidence is not a pre-release test at all. A nightly
+reconciliation of the events received against the events aggregated
+against the units invoiced catches a class of silent failures that no
+scripted scenario will anticipate. That job is automation, but it's
+closer to observability. Treating it that way keeps it from being forced
+into the regression suite.</p>
+<h3 id="a-decision-card-for-every-proposed-check">A decision card for
+every proposed check</h3>
+<p>Before writing a check, answer these five questions in a sentence
+each. Put the answers in the test's description or the PR.</p>
+<ol type="1">
+<li><strong>Decision</strong>: what will we do differently if this goes
+red? If the answer is "investigate," say who and how fast.</li>
+<li><strong>Risk</strong>: which failure mode does it cover, and what is
+the blast radius? One tenant's invoice, or every tenant's?</li>
+<li><strong>Oracle</strong>: how does the check know the right answer,
+and how could that knowledge be wrong? A check that recomputes the price
+using the same code path as production can't fail meaningfully.</li>
+<li><strong>Blind spot</strong>: what can this check never see? Say it
+explicitly, for example that it never exercises the real clock or the
+payment provider.</li>
+<li><strong>Upkeep</strong>: who owns it, what will break it (data,
+credentials, schema), and when would we delete it?</li>
+</ol>
+<p>If you can't answer the first one, you've found a check that will
+either be ignored or will block a release for no reason. Both outcomes
+cost the team trust.</p>
+<h3 id="talking-to-stakeholders">Talking to stakeholders</h3>
+<p>When a product owner asks, "What percentage of billing is
+automated?", don't answer with a number. Coverage percentages measure
+how much was written, not how much was learned. Try this instead:</p>
+<blockquote>
+<p>"Rating rules and idempotency are pinned by fast checks, so we'll
+hear about regressions in minutes. Late-event handling is checked with a
+fixed clock but not against real traffic, so we added a nightly
+reconciliation. Invoice layout and unusual plan changes are covered by
+human exploration each release. The gap I'd flag is currency rounding on
+multi-currency tenants, which nothing covers yet."</p>
+</blockquote>
+<p>That answer is honest about gaps, ties each kind of evidence to a
+risk, and invites a decision about the gap.</p>
+<h3 id="challenge-3040-minutes">Challenge (30–40 minutes)</h3>
+<p>Pick a feature you own whose bugs would be quiet rather than loud,
+such as billing, notifications, reporting, entitlements or data
+sync.</p>
+<ol type="1">
+<li>List <strong>six risks</strong>, covering both loud failures and
+quiet ones.</li>
+<li>For each, fill in the decision card above. Be strict on questions 1
+and 3.</li>
+<li>Sort the risks into four groups: <em>pre-release check</em>,
+<em>production monitor</em>, <em>exploratory charter</em> and <em>accept
+the risk</em>. At least one risk must go in each group.</li>
+<li>Review your <strong>existing</strong> suite. Find one check whose
+decision you can't name. Propose to delete it, merge it or move it to a
+lower layer. Estimate its yearly upkeep using Grizzaffi's four
+buckets.</li>
+<li>Write the three-sentence stakeholder summary, with one explicit
+gap.</li>
+</ol>
+<p><strong>Stretch:</strong> for your most expensive existing check, ask
+what real bug it has caught in the last year. If the answer is none,
+that's useful information about its value, not a reason to feel bad. It
+also shows you where the portfolio is lopsided.</p>
+<h3 id="takeaways">Takeaways</h3>
+<ul>
+<li>Automation is a bet on future evidence, so write down the decision
+it supports.</li>
+<li>Prefer the lowest layer where the failure can be observed, and
+prefer monitoring where the failure only shows up in production.</li>
+<li>A check has a blind spot. Naming it is part of the job.</li>
+<li>Maintenance is a real cost, and results that nobody reads are worth
+nothing.</li>
+<li>Keep the exploratory work. In metering, the failures that cost the
+most are usually the ones nobody scripted.</li>
+</ul>
+<p><em>Sources: Michael Bolton, <a
+href="https://developsense.com/blog/2019/12/the-secret-life-of-automation">The
+Secret Life of Automation</a> (DevelopSense, 2019); DevelopSense, <a
+href="https://developsense.com/blog/category/testing-and-checking">testing
+and checking</a>; Ministry of Testing Club, <a
+href="https://club.ministryoftesting.com/t/what-maintenance-do-you-have-to-carry-out-on-automated-checks/72169">What
+maintenance do you have to carry out on automated checks?</a>. The
+metering pipeline and the decision card are my own synthesis, not taken
+from these sources.</em></p>
+<hr />
+<p><em>Note: the Postman MCP server needs authorization before its tools
+are available. It wasn't needed for this post. To enable it, authorize
+it through your claude.ai connector settings, or run <code>/mcp</code>
+in an interactive session.</em></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-29.html" rel="prev"><span>Previous</span>Testing Time-Zone Rule Changes: Your Fixture List Is Right Today and Wrong on November 1</a><a href="/qa-blog/posts/qa-thinking-day-31.html" rel="next"><span>Next</span>Testing a Rule That Pays You Nothing: Negative-Price Feed-In and What Testers Actually Find</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

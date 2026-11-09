@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario: You&#39;re one of two testers on a marketplace payouts team with 11 developers. The payouts service gets about 60 pull requests a week. Last month a PR moved the payout scheduler&#39;s daily cutoff from 23:00">
+  <meta name="color-scheme" content="light">
+  <title>Your engineering manager wants QA to approve every pull request before it merges. Do you say yes? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 25</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-25">QA Interview Q&amp;A — Day 25</h1>
+<h2
+id="question-your-engineering-manager-wants-qa-to-approve-every-pull-request-before-it-merges-do-you-say-yes">Question:
+Your engineering manager wants QA to approve every pull request before
+it merges. Do you say yes?</h2>
+<p><strong>Scenario:</strong> You're one of two testers on a marketplace
+payouts team with 11 developers. The payouts service gets about 60 pull
+requests a week. Last month a PR moved the payout scheduler's daily
+cutoff from 23:00 to 00:00 "for consistency." Code review approved it in
+an hour. After the change, sellers in Australia and New Zealand were
+paid a day late for a week. Support took 400 tickets, and some sellers
+missed rent payments.</p>
+<p>At the retro, the engineering manager says: "From next sprint, every
+PR in payouts-service needs a QA approval before merge. QA, you'd want
+this, right?" In Slack, two senior developers are already complaining
+that it will "turn QA into a merge queue."</p>
+<hr />
+<h2 id="answer">Answer</h2>
+<p><strong>Short version:</strong> I wouldn't agree to a blanket QA
+approval on every PR. I also wouldn't just say no and leave it there.
+The manager has a real problem: a risky change got through review that
+only looked at the code. I want to fix that problem without making a
+tester's tick in GitHub the thing everyone relies on. I'd offer a
+targeted, time-boxed alternative and agree in advance how we'll judge
+whether it worked.</p>
+<h3 id="1-start-with-the-incident-not-the-process">1. Start with the
+incident, not the process</h3>
+<p>Before I say anything about approvals, I want to know whether a QA
+approval would actually have caught this bug. So I'd look at:</p>
+<ul>
+<li><strong>The PR itself.</strong> Did the diff show the risk? Changing
+<code>CUTOFF_HOUR = 23</code> to <code>0</code> looks harmless. The risk
+was in how that value interacts with the seller's time zone, the bank's
+settlement window and the payout calendar. None of that is in the diff.
+A tester skimming 60 diffs a week would likely have approved this one
+too.</li>
+<li><strong>What anyone knew beforehand.</strong> Was there a story? Did
+anyone ask "who gets paid when?" before coding started? A question like
+that comes up in refinement or a 10-minute test chat, not in PR
+review.</li>
+<li><strong>Our recent incident history.</strong> For the last 3–6
+months of payout incidents, could we have spotted the risky PRs ahead of
+time by file path, by type of change (scheduling, currency, ledger,
+provider config), or by story? If yes, targeted involvement works. If
+no, PR review is the wrong place to catch them, whoever does it.</li>
+</ul>
+<p>This keeps the discussion about evidence. It's not "QA wants to avoid
+work." It's "let's put the effort where this kind of bug can actually be
+found."</p>
+<h3 id="2-why-a-blanket-qa-approval-is-a-weak-control">2. Why a blanket
+QA approval is a weak control</h3>
+<p><strong>The numbers don't work.</strong> 60 PRs a week split between
+two testers is about 6 PRs per tester per day, on top of everything
+else. A gate that heavy gets rubber-stamped within a month. GitHub also
+has a setting, "Dismiss stale pull request approvals when new commits
+are pushed," that teams often turn on. With it, every fixup commit wipes
+the approval, so testers end up approving the same PR several times. The
+queue grows and attention drops.</p>
+<p><strong>An approval says less than people assume.</strong> In GitHub,
+an approval only lets the PR merge. It doesn't record what was tested,
+what wasn't, or what risks are left. After the next incident, the
+question becomes "QA approved this, why didn't QA catch it?"
+Practitioners in a <a
+href="https://club.ministryoftesting.com/t/sign-off-from-testers-or-others/84760">Ministry
+of Testing discussion on tester sign-off</a> describe exactly this.
+Michael Bolton makes the underlying point in <a
+href="https://developsense.com/blog/2018/12/pressing-the-green-button">"Pressing
+the Green Button"</a>: a tester's job is to find and report reasons
+someone who matters might approve or reject, and the approve/reject
+decision belongs to management. A QA tick on every PR blurs that. It
+looks like the tester is vouching for the change, when the tester is
+really reporting on it.</p>
+<p><strong>The delivery research points the other way.</strong> DORA's
+<a
+href="https://dora.dev/capabilities/streamlining-change-approval/">research
+on change approval</a> found no evidence that formal approval by people
+outside the team lowers change failure rates. It also found that such
+approvals slow delivery and lead to bigger, riskier batches. Its listed
+pitfalls include "applying identical approval processes to all changes
+regardless of risk" and "adding more process when production problems
+occur." A blanket QA gate is both. DORA recommends peer review backed by
+automated testing, with scrutiny scaled to risk. Testers are team
+members, not an external board, but a mandatory sign-off from one role
+on every change works the same way.</p>
+<p><strong>It moves testing late.</strong> The cutoff bug needed someone
+to ask about time zones and settlement windows before the code existed.
+A merge gate puts testers at the end of the line again, just with a new
+tool.</p>
+<h3 id="3-what-id-propose-instead-a-4-week-trial">3. What I'd propose
+instead: a 4-week trial</h3>
+<ol type="1">
+<li><strong>Risk-based involvement by file path.</strong> Use <a
+href="https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners">CODEOWNERS</a>
+to automatically add a tester <em>and</em> a developer with domain
+knowledge as reviewers when a PR touches risky areas: scheduling and
+cutoffs, currency and rounding, the ledger, payout provider adapters,
+feature-flag config. My preference is to request the tester's review
+without requiring it. If the team wants it to block, GitHub's "Require
+review from Code Owners" setting is satisfied by any one listed owner.
+The domain developer can satisfy it, so the tester never becomes the
+only gatekeeper.</li>
+<li><strong>A testing-notes section in the PR template</strong>, filled
+in by the author: <em>What could this break? What did you test, and
+where? What didn't you test? Is any of this time-, locale- or
+money-sensitive?</em> Unlike an approval, this records what was actually
+done. It also makes the author think about risk, which is the real fix
+for a PR like the cutoff change.</li>
+<li><strong>A 10-minute test chat before coding</strong> on stories
+labelled payout-sensitive. The developer, the tester and ideally the PO
+ask: who is affected, at what time, in which currency and time zone, and
+how would we notice if it went wrong?</li>
+<li><strong>Testers review tests, not just code.</strong> On risky PRs
+I'd check whether the tests cover the right cases. For example, does a
+cutoff test include a seller at UTC+11 and a bank holiday? I don't need
+to be a Kotlin expert to spot that a test suite has only ever run in a
+UTC timezone.</li>
+<li><strong>Pairing on request.</strong> Any developer can ask a tester
+to explore their branch in a preview environment before merge. That's an
+offer, not a gate.</li>
+</ol>
+<p><strong>How we'd judge it after 4 weeks:</strong> time PRs wait for
+tester review, the share of PRs routed to testers, how many tester
+comments led to a code or test change, and payout incidents traced back
+to unflagged PRs. If risky changes still get through on paths we didn't
+flag, we widen the paths or reconsider. If tester comments almost never
+change anything, I'm adding wait time without adding value, and we
+should stop.</p>
+<h3 id="4-what-id-say-in-the-retro">4. What I'd say in the retro</h3>
+<blockquote>
+<p>"I want what you want: nobody gets paid late again because of a
+one-line change. But I don't think my approval on all 60 PRs a week
+would have caught this one. The diff looked fine. The risk was time
+zones and the settlement window, and that's a conversation we needed
+before coding. If I'm approving every PR, I'll be skimming, and the tick
+will suggest I checked things I didn't.</p>
+<p>Here's a proposal for four weeks. Payout-sensitive paths
+automatically pull in me and a domain dev. Authors fill in a short
+testing-notes section. Payout-sensitive stories get a ten-minute test
+chat before anyone writes code. We'll measure wait time and whether my
+reviews actually change anything. It's your call. If you still want a
+blanket gate after that, I'll make it work, but I'd want us to write
+down what a QA approval does and doesn't mean."</p>
+</blockquote>
+<p>That last line matters. I'm not the one who decides team process, and
+I shouldn't act as if I am. If the manager overrules me, I'd ask for
+three things in writing: what a QA approval covers ("tester read the
+testing notes and tested X in a preview environment," not "QA
+certifies"), a review response time, and a date to look at the decision
+again.</p>
+<h3 id="5-working-with-the-developers">5. Working with the
+developers</h3>
+<p>The developers' concern is legitimate, so I'd agree with it out loud:
+"You're right that a merge queue would slow you down and wouldn't make
+things much safer." Then I'd ask them to help pick the risky paths and
+write the template questions. If they help design it, they're more
+likely to fill it in honestly. I'd also ask what kind of tester input
+would actually be useful to them. Often the answer is "tell me earlier,"
+which is the whole point of the proposal.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Yes, more checks mean more quality."</strong> This ignores
+the review load, the blame dynamic and the evidence that external
+approval doesn't lower failure rates.</li>
+<li><strong>"No, QA tests in staging, not PRs."</strong> This defends
+your turf and does nothing about the real gap.</li>
+<li><strong>"Testers should review code to shift left."</strong> Reading
+diffs isn't the same as testing early. The useful early work is asking
+about risk before the code is written.</li>
+<li><strong>Talking only about process and never checking whether the
+proposed gate would have caught the actual incident.</strong></li>
+<li><strong>Saying "I won't approve anything"</strong> as if the tester
+owned the process. Recommend, measure, and let the manager decide.</li>
+</ul>
+<hr />
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><em>Three weeks into the trial, you notice a developer splitting a
+scheduling change into small PRs so that none of them touches a
+CODEOWNERS path. What do you do, and what does it tell you about the
+process?</em> (Look for: treating it as information about the process,
+not a discipline issue. Talk to the developer first, ask why the path
+rules felt like a burden, and check whether the paths are drawn too
+broadly or too narrowly.)</li>
+<li><em>You can't read the language the service is written in. How do
+you still add real value on a payout-sensitive PR?</em> (Look for:
+reviewing the testing notes and test names for missing cases such as
+time zones, holidays and currencies, exploring the branch in a preview
+environment, asking "what happens if…" questions, and checking that logs
+and alerts would show the failure in production.)</li>
+</ol>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, DevelopSense, <a
+href="https://developsense.com/blog/2018/12/pressing-the-green-button">"Pressing
+the Green Button"</a>. Argues that the tester's job is to find and
+report reasons to approve or reject, while the decision belongs to
+management. It's the basis for not letting a QA tick stand in for
+evidence.</li>
+<li>Ministry of Testing Club, <a
+href="https://club.ministryoftesting.com/t/sign-off-from-testers-or-others/84760">"'Sign
+off' from testers? Or others?"</a>. Practitioners discuss how tester
+sign-off becomes a target for blame ("you signed off the testing…") and
+suggest reporting coverage and risk instead.</li>
+<li>DORA, <a
+href="https://dora.dev/capabilities/streamlining-change-approval/">"Streamlining
+change approval"</a>. Research finding no evidence that formal external
+approval lowers change failure rates, with listed pitfalls (same process
+for every change, more process after incidents) and suggested metrics
+such as wait time and share of changes needing manual approval. Used for
+the trial measures.</li>
+<li>GitHub Docs, <a
+href="https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners">"About
+code owners"</a>. How CODEOWNERS automatically requests reviewers by
+path, and that approval from any one listed owner satisfies a required
+code-owner review. That's what lets a domain developer share the role
+with a tester.</li>
+<li>GitHub Docs, <a
+href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">"About
+protected branches"</a>. Documents the "Dismiss stale pull request
+approvals when new commits are pushed" and "Require approval of the most
+recent reviewable push" settings, which explain why a blanket approval
+gate leads to repeated re-approvals.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-24.html" rel="prev"><span>Previous</span>Your product owner says, &quot;You find all the edge cases anyway. From next sprint, can you just write the acceptance criteria?&quot; Do you say yes?</a><a href="/qa-blog/posts/qa-interview-day-26.html" rel="next"><span>Next</span>Two days before release, your designer files 47 &quot;design QA&quot; tickets against the redesigned live match centre. In triage, the engineering lead says: &quot;QA, can you close the cosmetic ones so we can ship?&quot; What do you do?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Domain: B2B SaaS / identity lifecycle · Focus: API and integration testing, business rules, facilitating a decision nobody has made yet">
+  <meta name="color-scheme" content="light">
+  <title>Testing SCIM Deprovisioning: active: false Is a Request to Revoke Access, Not Proof That Access Is Gone | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 38</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-38">QA Thinking — Day 38</h1>
+<h2
+id="testing-scim-deprovisioning-active-false-is-a-request-to-revoke-access-not-proof-that-access-is-gone">Testing
+SCIM Deprovisioning: <code>active: false</code> Is a Request to Revoke
+Access, Not Proof That Access Is Gone</h2>
+<p><strong>Domain:</strong> B2B SaaS / identity lifecycle ·
+<strong>Focus:</strong> API and integration testing, business rules,
+facilitating a decision nobody has made yet</p>
+<hr />
+<h3 id="the-scenario">The scenario</h3>
+<p>Your company sells a B2B SaaS analytics product. Enterprise customers
+connect their identity provider (IdP), usually Okta or Microsoft Entra
+ID, so their users can sign in with SSO and so accounts get created and
+removed automatically through <strong>SCIM</strong> (System for
+Cross-domain Identity Management).</p>
+<p>A large customer's security team sends a short question during
+contract renewal:</p>
+<blockquote>
+<p>"When we offboard an employee in Okta, how quickly do they lose
+access to your product, and how do you prove it?"</p>
+</blockquote>
+<p>The developers say: "We support SCIM. When Okta deactivates the user,
+we set <code>active = false</code>. Done." The ticket closes and the
+automated check passes. The check sends a <code>PATCH</code>, then
+<code>GET /Users/{id}</code>, then asserts
+<code>active == false</code>.</p>
+<p>That check proves the database row changed. It doesn't show that the
+person lost access. Most of today's lesson is about the distance between
+those two things.</p>
+<hr />
+<h3
+id="domain-primer-what-you-need-to-know-about-scim-and-offboarding">Domain
+primer: what you need to know about SCIM and offboarding</h3>
+<ul>
+<li><strong>SSO vs. SCIM.</strong> SSO (SAML/OIDC) decides who can
+<em>start</em> a session. SCIM is a REST protocol that the IdP uses to
+<em>create, update and deactivate</em> accounts in your app. They are
+separate channels, and a customer can have one without the other.</li>
+<li><strong>Joiner / Mover / Leaver (JML).</strong> IT teams think in
+these three events. Testers usually cover "joiner" well because the demo
+shows it. "Mover" (role or group changes) and "leaver" (offboarding) are
+where the risk sits.</li>
+<li><strong>Soft delete vs. hard delete.</strong> IdPs mostly <em>don't
+delete</em> users in your app. Okta's SCIM docs say it doesn't send
+DELETE for user objects at all. It deactivates by setting
+<code>active</code> to <code>false</code>, using PATCH for new Okta
+Integration Network apps and PUT for older custom integrations.
+Microsoft Entra's provisioning service disables users with an update in
+several cases: unassigned from the app, out of scope, disabled or
+soft-deleted in the directory. It only sends DELETE when the user is
+hard-deleted, which happens 30 days after a soft delete in Entra.</li>
+<li><strong>Seats.</strong> B2B SaaS is often billed per seat. Whether a
+deactivated user still uses a paid seat is a <strong>billing
+rule</strong>, not an identity rule. Finance cares about it as much as
+security does.</li>
+<li><strong>Tenant admin vs. end user.</strong> The customer's IT admin
+is your real user here. They will never look at your UI during
+offboarding. They look at Okta or Entra and assume your app follows
+it.</li>
+</ul>
+<hr />
+<h3 id="the-key-insight-the-spec-gave-the-decision-to-your-team">The key
+insight: the spec gave the decision to your team</h3>
+<p><a href="https://www.rfc-editor.org/rfc/rfc7643">RFC 7643</a> defines
+the <code>active</code> attribute as a boolean showing the user's
+administrative status and says that "the definitive meaning of this
+attribute is determined by the service provider." The service provider
+is your app.</p>
+<p>So the standard doesn't define what deactivation means. Your team
+does, whether or not anyone wrote it down. If nobody decided, the answer
+is whatever the code happens to do. In practice that's usually "the
+login page rejects them." Everything they already hold keeps
+working.</p>
+<p>The <a
+href="https://workos.com/blog/scim-deprovisioning-promise-your-app-breaks">WorkOS
+article on SCIM deprovisioning</a> (Aug 2026, no named author, vendor
+blog) lists the usual gaps: existing sessions that are never re-checked,
+refresh tokens that keep issuing new access tokens, and API keys or
+personal access tokens that "usually aren't tied to the SCIM user at
+all." I'm using it as a list of hypotheses to test, not as evidence. The
+underlying fact, that <code>active</code> means whatever you implement,
+comes from the RFC itself.</p>
+<p>This changes your role. You're no longer just checking a requirement.
+You're <strong>finding a missing requirement and getting the right
+people to decide it</strong>.</p>
+<hr />
+<h3
+id="step-1-map-every-place-access-lives-htsm-structure-time-interfaces-operations">Step
+1: Map every place access lives (HTSM Structure, Time, Interfaces,
+Operations)</h3>
+<p>James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a> (v6.3, Satisfice) lists product factors to think
+through: Structure, Function, Data, Interfaces, Platform, Operations,
+Time. Don't recite them. Use them to find the forms of access that a
+"user row" model hides.</p>
+<p><strong>Structure: what can still let this person in?</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>Credential / access path</th>
+<th>Lifetime</th>
+<th>Does <code>active=false</code> reach it?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Browser session cookie</td>
+<td>until expiry or logout</td>
+<td>Only if every request re-checks status</td>
+</tr>
+<tr class="even">
+<td>OAuth refresh token (web, mobile app)</td>
+<td>days to months</td>
+<td>Only if revoked explicitly</td>
+</tr>
+<tr class="odd">
+<td>Access token / JWT already issued</td>
+<td>minutes to hours</td>
+<td>Usually <em>no</em>. Stateless tokens are valid until they
+expire</td>
+</tr>
+<tr class="even">
+<td>Personal API token / PAT</td>
+<td>often "never expires"</td>
+<td>Only if tied to the user</td>
+</tr>
+<tr class="odd">
+<td>OAuth grants to third-party apps (e.g. "Connect to Slack")</td>
+<td>long-lived</td>
+<td>Rarely considered</td>
+</tr>
+<tr class="even">
+<td>Open WebSocket / live dashboard stream</td>
+<td>as long as the tab is open</td>
+<td>Almost never re-authorized</td>
+</tr>
+<tr class="odd">
+<td>Mobile offline cache / exported data links</td>
+<td>varies</td>
+<td>Signed download URLs outlive everything</td>
+</tr>
+<tr class="even">
+<td>Scheduled jobs <em>owned</em> by the user (email reports,
+exports)</td>
+<td>indefinite</td>
+<td>Keep sending data to an inbox that may be forwarded</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Time: how long after the IdP action until real access
+ends?</strong> That's the number the customer's security team is asking
+for. It's several delays added together:</p>
+<ol type="1">
+<li>The IdP's own delay. Entra runs provisioning in periodic incremental
+cycles. Failed operations are retried in the next cycle with "gradually
+scaling back" frequency. If most calls fail, the job goes into
+<strong>quarantine</strong>, where cycles drop to once per day (<a
+href="https://learn.microsoft.com/en-us/entra/identity/app-provisioning/how-provisioning-works">Microsoft
+Learn: How provisioning works</a>).</li>
+<li>Your processing delay (queue, async worker).</li>
+<li>Credential lifetime: how long already-issued tokens stay valid.</li>
+</ol>
+<p>The Entra documentation implies something important: <strong>if your
+deactivation endpoint returns a 500, the ex-employee keeps access until
+the IdP retries, and in quarantine that can be a day or longer.</strong>
+Your error handling is part of your security boundary.</p>
+<p><strong>Interfaces: what does the IdP actually send?</strong>
+Microsoft's <a
+href="https://learn.microsoft.com/en-us/entra/identity/app-provisioning/application-provisioning-config-problem-scim-compatibility">SCIM
+compliance known-issues page</a> shows that without the
+<code>aadOptscim062020</code> flag, Entra disables users with:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span> <span class="dt">&quot;op&quot;</span><span class="fu">:</span> <span class="st">&quot;Replace&quot;</span><span class="fu">,</span> <span class="dt">&quot;path&quot;</span><span class="fu">:</span> <span class="st">&quot;active&quot;</span><span class="fu">,</span> <span class="dt">&quot;value&quot;</span><span class="fu">:</span> <span class="st">&quot;False&quot;</span> <span class="fu">}</span></span></code></pre></div>
+<p>With the flag, it sends <code>"op": "replace"</code> and the boolean
+<code>false</code>. Microsoft says the compliant behavior "will become
+the default over the next few months" but still lists the fix date as
+TBD. So the same customer action can reach your API as a
+<strong>capitalized op with a string value</strong> or as a lowercase op
+with a boolean, depending on how that tenant was configured. Add Okta's
+PUT for older custom apps and you have at least three request shapes
+that all mean "this person has left."</p>
+<p>A parser that strictly accepts only the RFC example may reject a real
+deactivation with a 400. Or worse, it may accept the request, ignore an
+unrecognized op, and return 200 without changing anything.</p>
+<p><strong>Operations: how do real admins actually offboard
+people?</strong> Unassigning the app. Removing someone from a group that
+grants the app. Disabling them in the directory. Deleting them. Entra
+treats leaving a dynamic group as a deprovisioning event. It
+<strong>doesn't read nested groups</strong>, so a user assigned only
+through a nested group may never be provisioned or deprovisioned by
+SCIM. Also consider reactivation: Entra's docs note that when a
+soft-deleted user becomes active again, it reactivates the user but
+doesn't automatically restore their dynamic group memberships.</p>
+<hr />
+<h3
+id="step-2-find-the-business-rule-conflict-before-it-reaches-production">Step
+2: Find the business-rule conflict before it reaches production</h3>
+<p>Once you've mapped the credentials, the team will disagree, and they
+should. The questions are business decisions:</p>
+<ul>
+<li><strong>Personal API tokens.</strong> Security wants them revoked
+immediately. Customer Success knows that in many customer accounts, a
+nightly data sync runs on the token of an engineer who left two years
+ago. Revoke on deactivation and you break that customer's production
+integration on the day an admin tidies up Okta. Neither side is
+wrong.</li>
+<li><strong>Owned objects.</strong> Do the user's dashboards, scheduled
+reports and alert rules keep running, get transferred, or get paused?
+Who is notified?</li>
+<li><strong>Seats.</strong> Does deactivation release the seat
+immediately, at the end of the billing period, or only at hard
+delete?</li>
+<li><strong>Reactivation.</strong> If a contractor returns three months
+later, do they get their old roles back? What if their email address has
+since been given to a <em>different</em> person (common with
+<code>firstname@</code> addresses)?</li>
+<li><strong>Deletion.</strong> When Entra sends DELETE after 30 days, is
+that a hard purge (privacy-friendly, audit-hostile) or another soft
+delete?</li>
+</ul>
+<p>Your job isn't to pick the answers. It's to make sure <strong>someone
+with authority picks them deliberately</strong>, with the consequences
+visible.</p>
+<hr />
+<h3
+id="step-3-facilitate-the-deactivation-contract-soft-skills-that-do-the-work">Step
+3: Facilitate the "deactivation contract" (soft skills that do the
+work)</h3>
+<p>Don't take this to the team as a bug titled "Sessions not revoked on
+SCIM deactivate." That framing starts an argument about whether it's a
+bug. The developer will say, correctly, that the code does what the
+ticket said.</p>
+<p>Take it as a <strong>gap in the definition</strong>, with evidence
+and options. A 30-minute session with the PO, a security engineer, a
+backend developer and someone from Customer Success or Support works
+well.</p>
+<p><strong>Open with the evidence, not an opinion:</strong></p>
+<blockquote>
+<p>"I deactivated a test user through SCIM at 10:02. At 10:47 that
+user's browser tab was still loading dashboards, their PAT still pulled
+data via the API, and their scheduled report went out at 11:00. The RFC
+says the meaning of <code>active</code> is ours to define, and we
+haven't defined it. I'd like us to decide it today, because a customer's
+security team has asked us for a number."</p>
+</blockquote>
+<p><strong>Lay out options with consequences</strong>, not a
+recommendation disguised as a question:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Credential</th>
+<th>Option A: revoke immediately</th>
+<th>Option B: revoke and notify the admin</th>
+<th>Option C: keep, flag as orphaned</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Sessions</td>
+<td>Safe, small UX cost</td>
+<td>n/a</td>
+<td>Not defensible</td>
+</tr>
+<tr class="even">
+<td>PATs</td>
+<td>Breaks unknown integrations</td>
+<td>Breaks them, but the admin knows why</td>
+<td>Fails the customer's security question</td>
+</tr>
+<tr class="odd">
+<td>Scheduled reports</td>
+<td>Silent loss of reports for others</td>
+<td>Admin can reassign</td>
+<td>Data keeps leaving the company</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Handle disagreement by naming the trade-off, not taking a
+side.</strong> If Security and Customer Success clash over PATs, a
+useful move is: <em>"It sounds like we agree a leaver's token must stop
+working. We disagree on whether a customer should find out from an
+outage or from a notification. Can we decide that part?"</em> That turns
+a fight about values into a decision about design, often something like
+"service accounts for integrations, plus a pre-deactivation warning
+listing tokens that will be revoked."</p>
+<p><strong>Close by writing the contract down</strong>, one row per
+credential type: what happens, within what time, what the admin sees,
+what is logged. That table becomes your test oracle. It's also the
+honest answer to the customer: a commitment you can test, instead of "we
+support SCIM."</p>
+<hr />
+<h3 id="step-4-turn-the-contract-into-tests-and-checks">Step 4: Turn the
+contract into tests and checks</h3>
+<p><strong>Exploratory charter (60 min):</strong></p>
+<blockquote>
+<p><em>Explore SCIM deactivation using each real IdP payload shape, with
+a test user holding every credential type in the Structure table, to
+discover which access paths survive deactivation and for how
+long.</em></p>
+</blockquote>
+<p>Setup matters more than technique here. Before deactivating, give the
+test user <em>everything</em>: two browser sessions, a mobile login, a
+PAT, an OAuth grant to a third-party app, an open live dashboard, a
+scheduled report and a dashboard shared with a colleague. Then
+deactivate and try every path again, with timestamps.</p>
+<p><strong>Test ideas worth running:</strong></p>
+<ol type="1">
+<li>Send all three payload shapes (Entra legacy
+<code>Replace</code>/<code>"False"</code>, Entra compliant, Okta PUT).
+The oracle is that access actually ends, not that the response is
+200.</li>
+<li>Send a deactivation PATCH with an op your parser doesn't recognize.
+Does it return 400, or 200 with nothing changed? Silent success is the
+worst outcome.</li>
+<li>Make deactivation fail (DB unavailable, timeout) and check the
+response code. Then ask how long the IdP takes to retry, and whether
+your operators would even know.</li>
+<li>Deactivate, then reactivate within one minute. Do you get a race
+between async revocation and reactivation, so the user ends up active
+but with tokens revoked, or worse, inactive but with live tokens?</li>
+<li>Remove the user from the granting group, not from the app. Then test
+with a nested group.</li>
+<li>Deactivate a user who <strong>owns</strong> the only admin role in
+the tenant. Does the tenant now have no admin?</li>
+<li>Reactivate a user whose email now belongs to someone else. Whose
+data does the account see?</li>
+</ol>
+<p><strong>What to automate (and what not to):</strong> Automate the
+<strong>post-deactivation probe</strong>: a check that sets up a user
+with every credential type, deactivates them through each payload
+variant, then calls a protected endpoint with <em>each credential</em>
+and expects 401/403 within the agreed time. That check encodes the
+contract, which <code>GET /Users/{id}</code> →
+<code>active == false</code> never did. Keep the reactivation races and
+ownership scenarios exploratory until you understand them. Automate only
+the ones that turn into stable rules.</p>
+<p><strong>Observability:</strong> Ask for one metric and one log
+query:</p>
+<ul>
+<li><strong>Metric:</strong> time between "SCIM deactivation received"
+and "last successful authenticated request by that user ID." In
+production, this is your real revocation latency, measured on real
+customers.</li>
+<li><strong>Alert:</strong> any authenticated request from a user whose
+<code>active</code> is false. Under a correct implementation that should
+be zero, so any occurrence is a real signal.</li>
+<li><strong>Log:</strong> SCIM requests that returned non-2xx for
+deactivation operations. Each one may mean a leaver still has
+access.</li>
+</ul>
+<hr />
+<h3 id="why-this-is-a-testers-problem-not-just-securitys">Why this is a
+tester's problem, not just security's</h3>
+<p>Security reviews usually ask whether a control <em>exists</em>.
+Testers ask whether the control <em>works under the conditions it will
+actually face</em>: real IdP payloads, retries, reactivation, ownership,
+long-lived tokens. The most valuable result here isn't a bug report.
+It's a sentence the company can honestly put into a security
+questionnaire, backed by a check that fails if it stops being true.</p>
+<hr />
+<h3 id="practical-challenge-4560-minutes">Practical challenge (45–60
+minutes)</h3>
+<p>Pick any product you work on that has users. If it has no SCIM, use
+your own admin "disable user" button. The same reasoning applies.</p>
+<ol type="1">
+<li><strong>Inventory:</strong> List every credential or access path a
+user can hold (aim for at least 6; use the Structure table as a prompt).
+For each, write down its lifetime and whether you <em>know</em> what
+happens to it on deactivation, or are <em>assuming</em>.</li>
+<li><strong>Measure one:</strong> Pick the path you trust least.
+Deactivate a test user and measure how long that path keeps working.
+Record timestamps.</li>
+<li><strong>Find the business conflict:</strong> Identify one credential
+where revoking immediately would hurt a customer (an integration, a
+shared report, a seat). Write the two-sentence trade-off as you'd say it
+in a meeting, without picking a side.</li>
+<li><strong>Draft the contract row:</strong> For that credential, write:
+<em>what happens, within what time, what the admin sees, what gets
+logged.</em> Bring it to your next refinement as a question, not a
+bug.</li>
+</ol>
+<p><strong>Stretch:</strong> Write the oracle for an automated
+post-deactivation probe in plain language (inputs, the expected
+observation per credential, the time limit) and get a developer to agree
+it's the right assertion before anyone writes code.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>James Bach, <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model v6.3 (Satisfice)</a>: product factors (Structure,
+Interfaces, Operations, Time) used to map access paths</li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc7643">RFC 7643: SCIM Core
+Schema</a>: definition of <code>active</code>; meaning determined by the
+service provider</li>
+<li>Microsoft Learn, <a
+href="https://learn.microsoft.com/en-us/entra/identity/app-provisioning/application-provisioning-config-problem-scim-compatibility">Known
+issues with SCIM 2.0 protocol compliance (Entra ID)</a>: legacy vs.
+compliant disable payloads, <code>aadOptscim062020</code> flag</li>
+<li>Microsoft Learn, <a
+href="https://learn.microsoft.com/en-us/entra/identity/app-provisioning/how-provisioning-works">How
+application provisioning works in Microsoft Entra ID</a>: deprovisioning
+triggers, 30-day hard delete, retries, quarantine, nested-group
+limitation, reactivation caveat</li>
+<li>Okta Developer, <a
+href="https://developer.okta.com/docs/api/openapi/okta-scim/guides/scim-20">SCIM
+2.0 protocol guide</a>: PATCH for OIN apps, PUT for custom apps, no
+DELETE of user objects</li>
+<li>WorkOS, <a
+href="https://workos.com/blog/scim-deprovisioning-promise-your-app-breaks">SCIM
+Deprovisioning Is a Promise Your App Probably Breaks</a>: vendor
+practitioner article, used for failure hypotheses (sessions, refresh
+tokens, API keys) and checked against the primary sources above</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-37.html" rel="prev"><span>Previous</span>Testing SCA Exemptions: You Can Ask for a Frictionless Payment, but the Issuer Decides</a><a href="/qa-blog/posts/qa-thinking-day-39.html" rel="next"><span>Next</span>Reporting on a Ticket On-Sale: &quot;It Works&quot; Describes What You Saw. It Can&#39;t Promise Friday at 10:00</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

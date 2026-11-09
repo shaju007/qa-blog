@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Today is 26 October. In 2026, Black Friday falls on 27 November, and many German shops start &quot;Black Week&quot; on Monday 23 November. That date matters for testers right now. Under EU price-indication rules, a price">
+  <meta name="color-scheme" content="light">
+  <title>&quot;Works as Designed&quot; Is Not the End of the Conversation: Testing Black Week Price Reductions When Every Team Is Technically Right | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 34</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-34">QA Thinking — Day 34</h1>
+<h2
+id="works-as-designed-is-not-the-end-of-the-conversation-testing-black-week-price-reductions-when-every-team-is-technically-right">"Works
+as Designed" Is Not the End of the Conversation: Testing Black Week
+Price Reductions When Every Team Is Technically Right</h2>
+<p>Today is 26 October. In 2026, Black Friday falls on 27 November, and
+many German shops start "Black Week" on Monday 23 November. That date
+matters for testers right now. Under EU price-indication rules, a
+price-reduction claim is measured against the lowest price the shop
+charged in the 30 days before the reduction. For a reduction that starts
+on 23 November, those 30 days begin on 24 October. Any price you set
+this week is already part of the baseline for the Black Week claim.</p>
+<p>Today's lesson combines e-commerce domain knowledge with a hard soft
+skill: what to do when you find something worrying and every person you
+show it to is correct about their own part.</p>
+<hr />
+<h3 id="the-conversation-you-will-probably-have">The conversation you
+will probably have</h3>
+<p>You are testing the Black Week campaign for a Hamburg-based
+electronics and lifestyle shop. You notice this on a product page:</p>
+<blockquote>
+<p><del>€99.99</del> <strong>€59.99</strong> — <strong>−40%</strong></p>
+</blockquote>
+<p>You check the price history. From 9 to 12 November, during a Singles'
+Day promotion, the same headphones were sold at
+<strong>€69.99</strong>.</p>
+<p>You raise it with the developer: <em>"The strikethrough uses the
+<code>compare_at_price</code> field. Merchandising sets that field. The
+code does what the ticket says. Works as designed."</em></p>
+<p>You raise it with the product owner: <em>"Merchandising owns prices.
+It's not a bug in our feature."</em></p>
+<p>Both of them are right. The code matches the spec, and the PO doesn't
+own prices. But the shop is about to tell thousands of customers they
+are saving 40%, when the saving against the legally relevant reference
+price is about 14%.</p>
+<p>A weak tester argues about whether this is "a bug" and loses. A
+strong tester sees that nobody disagrees about the facts. The
+disagreement is about which rule applies and who gets to decide, so the
+tester moves the conversation to that question.</p>
+<hr />
+<h3 id="the-core-idea-maybe-a-bug-definitely-an-issue">The core idea:
+maybe a bug, definitely an issue</h3>
+<p>Michael Bolton separates bugs from issues in <a
+href="https://developsense.com/blog/2011/01/youve-got-issues">"You've
+Got Issues"</a> (DevelopSense). A <strong>bug</strong> is anything about
+the product that threatens its value to people who matter. An
+<strong>issue</strong> is anything that threatens the value of the
+project, and especially the testing: anything that gives problems "more
+time or more opportunities to hide." One of his examples is behaviour
+the spec is silent or ambiguous about. His verdict is that maybe you
+have a bug, but you certainly have an issue. He also says that if you're
+unsure something is a bug, you can report it as an issue.</p>
+<p>This is very useful in a "works as designed" standoff. You stop
+trying to prove the developer wrong. Instead you report something nobody
+can reasonably dispute:</p>
+<blockquote>
+<p>"A rule that carries legal and reputational risk is currently decided
+by a free-text field. I can't find evidence that anyone who owns that
+risk has seen this case."</p>
+</blockquote>
+<p>You haven't accused anyone, and you don't need a spec to back you up.
+You've made a gap in decision-making visible, and that is squarely part
+of a tester's job.</p>
+<hr />
+<h3 id="domain-primer-how-promotions-actually-work-in-e-commerce">Domain
+primer: how promotions actually work in e-commerce</h3>
+<p>Promotion engines look simple from the shop front. Behind them is a
+lot of business logic owned by different teams, and that ownership split
+is where the risk sits.</p>
+<p><strong>Why promotions exist.</strong> A discount trades margin for
+something else: conversion, clearing stock, winning customers, or
+average order value (that's the reason for "€15 off orders over €120").
+Merchandising sets prices, marketing designs campaigns, finance cares
+about margin and VAT, legal cares about how prices are presented, and
+engineering builds the engine. A promotion bug usually shows up where
+two of these teams hand over to each other.</p>
+<p><strong>Vocabulary you need:</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>Term</th>
+<th>What it means</th>
+<th>Why testers care</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>List / regular price</strong></td>
+<td>The normal selling price</td>
+<td>Often isn't stored as history, only as the current value</td>
+</tr>
+<tr class="even">
+<td><strong>Compare-at / strikethrough price</strong></td>
+<td>The crossed-out "was" price on the page</td>
+<td>Often a manually entered field with no validation</td>
+</tr>
+<tr class="odd">
+<td><strong>Prior price (Article 6a)</strong></td>
+<td>The <em>lowest</em> price the trader charged in the ≥30 days before
+the reduction</td>
+<td>The legally relevant reference in the EU. It's calculated, not
+entered by hand</td>
+</tr>
+<tr class="even">
+<td><strong>Product / order / shipping discount</strong></td>
+<td>The level a discount applies to: line item, cart subtotal, or
+delivery</td>
+<td>The order they're applied in changes the result</td>
+</tr>
+<tr class="odd">
+<td><strong>Combinability / exclusivity</strong></td>
+<td>Which discounts may stack</td>
+<td>Usually a setting on each discount, so combinations multiply
+fast</td>
+</tr>
+<tr class="even">
+<td><strong>Threshold</strong></td>
+<td>"Over €120" conditions</td>
+<td>Must be re-checked after returns</td>
+</tr>
+<tr class="odd">
+<td><strong>Allocation (proration)</strong></td>
+<td>Splitting an order-level discount across the lines</td>
+<td>Determines refunds and the VAT split across tax rates</td>
+</tr>
+<tr class="even">
+<td><strong>Progressive reduction</strong></td>
+<td>A discount that deepens over the campaign</td>
+<td>Has its own reference-price rule (see below)</td>
+</tr>
+<tr class="odd">
+<td><strong>Individual / personalised offer</strong></td>
+<td>A code meant for one customer</td>
+<td>Exempt from the German rule. Is it still individual once it leaks
+onto a voucher site?</td>
+</tr>
+<tr class="even">
+<td><strong>Gift card vs coupon</strong></td>
+<td>A gift card is a <em>payment method</em>. A coupon is a <em>price
+reduction</em></td>
+<td>Mixing them up breaks tax and refund paths</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Engines differ, and the documentation describes the engine,
+not the business.</strong> Shopify's <a
+href="https://help.shopify.com/manual/discounts/discount-combinations">combining-discounts
+documentation</a> says product discounts are applied first, then order
+discounts to the reduced subtotal, then shipping. Multiple percentage
+order discounts are each calculated on the original subtotal, and a
+percentage order discount is applied before a fixed-amount one. That
+tells you what the platform will do. It doesn't tell you whether
+marketing designed the campaign with that behaviour in mind. Vendor docs
+are a good oracle for "is the engine behaving as documented?" and no
+help at all for "is this what we meant?"</p>
+<hr />
+<h3 id="the-rule-behind-the-strikethrough">The rule behind the
+strikethrough</h3>
+<p>Here is the chain, from primary sources:</p>
+<ol type="1">
+<li><strong>Article 6a of the Price Indication Directive
+98/6/EC</strong> (added by the Omnibus Directive 2019/2161) says any
+announcement of a price reduction must show the prior price, defined as
+the lowest price the trader applied in a period of at least 30 days
+before the reduction. Member states may set different rules for goods
+that spoil quickly, for products on the market less than 30 days, and
+for progressively increasing reductions. (<a
+href="https://eur-lex.europa.eu/eli/dir/1998/6/2022-05-28/eng">EUR-Lex
+consolidated text</a>)</li>
+<li><strong>CJEU, Case C-330/23 (Aldi Süd), September 2024.</strong>
+Aldi's brochure showed bananas at €1.29 next to a struck-through €1.69,
+while the lowest price in the previous 30 days was €1.29. The Court held
+that the reduction itself, whether shown as a percentage or as a claim
+that the price is advantageous, must be based on the 30-day lowest
+price. Showing that price somewhere in the ad is not enough. (<a
+href="https://curia.europa.eu/jcms/upload/docs/application/pdf/2024-09/cp240152en.pdf">Court
+press release</a>; <a
+href="https://www.lewissilkin.com/insights/2024/09/30/more-on-pricing-and-discount-claims-cjeu-clarifies-basis-for-calculating-reducti-102jkhq">Lewis
+Silkin analysis</a>)</li>
+<li><strong>Germany, § 11 PAngV</strong> puts this into national law. It
+has a carve-out for <strong>uninterrupted</strong> stepwise reductions:
+the reference can stay the lowest price before the first step. It also
+exempts <strong>individual</strong> price reductions and reductions on
+goods at imminent risk of spoiling, if that is made transparent. (<a
+href="https://www.gesetze-im-internet.de/pangv_2022/__11.html">§ 11
+PAngV</a>)</li>
+</ol>
+<p>For the headphones: €59.99 against a prior price of €69.99 is a
+reduction of about <strong>14%</strong>, not 40%.</p>
+<p>You are not the shop's lawyer, and you shouldn't act like one. Your
+job is to turn the legal text into <strong>testable conditions</strong>
+and <strong>questions only an owner can answer</strong>:</p>
+<ul>
+<li><strong>Testable:</strong> Does the system store price history per
+SKU? Does it calculate the 30-day minimum? Does the displayed percentage
+use that minimum?</li>
+<li><strong>Owner questions:</strong> Is an app-only price a "price
+applied by the trader"? Is a newsletter code still "individual" after
+it's been posted on a coupon site? We sell in Austria and the
+Netherlands too. Did either country use the member-state options
+differently?</li>
+</ul>
+<hr />
+<h3
+id="the-disagreement-playbook-find-the-layer-where-people-actually-disagree">The
+disagreement playbook: find the layer where people actually
+disagree</h3>
+<p>Most "is it a bug?" arguments drag on because people are arguing on
+different levels. Split the problem into four layers:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Layer</th>
+<th>Question</th>
+<th>In this case</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Observation</strong></td>
+<td>What did we see?</td>
+<td>Nobody disputes it: €99.99 struck through, −40%, and €69.99 in the
+price log</td>
+</tr>
+<tr class="even">
+<td><strong>Rule</strong></td>
+<td>Which oracle applies?</td>
+<td>The developer uses the ticket. You're pointing at the law and the
+CJEU ruling. <em>Both are valid oracles, and they conflict.</em></td>
+</tr>
+<tr class="odd">
+<td><strong>Owner</strong></td>
+<td>Who has the authority to decide?</td>
+<td>Not the developer, and not the PO alone. Probably compliance/legal
+together with merchandising</td>
+</tr>
+<tr class="even">
+<td><strong>Consequence</strong></td>
+<td>What happens if we're wrong, and who pays?</td>
+<td>Consumer-association warning letters (in Germany,
+<em>Abmahnungen</em>), cease-and-desist demands, and a "fake Black
+Friday discounts" story in the press</td>
+</tr>
+</tbody>
+</table>
+<p>"Works as designed" is true at the Rule layer. "Not our bug" is a
+statement at the Owner layer. Neither one answers anything at the
+Consequence layer. So stop arguing about the Rule and say:</p>
+<blockquote>
+<p>"I agree the code matches the ticket. I'm not asking you to change
+anything yet. I think the ticket never had to deal with the 30-day rule,
+and the people who own that risk haven't seen this case. Can we work out
+together who decides, before 23 November?"</p>
+</blockquote>
+<p>The other person loses nothing by agreeing, which is what makes this
+influence without authority rather than escalation.</p>
+<h3 id="turn-the-bug-report-into-a-decision-request">Turn the bug report
+into a decision request</h3>
+<p>A bug report asks someone to fix something. A decision request asks
+someone to choose. In this situation the second gets a better
+response:</p>
+<blockquote>
+<p><strong>Title:</strong> Decision needed by 13 Nov: should Black Week
+strikethrough prices be checked against the 30-day lowest price?</p>
+<p><strong>Observation:</strong> 412 of 3,180 Black Week SKUs show a
+"−X%" claim larger than the reduction against their lowest price since
+24 Oct (query + CSV attached). Example: headphones SKU 88231 claims
+−40%, about −14% against the Singles' Day price of €69.99.</p>
+<p><strong>Why it might matter:</strong> CJEU C-330/23 (Sept 2024) and §
+11 PAngV base reduction claims on the 30-day lowest price.</p>
+<p><strong>What I don't know:</strong> whether app-only and member
+prices count, and how our AT/NL storefronts are affected.</p>
+<p><strong>Options:</strong> A) Accept as is (owner signs off on the
+risk). B) Fix the 412 SKUs manually before launch (merchandising, about
+1 day). C) Admin warning when compare-at &gt; 30-day low (engineering,
+small). D) Calculate the strikethrough from price history (engineering,
+larger; needs reliable history).</p>
+<p><strong>My recommendation:</strong> B now, C before launch, D on the
+backlog.</p>
+</blockquote>
+<p>Note the evidence. You're not saying "this might be illegal." You're
+saying "here is the query, here are 412 SKUs, here is the gap for each
+one." Running that query is cheap testing that produces a lot of value,
+and it's usually what changes the PO's mind. (The figures here are
+illustrative. In your own shop, run the query before you make any
+claim.)</p>
+<p>Note also the <strong>deadline</strong>. Prices set from 24 October
+onward fall inside the Black Week window, so the decision has a real
+expiry date. Putting it in the title is an honest way to create
+urgency.</p>
+<hr />
+<h3 id="test-ideas-that-come-from-the-domain-not-from-the-ticket">Test
+ideas that come from the domain, not from the ticket</h3>
+<p><strong>Reference-price logic</strong></p>
+<ul>
+<li>A SKU with a short promotion inside the window → the claim must be
+based on the promo price.</li>
+<li>A SKU whose only promo ended <strong>31 days</strong> before the
+reduction → outside the window. Check the boundary in both
+directions.</li>
+<li><strong>Variant-level history:</strong> black headphones were on
+sale, white ones weren't. Is history stored per SKU or per parent
+product?</li>
+<li>A <strong>progressive reduction</strong> (Mon €79.99 → Wed €69.99 →
+Fri €59.99): the reference should stay the pre-campaign lowest price.
+Now have a nightly feed import reset the price to €99.99 for six hours
+on Thursday. Is the run interrupted? Who decides that, and does the
+system even record the blip?</li>
+<li>A product <strong>launched 10 days ago</strong>: what does the
+system do with less than 30 days of history?</li>
+<li><strong>No history stored at all:</strong> this is the most
+important issue. If the shop doesn't keep price history, it can neither
+comply nor be tested. That's Bolton's issue category in its plainest
+form.</li>
+</ul>
+<p><strong>Stacking, allocation and returns</strong></p>
+<ul>
+<li>An order-level discount on a basket with <strong>mixed VAT
+rates</strong> (19% headphones + 7% book). Allocation decides how much
+of the discount reduces each tax base. Check the method with finance and
+confirm the invoice matches it.</li>
+<li><strong>Rounding</strong> when €10 is split across three lines:
+which line gets the extra cent, and is it the same on invoice, refund
+and export?</li>
+<li>A <strong>partial return that drops the basket below the
+threshold.</strong> Does the refund keep the proportional share of the
+discount, or claw back the whole discount? Both are legitimate policies,
+but the T&amp;Cs, the customer-service screen and the credit note must
+all agree.</li>
+<li>A <strong>gift card plus a coupon</strong> on the same order, then a
+return. Does the gift card portion go back to the card, and does the
+coupon get "reused"?</li>
+<li>A <strong>personal code</strong> applied by 9,000 different accounts
+in one hour. Is it still an individual offer, or has it effectively
+become public?</li>
+</ul>
+<hr />
+<h3 id="practical-challenge-45-minutes">Practical challenge (45
+minutes)</h3>
+<p><strong>Scenario data.</strong> A winter jacket, standard VAT
+(19%).</p>
+<table>
+<thead>
+<tr class="header">
+<th>Date</th>
+<th>Price</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>until 29 Oct</td>
+<td>€149</td>
+</tr>
+<tr class="even">
+<td>30 Oct – 2 Nov ("Autumn Weekend")</td>
+<td>€119</td>
+</tr>
+<tr class="odd">
+<td>3 Nov – 22 Nov</td>
+<td>€149</td>
+</tr>
+<tr class="even">
+<td>23 Nov (Black Week starts)</td>
+<td>€99, shown as <del>€149</del> −34%</td>
+</tr>
+<tr class="odd">
+<td>26 Nov</td>
+<td>€89</td>
+</tr>
+<tr class="even">
+<td>27 Nov</td>
+<td>€79</td>
+</tr>
+<tr class="odd">
+<td>night of 25 Nov</td>
+<td>feed import sets €149 for 6 hours, then back to €99</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Tasks:</strong></p>
+<ol type="1">
+<li>Work out the prior price for the 23 November reduction, and the
+reduction percentage measured against it.</li>
+<li>Decide whether the 27 November claim can use the same reference.
+Write down the <strong>one question</strong> that must go to an owner
+instead of being answered by you.</li>
+<li>A customer buys the jacket at €99 plus a €30 book (7% VAT), using
+"€15 off orders over €120." Calculate the proportional discount
+allocation per line. Then calculate the book's refund under (A)
+proportional retention and (B) threshold claw-back.</li>
+<li>Write a decision request of at most eight lines, using the four
+layers (Observation, Rule, Owner, Consequence) and offering at least
+three options with costs.</li>
+<li><strong>Soft-skill rehearsal:</strong> write the opening sentence
+you'd say to a developer who has just told you "works as designed." It
+should agree with something true before it asks for anything.</li>
+</ol>
+<details>
+<parameter name="summary">Check your numbers</parameter>
+
+<ol type="1">
+<li>Window 24 Oct – 22 Nov. Lowest price <strong>€119</strong>.
+Reduction from €119 to €99 is about <strong>16.8%</strong>, so the
+"−34%" claim (measured against €149) is the Aldi pattern.</li>
+<li>The reference can stay €119 only if the run of reductions was
+<strong>uninterrupted</strong> (§ 11(2) PAngV). Owner question:
+<em>"Does a six-hour feed glitch back to €149 count as an interruption,
+and do we treat it as a defect to be corrected in the price log?"</em>
+Notice that your test result now depends on whether the price log
+records six-hour changes at all.</li>
+<li>Basket €129. Jacket share 15 × 99/129 ≈ <strong>€11.51</strong>,
+book share ≈ <strong>€3.49</strong> (total €15.00). Book refund: (A) €30
+− €3.49 = <strong>€26.51</strong>; (B) the remaining €99 no longer meets
+the threshold, so €30 − €15 = <strong>€15.00</strong>. If the T&amp;Cs
+and the credit note can't tell you which policy applies, that is your
+finding.</li>
+</ol>
+</details>
+
+<hr />
+<h3 id="what-to-take-into-work-tomorrow">What to take into work
+tomorrow</h3>
+<ul>
+<li>When someone says "works as designed," ask <strong>whose</strong>
+design, and whether the person who carries the consequence ever saw
+it.</li>
+<li>Find the layer where people actually disagree. Facts are rarely
+disputed. Usually it's the oracle or the ownership.</li>
+<li>If you can't prove it's a bug, report it as an issue. Making gaps in
+decisions visible is your job.</li>
+<li>Bring a query, a count and a deadline. Opinions start arguments;
+evidence gets decisions made.</li>
+<li>Domain knowledge is what turns an ordinary "UI shows strikethrough"
+check into a question about the 30-day window, variant-level history and
+interrupted reductions.</li>
+</ul>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2011/01/youve-got-issues">"You've
+Got Issues"</a>, DevelopSense</li>
+<li>Court of Justice of the EU, <a
+href="https://curia.europa.eu/jcms/upload/docs/application/pdf/2024-09/cp240152en.pdf">Press
+release on Case C-330/23, Aldi Süd</a> (September 2024)</li>
+<li>Lewis Silkin, <a
+href="https://www.lewissilkin.com/insights/2024/09/30/more-on-pricing-and-discount-claims-cjeu-clarifies-basis-for-calculating-reducti-102jkhq">"More
+on pricing and discount claims: CJEU clarifies basis for calculating
+reductions"</a></li>
+<li><a
+href="https://eur-lex.europa.eu/eli/dir/1998/6/2022-05-28/eng">Directive
+98/6/EC, consolidated text incl. Article 6a</a>, EUR-Lex</li>
+<li><a href="https://www.gesetze-im-internet.de/pangv_2022/__11.html">§
+11 Preisangabenverordnung (PAngV)</a>, gesetze-im-internet.de</li>
+<li>Shopify Help Center, <a
+href="https://help.shopify.com/manual/discounts/discount-combinations">Combining
+discounts</a> (used as an example of documented engine behaviour, not as
+an authority on business intent)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-33.html" rel="prev"><span>Previous</span>Testing a League Table: The Same Tie-Break Rules Give a Different Answer Depending on When You Ask</a><a href="/qa-blog/posts/qa-thinking-day-35.html" rel="next"><span>Next</span>Follow One Kilowatt-Hour: How to Learn an Unfamiliar Domain by Asking Questions That Expose Risk (EV Charging Roaming)</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

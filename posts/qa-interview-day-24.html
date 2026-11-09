@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario: You test the customer portal for an energy supplier in Hamburg. The next story is called &quot;Move out online.&quot; A customer enters their move-out date and a final meter reading, and the system ends the con">
+  <meta name="color-scheme" content="light">
+  <title>Your product owner says, &quot;You find all the edge cases anyway. From next sprint, can you just write the acceptance criteria?&quot; Do you say yes? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 24</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-24">QA Interview Q&amp;A — Day 24</h1>
+<h2
+id="question-your-product-owner-says-you-find-all-the-edge-cases-anyway-from-next-sprint-can-you-just-write-the-acceptance-criteria-do-you-say-yes">Question:
+Your product owner says, "You find all the edge cases anyway. From next
+sprint, can you just write the acceptance criteria?" Do you say
+yes?</h2>
+<p><strong>Scenario:</strong> You test the customer portal for an energy
+supplier in Hamburg. The next story is called <strong>"Move out
+online."</strong> A customer enters their move-out date and a final
+meter reading, and the system ends the contract and triggers a final
+bill. The product owner (PO) works across three teams and can't keep up.
+Their acceptance criteria (AC) for this story have three lines. In the
+last two refinements, your questions led to most of the AC being
+rewritten. At the end of today's refinement, the PO makes the offer
+above in front of the team.</p>
+<h2 id="answer">Answer</h2>
+<p><strong>Short version:</strong> I'd say yes to drafting the examples
+and questions. I'd say no to deciding the rules. The PO's offer comes
+from a real capacity problem, and I want to help fix it. But if I
+quietly accept, the tester ends up making product decisions and then
+testing against their own assumptions.</p>
+<h3 id="1-why-the-offer-is-tempting-and-where-the-trap-is">1. Why the
+offer is tempting, and where the trap is</h3>
+<p>It's flattering, and it looks efficient. I'm already finding the
+gaps, so why not write them down myself?</p>
+<p>The problem is that most of the "edge cases" in this story aren't
+really testing questions. They're business decisions:</p>
+<ul>
+<li><strong>The final reading is lower than the last reading.</strong>
+It could be a typo, a meter that was swapped, a meter that rolled over,
+or fraud. Do we reject it, accept it, flag it for review, or estimate a
+reading instead?</li>
+<li><strong>The move-out date is six weeks in the past.</strong> Do we
+accept it? Who pays for the energy used in between: the customer, the
+landlord, or the next tenant?</li>
+<li><strong>Two people share the contract and only one moves
+out.</strong> Does the contract end, or does it pass to the other
+person?</li>
+<li><strong>The customer moves within our supply area.</strong> Do we
+end the contract or move it to the new address? That's a retention
+decision as much as a technical one.</li>
+<li><strong>The customer has a smart meter on a dynamic tariff.</strong>
+Do we need a manual reading at all, and what happens if it conflicts
+with the meter data?</li>
+<li><strong>The customer has overpaid their monthly
+instalments.</strong> When and how do we refund them?</li>
+</ul>
+<p>Each of these affects money, customer experience, support workload,
+and possibly regulation. If I write "Reject readings lower than the
+previous reading" as an acceptance criterion, I've just set company
+policy. Then I test against it, so my opinion becomes the only standard
+the feature is checked against. Nobody independent is left to question
+the rule, because the person who would have questioned it wrote it.</p>
+<p>There's also an accountability issue. Michael Bolton makes the point
+that testers don't control scope, schedule, or code, so they can't
+assure quality. They provide information so the people who do hold
+authority can decide. If a wrong rule causes a wave of disputed final
+bills, "QA wrote the AC" is a bad place for the team to be. It's also
+unfair to me, because I never had the authority to make that call.</p>
+<h3 id="2-whats-actually-true-about-the-role">2. What's actually true
+about the role</h3>
+<p>A weak answer is "No, the Scrum Guide says the PO writes the AC." It
+doesn't say that. The Scrum Guide lets the PO delegate backlog work to
+others, but the PO remains accountable. So delegating the drafting is
+legitimate. Delegating the decisions without saying so is the part to
+avoid, because then the PO is accountable for choices they never
+actually made.</p>
+<h3 id="3-what-id-propose-instead">3. What I'd propose instead</h3>
+<p>I'd split what the PO is asking for into three kinds of work. That's
+also how I can save them time:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Kind of question</th>
+<th>Example</th>
+<th>Who decides</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Robustness and implementation</td>
+<td>Submitting twice, session timeout mid-form, a reading with a decimal
+comma, an API timeout to the billing system</td>
+<td>Dev and QA settle it in the team. The PO doesn't need to see
+it.</td>
+</tr>
+<tr class="even">
+<td>Business behavior</td>
+<td>Lower reading, move date in the past, shared contract, moving within
+the supply area</td>
+<td>The PO decides, using options we prepare.</td>
+</tr>
+<tr class="odd">
+<td>Legal or regulatory</td>
+<td>Deadlines for final bills, rules on estimated readings, data
+retention after the contract ends</td>
+<td>The PO sends it to billing or compliance. Neither QA nor the PO
+should guess.</td>
+</tr>
+</tbody>
+</table>
+<p>Then I'd run it as <strong>example mapping</strong> (rules, examples,
+and open questions, on cards or in a ticket template). Before
+refinement, I draft:</p>
+<ul>
+<li><strong>Proposed rules</strong>, each labelled <em>PROPOSED</em>,
+with two or three options and what each option costs ("Reject = more
+support calls; Flag = a back-office queue someone must own").</li>
+<li><strong>Concrete examples</strong> for each rule: "Last reading
+48,210 kWh; customer enters 4,821. Expected: ?"</li>
+<li><strong>Open questions</strong> that I can't answer and
+shouldn't.</li>
+</ul>
+<p>The PO's job then drops from "write the AC" to "answer six questions
+in 20 minutes." A rule only becomes an acceptance criterion once the PO
+has decided it.</p>
+<h3 id="4-what-id-say-in-the-meeting">4. What I'd say in the
+meeting</h3>
+<blockquote>
+<p>"I'm glad to take on more of the drafting, because I can see you're
+stretched. Here's what I'd suggest. Before refinement, I'll bring a
+draft with examples and the open questions. Anything purely technical,
+the devs and I will sort out without you. But some of these, like what
+we do with a reading that's lower than the last one, are business
+decisions that affect customers and billing. I don't think I should be
+making them, and I'd be testing my own assumptions. Could you give us 20
+minutes per story to decide the open questions, and could we try this
+for two sprints and see if it actually saves you time?"</p>
+</blockquote>
+<p>This acknowledges the PO's problem. It also takes on real work and
+draws a clear line without lecturing anyone. And it ends with a trial
+that can be measured, not a debate about roles.</p>
+<h3 id="5-evidence-id-collect">5. Evidence I'd collect</h3>
+<ul>
+<li><strong>Where past gaps came from.</strong> For the last few
+sprints, how many AC changes came from questions raised in refinement,
+and how many escaped bugs were "the spec never said" compared with "the
+code was wrong"? If most gaps are business rules, the PO's time is the
+bottleneck, and that's worth raising with whoever manages their
+workload.</li>
+<li><strong>Whether the PO actually reads the drafts.</strong> If they
+start approving my drafts within minutes without reading them, the
+delegation has turned into rubber-stamping. A practical safeguard is
+that the PO has to answer the open questions explicitly. Approving the
+whole draft isn't enough.</li>
+<li><strong>How long questions stay open.</strong> If questions sit
+unanswered until the sprint starts, the problem isn't who writes the AC.
+The PO doesn't have enough capacity, and that's a conversation for the
+PO's manager, not something QA can fix.</li>
+</ul>
+<h3 id="6-tradeoffs-and-when-yes-is-fine">6. Tradeoffs and when "yes" is
+fine</h3>
+<p>In a small team, a tester with deep domain knowledge (say, someone
+who worked in billing operations) might reasonably draft nearly final
+AC. That's fine if the PO explicitly reviews and owns them. The real
+question isn't who types the AC. It's whether <strong>the person
+accountable for the product made the business decisions
+knowingly.</strong> It's also worth asking what I'd stop doing. If
+drafting AC takes half a day per story, exploratory testing time goes
+down, and the team should know that's the trade.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Yes, quality is my job."</strong> This mixes up finding
+information with deciding policy, and it gives up independence.</li>
+<li><strong>"No, it's not my role."</strong> It's technically defensible
+but unhelpful. It ignores the PO's real problem and damages the
+relationship.</li>
+<li><strong>Assuming every edge case needs the PO.</strong> Sending
+timeouts and input validation to the PO wastes the scarce time you're
+trying to protect.</li>
+<li><strong>Treating Given/When/Then as the goal.</strong>
+Well-formatted AC that encode the wrong business rule are still
+wrong.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li>Two sprints in, the PO approves all your proposed rules without
+changing a word. Is that a success or a warning sign, and how would you
+tell?</li>
+<li>A compliance specialist says the lower-reading rule you proposed
+conflicts with how final readings must be handled. The story is already
+in development. Who do you tell first, and what do you say?</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a
+href="https://developsense.com/blog/2010/05/testers-get-out-of-the-quality-assurance-business">Michael
+Bolton, "Testers: Get Out of the Quality Assurance Business"
+(DevelopSense)</a>. This is the basis for the authority argument:
+testers inform, and the people with authority over scope and release
+decide. It's why QA shouldn't quietly set business rules.</li>
+<li><a
+href="https://www.ministryoftesting.com/software-testing-glossary/three-amigos">Ministry
+of Testing glossary: Three Amigos</a>. It frames AC as a shared product
+of business, development, and testing perspectives, which supports
+drafting together while the business owns the decisions.</li>
+<li><a href="https://www.cucumber.io/docs/bdd/example-mapping">Cucumber,
+"Example Mapping"</a>. This is the source for the rules, examples, and
+questions structure in the answer, especially capturing unanswered
+questions on red cards instead of guessing.</li>
+<li><a href="https://scrumguides.org/scrum-guide.html">The Scrum Guide
+(2020)</a>. It says the PO "may delegate the responsibility to others.
+Regardless, the Product Owner remains accountable." That corrects the
+weak answer that Scrum forbids anyone else from writing AC.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-23.html" rel="prev"><span>Previous</span>&quot;The synthetic dataset is 99% statistically faithful to production. We&#39;re deleting the masked copy.&quot; Do you agree?</a><a href="/qa-blog/posts/qa-interview-day-25.html" rel="next"><span>Next</span>Your engineering manager wants QA to approve every pull request before it merges. Do you say yes?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

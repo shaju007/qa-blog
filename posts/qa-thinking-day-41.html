@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your company runs a football stats and fantasy platform. Leadership has signed with a new data provider. The plan has three steps: map every team, player, competition and match to the new provider&#39;s IDs, backfi">
+  <meta name="color-scheme" content="light">
+  <title>Switching Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a Historical Stats Migration | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 41</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-41">QA Thinking — Day 41</h1>
+<h2
+id="switching-sports-data-providers-a-diff-is-a-question-not-a-bug-testing-a-historical-stats-migration">Switching
+Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a
+Historical Stats Migration</h2>
+<p>Your company runs a football stats and fantasy platform. Leadership
+has signed with a new data provider. The plan has three steps: map every
+team, player, competition and match to the new provider's IDs, backfill
+ten seasons of historical player stats from the new feed, then switch
+the live feed over before the January transfer window.</p>
+<p>The migration ticket has one acceptance criterion:
+<strong>"Historical stats parity with the current
+provider."</strong></p>
+<p>The first dry run comes back. Row counts match within 0.4%, and the
+developer spot-checked 50 famous players and they "look right." Then you
+run a full diff between old and new stats and get 38,000 differing
+values.</p>
+<p>Both readings are useless as they stand. "Counts match" hides wrong
+data, and "38,000 diffs" is noise nobody can act on. Today's lesson is
+about what sits between them: <strong>sort every difference by its
+cause, give each cause its own oracle and its own owner, and turn the
+result into decisions a product owner can make.</strong></p>
+<hr />
+<h2 id="1-the-domain-in-five-minutes-what-youre-actually-migrating">1.
+The domain in five minutes: what you're actually migrating</h2>
+<p>If you haven't worked with sports data, these are the parts that
+matter for testing:</p>
+<ul>
+<li><strong>Event data is collected under proprietary rules.</strong>
+Providers log on-pitch actions (passes, shots, tackles) under their own
+<em>event definitions</em>. They are not universal facts. Opta's public
+definitions say an assist is the final touch from a teammate before a
+goal. They also say <strong>no assist is given for own goals, direct
+free-kick goals, direct corner goals, or penalties</strong> (unless the
+taker passes instead of shooting). A shot cleared off the line by a
+defender counts as a <strong>shot on target</strong>, not a blocked shot
+(<a
+href="https://theanalyst.com/articles/opta-football-stats-definitions">Opta
+Analyst, stats definitions</a>). Another vendor can draw those lines
+differently and be just as correct by its own rules. Academic work on
+vendor data says the same: assist definitions differ across vendors such
+as Opta, Wyscout and Sportec (<a
+href="https://link.springer.com/article/10.1007/s12283-025-00533-4">Sports
+Engineering, Springer</a>).</li>
+<li><strong>Every provider has its own IDs.</strong> One player has a
+different ID at every provider. Sportradar uses IDs like
+<code>sr:player:12345</code> and <code>sr:competitor:44</code>. Their
+documentation says player IDs "will not change once created". It also
+documents <strong>Player Merge Mappings</strong> and <strong>Competitor
+Merge Mappings</strong> for consolidated duplicates, and says match IDs
+can change for postponed matches or accidental duplicates (<a
+href="https://developer.sportradar.com/soccer/docs/soccer-ig-id-handling">Sportradar
+ID handling</a>). Treat the stability claim as conditional: it holds
+except where the provider has documented exceptions.</li>
+<li><strong>Cross-provider matching is fuzzy by necessity.</strong> US
+Soccer's open-source Glass Onion tool shows how much fuzziness the job
+needs. Its steps include team-name cosine similarity with a 75%
+threshold, shifting match dates by <strong>±3 days</strong> for
+time-zone and scheduling differences, matching players on name
+similarity plus jersey numbers, and allowing <strong>birth dates off by
+±1 day or with day and month swapped</strong> (<a
+href="https://www.americansocceranalysis.com/home/2026/1/25/introducing-glass-onion-by-us-soccer-an-identifier-synchronization-tool">American
+Soccer Analysis, Jan 2026</a>). Each of those relaxations exists because
+real data needed it, so each one also marks a place where real data
+breaks.</li>
+</ul>
+<p>This changes the meaning of "parity." The old and new numbers will
+never match exactly, because the providers count differently. The real
+question is which differences your users and your business can
+accept.</p>
+<hr />
+<h2 id="2-why-counts-match--sample-looks-right-is-a-weak-oracle">2. Why
+"counts match + sample looks right" is a weak oracle</h2>
+<p>Cem Kaner's essay <a href="https://kaner.com/?p=190"><em>The Oracle
+Problem and the Teaching of Software Testing</em></a> helps here in two
+ways.</p>
+<p>First, every oracle is incomplete, and leaning on one produces
+<strong>misses</strong> (you conclude it passed when it failed) and
+<strong>false alarms</strong> (you conclude it failed when it worked).
+The row-count check produces misses: if two different players are mapped
+onto one ID, the counts can still balance. The raw diff produces false
+alarms: thousands of correct definitional differences look like
+defects.</p>
+<p>Second, Kaner distinguishes two kinds of oracle:</p>
+<ul>
+<li>The Bach/Bolton consistency heuristics (history, claims, comparable
+products, user desires and so on) are strong for <em>evaluating and
+explaining</em> a problem once you've seen it. They are weak for
+<em>designing</em> automated checks.</li>
+<li>Doug Hoffman's specific oracle types (constraint, statistical,
+inverse, reference program, business model and others) are things you
+can program.</li>
+</ul>
+<p>A migration needs both. Use Hoffman-style oracles to process 38,000
+diffs automatically. Use consistency heuristics to explain the few that
+matter to a product owner. The rest of this lesson does exactly
+that.</p>
+<hr />
+<h2
+id="3-sort-each-difference-into-one-of-three-buckets-before-calling-anything-a-bug">3.
+Sort each difference into one of three buckets before calling anything a
+bug</h2>
+<p>Every difference between old and new data comes from one of three
+causes. They need different evidence and different owners:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Bucket</th>
+<th>What it is</th>
+<th>Example</th>
+<th>Who decides</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>A. Identity error</strong></td>
+<td>The wrong real-world entity is linked</td>
+<td>Two players called "Danilo" collapsed into one ID; a 2016/17 match
+linked to the replayed fixture after a postponement</td>
+<td>Engineering. This is a defect.</td>
+</tr>
+<tr class="even">
+<td><strong>B. Definition difference</strong></td>
+<td>Same entity, same event, counted under different rules</td>
+<td>A last-man goal-line block is "shot on target" at Provider A and
+"blocked shot" at Provider B; an assist from a deflected cross awarded
+by one and not the other</td>
+<td>Product. Accept it, annotate it, or freeze history.</td>
+</tr>
+<tr class="odd">
+<td><strong>C. Transformation defect</strong></td>
+<td>Your own pipeline changed the data</td>
+<td>Minutes played truncated at 90 so stoppage time is lost; a season
+boundary assigned in UTC so a late-May fixture lands in the next season;
+a split-season league folded into one</td>
+<td>Engineering. This is a defect.</td>
+</tr>
+</tbody>
+</table>
+<p>The key point is that <strong>buckets A and C can't be filed as
+definition differences, and bucket B can't be filed as a bug.</strong>
+Most failed migrations fail on this sorting. Either real identity errors
+get waved through as "vendor differences," or the team burns two sprints
+"fixing" definitional gaps that no amount of code will close.</p>
+<p>Before you report anything, add a <code>cause</code> column to your
+diff output.</p>
+<hr />
+<h2 id="4-turn-the-sorting-into-programmable-oracles">4. Turn the
+sorting into programmable oracles</h2>
+<p>These are Hoffman's oracle types from Kaner's list, applied to this
+migration. Each one separates buckets without anyone eyeballing 38,000
+rows.</p>
+<p><strong>Constraint oracles (catch bucket A and C
+directly)</strong></p>
+<ul>
+<li>A player can't appear for both teams in the same match.</li>
+<li>A player can't take part in two matches that overlap in time.</li>
+<li>Minutes played per player must be at least 0 and no more than match
+length plus extra time.</li>
+<li>A player with a recorded birth date shouldn't be 13 or 52 in a
+senior first-team match. If you see that, look for the day/month swap
+Glass Onion tolerates.</li>
+</ul>
+<p><strong>Invariants that hold whatever the provider's
+definitions</strong></p>
+<ul>
+<li>The final score is official. So <em>team goals from Provider B =
+official final score</em> for every match, whatever B's definitions are.
+<strong>Attribution</strong> can legitimately differ (a deflected shot
+could be a goal for the shooter or an own goal for the defender), but
+<strong>totals</strong> can't. A total mismatch is bucket A or C. An
+attribution mismatch with matching totals is probably bucket B.</li>
+<li>Appearances per match should be at most 11 starters plus the
+competition's substitution limit. Remember that limits changed over the
+ten seasons, so the rule itself needs a date.</li>
+</ul>
+<p><strong>Inverse oracle (catches bucket A)</strong></p>
+<ul>
+<li>Round-trip every ID: old → new → old. The mapping must be
+one-to-one. If two old IDs map to one new ID, either two players were
+merged by mistake or the provider merged a real duplicate, and you need
+to know which. If one old ID maps to two new IDs, a player's career is
+now split in two.</li>
+</ul>
+<p><strong>Statistical oracle (separates bucket B from A)</strong></p>
+<ul>
+<li>A definitional difference is <em>systematic</em>. If Provider B
+awards about 6% fewer assists, that ratio should be roughly stable
+across players, teams and seasons. Plot new/old per player-season.
+Bucket B forms a tight cloud. <strong>Bucket A shows up as
+outliers</strong>: one player whose assists triple and another whose
+drop to zero is the classic sign of two careers being swapped.</li>
+<li>Watch for steps over time. If the ratio jumps in one season, check
+whether a provider changed its own definitions or collection method that
+year. That's still bucket B, but the product owner needs to hear about
+it.</li>
+</ul>
+<p><strong>Business-model oracle (shows impact)</strong></p>
+<ul>
+<li>Recalculate last season's fantasy points from the new data. You
+don't need every number to match. You need to know which
+<em>user-visible outcomes</em> change: league winners, weekly prizes, a
+player's "season record" badge. That turns "diffs" into
+"consequences."</li>
+</ul>
+<hr />
+<h2 id="5-test-where-the-matcher-bends">5. Test where the matcher
+bends</h2>
+<p>Every tolerance in a fuzzy matcher marks a risk area. Use the
+matcher's design as your test-idea generator:</p>
+<ul>
+<li><strong>Name similarity threshold →</strong> players with very
+similar names: family members at the same club, common names like
+"Danilo" or "Rodri" across clubs, transliterated names (Cyrillic,
+Arabic, Korean), players who changed their registered name.</li>
+<li><strong>±1 day / day-month swap on birth dates →</strong> two
+players with the same surname born on 03/04 and 04/03 respectively.
+Specifically search for pairs that a lenient match could join.</li>
+<li><strong>±3 day match-date window →</strong> postponed or rearranged
+fixtures, especially when the original and rescheduled matches are close
+together, and cup replays (where the competition still has them) between
+the same two teams.</li>
+<li><strong>Team name similarity →</strong> renamed clubs, reserve and B
+teams ("Borussia Dortmund" vs "Borussia Dortmund II"), and women's and
+men's teams that share a name.</li>
+<li><strong>Competition structure →</strong> formats that changed within
+your ten-season window. The Champions League moved from group stage to a
+single league phase in 2024/25. Check how each provider models "group"
+and "stage" across that change.</li>
+</ul>
+<p>Don't sample "50 famous players." Famous players are the easiest to
+match. <strong>Sample from places where the matcher was least
+sure</strong>: ask engineering for the match-confidence score per entity
+and test the lowest decile. If the pipeline doesn't produce confidence
+scores, raise that as a testability gap before cutover.</p>
+<hr />
+<h2 id="6-the-mapping-table-keeps-changing-after-cutover">6. The mapping
+table keeps changing after cutover</h2>
+<p>The migration ticket treats ID mapping as a one-time step.
+Sportradar's documentation shows otherwise: merges and
+postponement-driven match ID changes keep happening after go-live. So
+you also need checks after cutover:</p>
+<ul>
+<li><strong>Merge after cutover:</strong> the provider merges two player
+IDs into one. Does your platform consume the merge mapping, re-point
+history, and keep both fantasy squads that held the old IDs? Or does one
+squad suddenly contain a player who "doesn't exist"?</li>
+<li><strong>Postponed fixture:</strong> the match ID changes. Do
+lineups, predictions, and notifications attached to the old ID move
+over, or are they orphaned?</li>
+<li><strong>Detect drift:</strong> a scheduled reconciliation that
+reruns the inverse-oracle round trip and alerts on new many-to-one
+mappings. In this domain that check belongs in production.</li>
+</ul>
+<hr />
+<h2 id="7-the-soft-skill-turn-38000-diffs-into-three-decisions">7. The
+soft skill: turn 38,000 diffs into three decisions</h2>
+<p>This is where the technical work turns into influence. The product
+owner wrote "parity." They don't want a spreadsheet. They want to know
+whether they can launch and what users will notice.</p>
+<p><strong>Ask questions that reveal the real requirement</strong>,
+before giving any results:</p>
+<ol type="1">
+<li>"When a user looks at a player's career page after cutover, should
+past seasons show the <em>old</em> provider's numbers frozen, or be
+restated in the <em>new</em> provider's definitions?"</li>
+<li>"If a past fantasy season's winner would change under restated data,
+do we restate it, annotate it, or never recalculate closed
+seasons?"</li>
+<li>"Does our contract let us keep showing the old provider's historical
+data after the contract ends?" Ask this one, don't assume. It often
+decides question 1 for you, and it's a question for legal or
+partnerships, not engineering.</li>
+<li>"Which numbers do we publish as editorial facts (articles, social
+posts, 'club record' claims), where a restatement could embarrass us
+publicly?"</li>
+</ol>
+<p><strong>Then report the buckets, not the diff count.</strong> An
+example status note:</p>
+<blockquote>
+<p><strong>Historical stats migration: dry run 2 findings</strong></p>
+<p><strong>Blocking (engineering, bucket A):</strong> 214 player IDs map
+many-to-one. At least 9 are confirmed different people merged together
+(e.g., two players with the same surname and swapped birth day/month).
+Career totals for those players are wrong in both directions. The full
+list is attached with the evidence (DOB, club, jersey per match).</p>
+<p><strong>Blocking (engineering, bucket C):</strong> Late-May fixtures
+in 4 leagues are assigned to the following season because of a UTC
+season-boundary rule. Affects about 1,100 player-season rows.</p>
+<p><strong>Decision needed (product, bucket B):</strong> Under the new
+provider's definitions, assists are about 5–7% lower on average across
+all ten seasons. The difference is systematic, not random (distribution
+attached). If we restate history, 3 past fantasy-season podiums change
+and 2 published "club record" articles would no longer match our own
+stats pages. Options: restate, freeze old history, or restate with a
+"definitions changed" note. I recommend deciding this before we fix the
+bucket A/C items, because the choice changes which validation we run
+next.</p>
+<p><strong>Not yet tested:</strong> behaviour after cutover when a
+provider merges player IDs. There's no merge in the sandbox feed, so we
+need a fixture or a mock.</p>
+</blockquote>
+<p>Notice what this note does. It <strong>separates "we are wrong" from
+"they count differently,"</strong> so developers aren't blamed for
+vendor definitions and vendor definitions don't get mislabeled as bugs.
+It <strong>puts numbers on user-visible consequences</strong>, which
+carries more weight than a diff count. It <strong>names the decision and
+its owner</strong> instead of leaving "parity" ambiguous. And it
+<strong>says what wasn't tested.</strong></p>
+<p><strong>If you hear "Just make the numbers match"</strong>, don't
+argue for purity. Explain what it would take: matching the old numbers
+means rebuilding the old provider's definitions on top of the new
+provider's raw events. Some differences (like how a deflection was
+judged) aren't in the raw data at all. Ask: "Is it worth a
+reimplementation project to keep numbers that exist for continuity, or
+is a visible 'stats provider changed in 2026' note cheaper?" Your job is
+to make the trade-off visible. The product owner owns the choice.</p>
+<hr />
+<h2 id="8-practical-challenge-3040-minutes">8. Practical challenge
+(30–40 minutes)</h2>
+<p>Here are eight differences from a migration dry run. For each one:
+(a) put it in bucket A, B, or C, (b) name the oracle that would have
+caught it automatically, and (c) say who owns the next step.</p>
+<ol type="1">
+<li>A striker's 2019/20 goal count is the same, but assists drop from 9
+to 7. Two of the old assists were on goals from direct free kicks.</li>
+<li>A team's total goals in one match are 3 with the new provider, but
+the official final score was 2–1 to them, so they scored 2.</li>
+<li>A midfielder shows 112 minutes played in a 90-minute league match
+with no extra time.</li>
+<li>Two academy players with the same surname now share one ID. Their
+birth dates are 03-04-2004 and 04-03-2004.</li>
+<li>Shots on target are about 2% higher across every season. A spot
+check finds goal-line clearances counted as on target.</li>
+<li>A cup tie postponed by storm warnings appears twice in the season:
+once on the original date with no events, once on the rescheduled date
+with full events.</li>
+<li>Career appearances for a long-serving defender drop by 38 after
+cutover. All the missing matches are from one season with his previous
+club.</li>
+<li>A fantasy league's 2023/24 champion changes when points are
+recalculated, even though no bucket A or C issues touch that league's
+players.</li>
+</ol>
+<p>Then write a status note of <strong>no more than 120 words</strong>
+for the product owner covering items 4, 5 and 8 only, in the "blocking /
+decision needed / not yet tested" format above.</p>
+<p><strong>What a strong answer shows:</strong> You notice that item 7
+could be bucket A (a split career: a second ID holds those 38 matches)
+<em>or</em> bucket C (a season-to-competition join dropped one league),
+and you propose the inverse oracle to tell them apart instead of
+guessing. You treat item 8 as a decision about consequences, not a
+defect. And you resist calling item 1 a bug: under Opta-style rules,
+assists aren't awarded on direct free-kick goals, so the new number may
+be the <em>correct</em> one under the new definitions.</p>
+<p><strong>Stretch:</strong> Your team's own data almost certainly
+includes at least one entity that two systems identify differently, such
+as customers in CRM vs billing, or sites in the asset register vs
+metering. Pick one, list the fuzzy matching rules people actually use to
+link them, and write one inverse-oracle check that would catch a
+many-to-one mapping.</p>
+<hr />
+<h2 id="takeaway">Takeaway</h2>
+<p>A migration diff isn't a list of bugs. It's a list of questions, and
+each one has a cause: wrong identity, different definitions, or your own
+transformation. Programmable oracles (constraints, inverses, statistical
+distributions, provider-independent invariants like official scores) let
+you sort thousands of differences without guessing. Consistency
+heuristics then help you explain the few that matter. Your most valuable
+output is not "parity: pass/fail" but <strong>"here's what's wrong and
+engineering is fixing it, here's what's merely different and you need to
+decide, and here's what we couldn't test yet."</strong></p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Cem Kaner, <a href="https://kaner.com/?p=190"><em>The Oracle Problem
+and the Teaching of Software Testing</em></a>: oracle incompleteness,
+misses vs false alarms, Hoffman's programmable oracle types vs
+consistency heuristics</li>
+<li>Konstantin Sakhchinskiy, Ministry of Testing, <a
+href="https://www.ministryoftesting.com/insights/when-your-data-moves-house-practical-testing-tips-for-clean-data-migrations"><em>When
+your data moves house: Practical testing tips for clean data
+migrations</em></a>, and the <a
+href="https://club.ministryoftesting.com/t/what-are-your-go-to-methods-for-achieving-seamless-data-migration/76956">community
+discussion thread</a>: phased, risk-first migration and running legacy
+and new systems in parallel</li>
+<li>Michael Bolton, DevelopSense, <a
+href="https://developsense.com/resource/Oracles.pdf"><em>Oracles</em>
+(PDF)</a>: oracles as heuristic, fallible, and sometimes
+contradictory</li>
+<li>Opta Analyst / Stats Perform, <a
+href="https://theanalyst.com/articles/opta-football-stats-definitions"><em>Opta
+football stats definitions</em></a>: assist exclusions, shot-on-target
+vs blocked-shot rules</li>
+<li>Sportradar Developer Portal, <a
+href="https://developer.sportradar.com/soccer/docs/soccer-ig-id-handling"><em>Soccer
+ID handling</em></a>: ID stability claims, merge mappings,
+postponed-match ID changes</li>
+<li>Akshay Easwaran / US Soccer, via American Soccer Analysis, <a
+href="https://www.americansocceranalysis.com/home/2026/1/25/introducing-glass-onion-by-us-soccer-an-identifier-synchronization-tool"><em>Introducing
+Glass Onion</em></a>: cross-provider matching rules and tolerances</li>
+<li><a
+href="https://link.springer.com/article/10.1007/s12283-025-00533-4">Sports
+Engineering (Springer), vendor event-definition differences</a>: assist
+definitions differ across data vendors (abstract-level finding; the full
+text is behind a login)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-40.html" rel="prev"><span>Previous</span>Testing Bet Settlement: A Rule Table Is a Domain With Gaps, Not a Lookup to Copy Into Your Tests</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Imagine you&#39;ve just joined a team building the backend for a public EV charging network. In week one you&#39;ll hear a lot of new terms: CPO, eMSP, OCPP, OCPI, CDR, hub, Eichrecht, signed meter values. The usual mo">
+  <meta name="color-scheme" content="light">
+  <title>Follow One Kilowatt-Hour: How to Learn an Unfamiliar Domain by Asking Questions That Expose Risk (EV Charging Roaming) | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 35</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-35">QA Thinking — Day 35</h1>
+<h2
+id="follow-one-kilowatt-hour-how-to-learn-an-unfamiliar-domain-by-asking-questions-that-expose-risk-ev-charging-roaming">Follow
+One Kilowatt-Hour: How to Learn an Unfamiliar Domain by Asking Questions
+That Expose Risk (EV Charging Roaming)</h2>
+<p>Imagine you've just joined a team building the backend for a public
+EV charging network. In week one you'll hear a lot of new terms: CPO,
+eMSP, OCPP, OCPI, CDR, hub, Eichrecht, signed meter values. The usual
+move is to ask "can someone explain how this works?" Someone then gives
+you a 40-minute architecture walkthrough, and at the end you know the
+names of the boxes but still can't see where it breaks.</p>
+<p>This lesson covers two skills together:</p>
+<ol type="1">
+<li><strong>Domain knowledge.</strong> How public EV charging roaming
+works, and where its money and trust problems live.</li>
+<li><strong>Asking questions as a testing technique.</strong> How to
+learn a domain quickly by asking questions that are really risk probes,
+and how to ask them so the experts want to answer instead of feeling
+audited.</li>
+</ol>
+<hr />
+<h3 id="part-1-the-domain-in-five-minutes">Part 1: The domain in five
+minutes</h3>
+<p>This is roughly what happens when someone in Hamburg plugs in at a
+station run by one company and pays through an app from another:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Role / term</th>
+<th>What it means</th>
+<th>Why a tester cares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>CPO</strong> (Charge Point Operator)</td>
+<td>Owns and runs the stations and the backend they talk to</td>
+<td>Owns the meter data and creates the billing record</td>
+</tr>
+<tr class="even">
+<td><strong>eMSP</strong> (e-Mobility Service Provider)</td>
+<td>The app or card the driver has a contract with</td>
+<td>Owns the customer relationship and sends the invoice</td>
+</tr>
+<tr class="odd">
+<td><strong>Hub</strong></td>
+<td>A clearing platform between many CPOs and eMSPs</td>
+<td>One more hop that can be late, out of date, or duplicate a
+message</td>
+</tr>
+<tr class="even">
+<td><strong>OCPP</strong></td>
+<td>Protocol between the <strong>station</strong> and the <strong>CPO
+backend</strong> (StartTransaction, MeterValues, StopTransaction)</td>
+<td>Stations go offline, queue messages, and send them late</td>
+</tr>
+<tr class="odd">
+<td><strong>OCPI</strong></td>
+<td>Protocol between <strong>CPO and eMSP</strong> (Locations, Tariffs,
+Tokens, Sessions, CDRs)</td>
+<td>This is where two companies have to agree about money</td>
+</tr>
+<tr class="even">
+<td><strong>Session</strong></td>
+<td>The live, changing view of a charge in progress</td>
+<td>Shows what's happening now. Not used for billing.</td>
+</tr>
+<tr class="odd">
+<td><strong>CDR</strong> (Charge Detail Record)</td>
+<td>The final record of a completed session that billing is based
+on</td>
+<td><strong>Can't be changed once it has been sent.</strong> Corrections
+go out as a separate <em>credit CDR</em>.</td>
+</tr>
+<tr class="even">
+<td><strong>Tariff</strong></td>
+<td>Pricing built from parts: energy (kWh), time, parking time, flat
+fee, with restrictions and step sizes</td>
+<td>Bugs hide in how these parts combine</td>
+</tr>
+<tr class="odd">
+<td><strong>Eichrecht</strong></td>
+<td>German calibration law: measured energy has to be accurate and
+<strong>verifiable by the customer</strong></td>
+<td>The invoice has to match cryptographically signed meter
+readings</td>
+</tr>
+</tbody>
+</table>
+<p>Three facts change how you test this domain:</p>
+<ul>
+<li><strong>The CDR is the only record billing uses, and it can't be
+changed after sending.</strong> AMPECO's OCPI guide says a CDR "cannot
+be changed or replaced once sent to the eMSP"; corrections are made with
+a credit CDR. A wrong CDR therefore can't be patched. It has to be
+undone with a compensating record, which is the same pattern as
+accounting reversals.</li>
+<li><strong>Under Eichrecht, the customer is part of your test
+team.</strong> The station's calibrated meter signs the start and end
+readings, timestamps, the identification token and a transaction ID. The
+station must display its public key on site. The customer gets
+transparency software to check the invoice against the signed values
+(E-Mobility Simplified's deep dive; S.A.F.E. transparency tooling). Any
+mismatch between your invoice and the signed data can be found by anyone
+with a phone camera and a free tool.</li>
+<li><strong>Stations go offline, and offline is designed behaviour, not
+an edge case.</strong> In OCPP 1.6, a station can authorise from a local
+cache, and the <code>AllowOfflineTxForUnknownId</code> setting controls
+whether it starts charging for a token it doesn't recognise. Transaction
+messages are queued and delivered when the station reconnects. Each of
+those is a business decision that looks like a technical setting.</li>
+</ul>
+<hr />
+<h3
+id="part-2-the-technique-follow-one-unit-of-value-through-every-hand-off">Part
+2: The technique: follow one unit of value through every hand-off</h3>
+<p>To learn a domain fast, pick <strong>the smallest unit of
+value</strong> and follow it from creation to the customer's bank
+statement. In e-commerce that's an order line. In ad tech it's an
+impression. Here it's <strong>one kilowatt-hour</strong>.</p>
+<p>At each hand-off, ask the same four questions:</p>
+<ol type="1">
+<li><strong>Who owns the truth here?</strong> Which system's number
+counts if two disagree?</li>
+<li><strong>What if this arrives late, twice, or never?</strong></li>
+<li><strong>What can't be undone after this point?</strong></li>
+<li><strong>Who would notice first if it were wrong, and
+how?</strong></li>
+</ol>
+<p>This is a working version of Michael Bolton's two big questions for
+testing: <em>"Is there a problem here?"</em> and <em>"Are you okay with
+all this?"</em> (<a
+href="https://developsense.com/blog/2013/11/very-short-blog-posts-8-two-big-questions">DevelopSense,
+"Two Big Questions"</a>). The four questions help you find problems at
+each hand-off. The second big question is for later, once you have a
+risk list to show stakeholders (Part 4).</p>
+<p>Here is the kWh journey with the questions applied. The
+<strong>bold</strong> items are where the risks are.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Hop</th>
+<th>What happens</th>
+<th>Question that exposes risk</th>
+<th>Testing idea</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Meter → station</td>
+<td>Calibrated meter signs start and end readings</td>
+<td><em>What can't be undone?</em> The signed values are fixed from this
+point on.</td>
+<td>Check that every CDR's energy matches the difference between the
+signed start and end readings, with documented rounding</td>
+</tr>
+<tr class="even">
+<td>Station → CPO (OCPP)</td>
+<td>StartTransaction, MeterValues, StopTransaction</td>
+<td><em>What if it arrives late?</em> <strong>The station was offline
+for 3 hours and StopTransaction arrives after the session has already
+been timed out</strong></td>
+<td>Simulate an offline period: start a session, cut connectivity, stop
+charging, reconnect. Does the backend create a second "ghost" session,
+or close the timed-out one using the station's timestamp?</td>
+</tr>
+<tr class="odd">
+<td>Station local auth</td>
+<td>Token checked against the local cache</td>
+<td><em>Who owns the truth?</em> <strong>The cache says the token is
+valid, but the eMSP blocked it yesterday</strong></td>
+<td>Block a token in the eMSP, keep the station offline, charge. Who
+pays for that energy? Is that written down in the roaming contract?</td>
+</tr>
+<tr class="even">
+<td>CPO → eMSP (OCPI Sessions)</td>
+<td>Live session updates sent to the driver's app</td>
+<td><em>Who would notice?</em> The driver, if the app says "charging"
+after they've unplugged</td>
+<td>Compare the session status the app shows with the station's state
+during and after an offline period</td>
+</tr>
+<tr class="odd">
+<td>CPO → eMSP (Tariffs)</td>
+<td>Price parts sent</td>
+<td><em>What if it's stale?</em> <strong>The CPO changed its tariff at
+00:00 and the eMSP cached the old one</strong></td>
+<td>A session that runs past a tariff change: which tariff applies, the
+one at start or split by time? Does the eMSP's invoice agree with the
+CDR's cost?</td>
+</tr>
+<tr class="even">
+<td>CPO → eMSP (CDR)</td>
+<td>Final billing record</td>
+<td><em>What if it arrives twice?</em> <em>What can't be
+undone?</em></td>
+<td>Resend the same CDR. Is it idempotent at the eMSP? Correct a wrong
+CDR: does the credit CDR reference the original, and does the customer
+see a clean net amount instead of two confusing lines?</td>
+</tr>
+<tr class="odd">
+<td>eMSP → driver</td>
+<td>Invoice plus verification note</td>
+<td><em>Who would notice?</em> <strong>The driver, using transparency
+software</strong></td>
+<td>Take a real invoice and verify it the way a driver would, with the
+public key from the station label and the signed data. Does it
+pass?</td>
+</tr>
+</tbody>
+</table>
+<p>A worked example of how the bold items combine:</p>
+<blockquote>
+<p>A driver plugs in at 22:40. The station loses its mobile connection
+at 23:10. The driver unplugs at 01:30 and goes home. The station
+reconnects at 02:15 and sends a queued StopTransaction. Meanwhile the
+CPO backend timed out the session at 01:10, after two hours with no
+meter values, and sent a CDR with <strong>an energy value estimated from
+the last MeterValues update</strong>. Then the real stop arrives.</p>
+</blockquote>
+<p>Now there are two questions, and both are about decisions rather than
+code. First: is a CDR built from estimated energy allowed at all under
+Eichrecht, where the invoice must match the signed readings? Second:
+since that first CDR can't be changed, what does the correction look
+like to the customer, and to the eMSP's revenue reports? If you don't
+know the answers, that's fine. What matters is that you now know
+<em>who</em> to ask: the CPO's metrology or compliance owner and the
+eMSP's billing owner. That's more useful than knowing which microservice
+to read.</p>
+<hr />
+<h3 id="part-3-how-to-ask-so-experts-keep-answering">Part 3: How to ask
+so experts keep answering</h3>
+<p>Domain experts get tired of questions fast if the questions sound
+like exam questions or accusations. Patterns that work:</p>
+<ul>
+<li><strong>Ask about what you'd observe, not about how it's
+built.</strong> Instead of "How does the timeout work?", ask "If a
+station drops offline for three hours mid-charge, what would I see in
+the backend, the app, and the CDR?" They can answer from experience, and
+the gaps in their answer are your test ideas.</li>
+<li><strong>Say what you think, then ask them to correct you.</strong>
+"My understanding is that the CDR is final once sent and corrections go
+out as a credit CDR. Is that right for our hub too?" Experts correct
+confidently. They're less keen to explain from scratch.</li>
+<li><strong>Keep a glossary of disagreements, not just a
+glossary.</strong> If billing says "session" means the OCPI Session
+object and the station-firmware team says "session" means the OCPP
+transaction, write down both meanings. Every term two teams use
+differently is a likely integration bug.</li>
+<li><strong>Ask "who else should I ask?"</strong> at the end of every
+conversation. In multi-party domains, the person who owns the risk is
+often on another team or at another company.</li>
+<li><strong>Say why you're asking.</strong> "I'm asking because if this
+is wrong, the driver can prove it with the transparency tool and we
+can't take back the CDR." A question with a stake attached gets
+prioritised. Without the stake, it can sound like trivia.</li>
+</ul>
+<hr />
+<h3 id="part-4-turn-your-questions-into-are-you-okay-with-all-this">Part
+4: Turn your questions into "Are you okay with all this?"</h3>
+<p>After a week of following the kWh, you'll have a list of open
+questions. Most of them are <strong>unmade decisions</strong> that
+nobody owns, not bugs. Present them as decisions, not as findings:</p>
+<blockquote>
+<p><strong>Open decisions in offline charging (need an
+owner):</strong></p>
+<ol type="1">
+<li>When a station is offline and a blocked token charges from the local
+cache, who pays for that energy? <em>(Today: not specified. Exposure:
+depends on how long stations stay offline and how many blocked tokens
+are still cached. I can pull station-offline durations from the logs to
+size it.)</em></li>
+<li>Can we ever send a CDR based on estimated energy? <em>(Compliance
+risk under Eichrecht. Needs the metrology owner.)</em></li>
+<li>When a session runs past a tariff change, which tariff applies, and
+does the eMSP calculate it the same way? <em>(Shows up as invoice ≠ CDR.
+Drivers can see it.)</em></li>
+</ol>
+</blockquote>
+<p>That's the second big question in practice: you're not saying "this
+is broken". You're asking whether the people responsible are okay with
+these risks as they stand. Sometimes they are, and that's a legitimate
+answer. Your job is to make sure it's a decision and not something
+nobody looked at.</p>
+<hr />
+<h3 id="practical-challenge-4560-minutes">Practical challenge (45–60
+minutes)</h3>
+<p>Use a domain from your own product. If you don't have one, use EV
+charging.</p>
+<ol type="1">
+<li><strong>Pick the unit of value.</strong> One kWh, one payout, one ad
+impression, one usage event.</li>
+<li><strong>Draw its journey</strong> as a numbered list of hand-offs,
+at least 5. For each hop, write which system or company owns it.</li>
+<li><strong>Apply the four questions</strong> at every hop: who owns the
+truth, late/twice/never, what can't be undone, who notices first. Aim
+for 12+ questions.</li>
+<li><strong>Sort the questions</strong> into three groups: <em>(a)</em>
+answerable by reading docs or specs, <em>(b)</em> answerable only by a
+person (write down who), <em>(c)</em> nobody owns the answer, so it's an
+unmade decision.</li>
+<li><strong>Rewrite your top two group-(c) items</strong> in the "open
+decision" format from Part 4: the decision, current state, exposure, and
+what you'd measure to size it.</li>
+<li><strong>Bonus, EV-specific:</strong> find a public charging invoice
+(yours or a colleague's) that includes signed data, and verify it with
+the S.A.F.E. transparency software against the public key printed on the
+station. Note every step where an ordinary driver would give up. Each of
+those is a usability and trust risk.</li>
+</ol>
+<p>What a strong answer looks like: most of your questions should be
+about <strong>timing, ownership and irreversibility</strong>, not about
+field validation. If most of yours are "what if the value is null?", go
+back to step 3.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2013/11/very-short-blog-posts-8-two-big-questions">"Very
+Short Blog Posts (8): Two Big Questions"</a>, DevelopSense: "Is there a
+problem here?" / "Are you okay with all this?" as the core questions of
+testing</li>
+<li>Simon Tomes, <a
+href="https://www.ministryoftesting.com/newsletter/what-essential-questions-should-testers-ask">"What
+Essential Questions Should Testers Ask?"</a>, Ministry of Testing</li>
+<li>AMPECO, <a
+href="https://www.ampeco.com/guides/the-complete-ocpi-guide/">"The
+Complete OCPI Guide"</a>: CPO/eMSP/hub roles, tariff parts, CDR
+immutability and credit CDRs (vendor guide; checked against the open
+OCPI specification, available via <a
+href="https://emobilitysimplified.com/2019/10/download-ocpi-22-official.html">OCPI
+2.2 spec download</a>)</li>
+<li>E-Mobility Simplified, <a
+href="https://www.emobilitysimplified.com/2022/03/eichrecht-implementation-deep-dive-into.html">"Eichrecht
+Implementation – Deep Dive into German Measurement and Calibration
+Law"</a>: signed start/end readings, public key display, invoice and CDR
+contents, CPO storage duties</li>
+<li>Open Charge Alliance, <a
+href="https://openchargealliance.org/wp-content/uploads/2025/05/signed_meter_values-v10-1.pdf">"Signed
+Meter Values" (v1.0)</a>: how signed meter data is carried in OCPP</li>
+<li>GreenFlux, <a
+href="https://greenflux.helpkit.so/13d17d68194280c7bed4d86435b26298">"Charge
+Station Configuration"</a>: offline authorisation, local authorisation
+cache, <code>AllowOfflineTxForUnknownId</code></li>
+<li>Ampcontrol, <a
+href="https://www.ampcontrol.io/ocpp-guide/how-to-stop-a-charging-session-with-stoptransaction">"How
+to stop a charging session with StopTransaction"</a>: what
+StopTransaction carries for billing</li>
+</ul>
+<p><em>Note: Eichrecht details here come from practitioner and vendor
+sources. Before you treat any of them as a pass/fail rule, confirm the
+exact obligations with your compliance or metrology owner.</em></p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-34.html" rel="prev"><span>Previous</span>&quot;Works as Designed&quot; Is Not the End of the Conversation: Testing Black Week Price Reductions When Every Team Is Technically Right</a><a href="/qa-blog/posts/qa-thinking-day-36.html" rel="next"><span>Next</span>Testing Consent Signals in Ad Tech: A Consent String Is a Record With a Birth Date, Not a Yes/No Flag</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

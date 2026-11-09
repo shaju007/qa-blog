@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Here is a common release note on a B2B SaaS platform: &quot;Webhooks shipped. Integration tests green. We POST the event, get a 200, done.&quot;">
+  <meta name="color-scheme" content="light">
+  <title>Testing Outbound Webhooks: Your Feature Runs on a Server You Can&#39;t See | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 28</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-28">QA Thinking — Day 28</h1>
+<h2
+id="testing-outbound-webhooks-your-feature-runs-on-a-server-you-cant-see">Testing
+Outbound Webhooks: Your Feature Runs on a Server You Can't See</h2>
+<p>Here is a common release note on a B2B SaaS platform: <em>"Webhooks
+shipped. Integration tests green. We POST the event, get a
+<code>200</code>, done."</em></p>
+<p>Say the product is a field-service SaaS. Technicians close jobs in
+the app, and the platform sends <code>job.completed</code>,
+<code>invoice.issued</code> and <code>invoice.voided</code> events to
+each customer's ERP. Those ERPs belong to the customers. They might be a
+mid-sized plumbing company's SAP instance, a homegrown PHP script, or an
+iPaaS connector someone set up in 2021 and nobody has touched since.</p>
+<p>The feature isn't "we send a POST." The feature is <strong>a promise
+about delivery over time, made to systems you don't control and can't
+watch directly.</strong> Your green test checked one delivery to a
+receiver that behaved perfectly. Customers will hit thousands of
+deliveries to receivers that time out, redirect, return <code>500</code>
+during their own deploys, deduplicate badly, or vanish for four
+days.</p>
+<p>Today's lesson has three parts:</p>
+<ol type="1">
+<li>The domain: what a webhook delivery promise actually contains.</li>
+<li>Choosing oracles when the outcome happens somewhere you can't look.
+This applies Michael Bolton's consistency heuristics.</li>
+<li>Observability as a test deliverable. If you can't see delivery, you
+can't test it, and support can't help customers either.</li>
+</ol>
+<hr />
+<h2 id="1-domain-primer-the-delivery-contract-nobody-wrote-down">1.
+Domain primer: the delivery contract nobody wrote down</h2>
+<p>Webhook senders make the same handful of decisions, and each one is a
+business rule with its own failure modes. Mature providers document
+theirs, so you can compare yours against them.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Decision</th>
+<th>Example of a documented answer</th>
+<th>Why it matters to the receiver</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Delivery semantics</strong></td>
+<td>Stripe: endpoints "might occasionally receive the same event more
+than once"; log processed event IDs and skip repeats.</td>
+<td>Receivers must be idempotent, and your event IDs must actually stay
+stable.</td>
+</tr>
+<tr class="even">
+<td><strong>Ordering</strong></td>
+<td>Stripe doesn't guarantee events arrive in the order they were
+generated. Its <code>created</code> timestamp is in seconds, so distinct
+events can share one. Don't use it for ordering or dedup.</td>
+<td><code>invoice.voided</code> can arrive before
+<code>invoice.issued</code>. What does the ERP do then?</td>
+</tr>
+<tr class="odd">
+<td><strong>Retries</strong></td>
+<td>Stripe retries for up to three days with exponential backoff in live
+mode. GitHub "does not automatically redeliver failed webhook
+deliveries."</td>
+<td>Two respected providers made opposite choices, so neither is "the
+standard." Your docs have to say which one you made.</td>
+</tr>
+<tr class="even">
+<td><strong>What counts as success</strong></td>
+<td>Standard Webhooks: only <code>2xx</code>. Stripe treats
+<code>3xx</code> redirects as failures.</td>
+<td>A receiver's <code>301</code> to a new URL is a silent failure, not
+a delivery.</td>
+</tr>
+<tr class="odd">
+<td><strong>Timeouts</strong></td>
+<td>The Standard Webhooks spec recommends 15–30 s. Stripe tells
+receivers to return <code>2xx</code> <em>before</em> complex logic.</td>
+<td>A slow receiver that <em>did</em> process the event gets marked
+failed and retried, which causes duplicates.</td>
+</tr>
+<tr class="even">
+<td><strong>Authenticity and replay</strong></td>
+<td>HMAC-SHA256 signature over timestamp plus raw body. Stripe's
+libraries default to a 5-minute tolerance and warn that a tolerance of
+<code>0</code> disables the recency check.</td>
+<td>Any re-serialization between signing and sending breaks every
+delivery.</td>
+</tr>
+<tr class="odd">
+<td><strong>Secret rotation</strong></td>
+<td>Stripe can keep the old secret alive for up to 24 h and sends one
+signature per active secret. Standard Webhooks sends multiple signatures
+space-delimited.</td>
+<td>A rotation can break receivers that only parse the first
+signature.</td>
+</tr>
+<tr class="even">
+<td><strong>Persistent failure</strong></td>
+<td>Standard Webhooks: notify the consumer and consider disabling the
+endpoint.</td>
+<td>Disabling an endpoint is a business event. A customer's invoicing
+silently stops.</td>
+</tr>
+</tbody>
+</table>
+<p>Two subtleties are worth knowing because they make good bugs:</p>
+<ul>
+<li><strong>Identity across retries.</strong> In Standard Webhooks,
+<code>webhook-id</code> stays the same across retries but
+<code>webhook-timestamp</code> changes on each attempt. Stripe also
+generates a new signature and timestamp for each retry. So the signature
+has to be computed <strong>per attempt</strong>. A sender that caches
+the signature from attempt 1 and sends a fresh timestamp on attempt 2
+works on the first try and fails on every retry. That bug only appears
+after a receiver has already had trouble, which is the worst time for
+it.</li>
+<li><strong>"Same event" isn't always "same ID."</strong> Stripe notes
+that in some cases two separate Event objects are generated, and
+recommends deduplicating on the object ID plus the event type. Ask your
+team: when <em>we</em> replay from the outbox after an incident, do we
+resend the old event IDs or mint new ones? If we mint new ones, we break
+every customer who followed our own dedup advice.</li>
+</ul>
+<hr />
+<h2 id="2-oracles-when-you-cant-see-the-outcome">2. Oracles when you
+can't see the outcome</h2>
+<p>Your real question is "did the customer's system end up in the right
+state?" You usually can't observe that directly. In Michael Bolton's
+terms, an <strong>oracle</strong> is a way to recognize a problem. His
+FEW HICCUPPS list of consistency heuristics is a good way to find
+oracles when there's no obvious expected result. He also warns that
+oracle principles are "fallible and context-dependent; to be applied,
+not followed." An inconsistency tells you where to look. It doesn't
+prove a bug.</p>
+<p>Here's how several of the heuristics apply to webhooks:</p>
+<ul>
+<li><strong>Claims.</strong> What does your public webhook doc promise?
+Often it promises nothing about ordering, retries or disabling, and
+that's your first finding. A missing claim is a problem, because
+customers will infer a guarantee and build on it.</li>
+<li><strong>Comparable products.</strong> Stripe retries for three days
+and GitHub doesn't retry at all. Comparing them doesn't tell you which
+one is right. It shows that <strong>this is a product decision that
+someone has to own</strong>, so you can ask the PM who made it.</li>
+<li><strong>Statutes and standards.</strong> The Standard Webhooks spec
+gives you an external yardstick for header names, signature scheme, ID
+stability and timeouts. If you deviate from it, you should be able to
+explain why.</li>
+<li><strong>Purpose.</strong> Customers use <code>invoice.issued</code>
+to post receivables in their ERP. A duplicate there isn't cosmetic,
+because it can mean a double-posted invoice in someone's books. Purpose
+turns "a duplicate delivery" into a business risk.</li>
+<li><strong>Product (internal consistency).</strong> Compare the
+delivery log, the customer-facing "Recent deliveries" UI, and the retry
+scheduler. If the UI says "Delivered" while the log shows attempt 3
+timed out, one of them is lying.</li>
+<li><strong>History.</strong> Did the old polling API return voided
+invoices? If so, customers moving to webhooks will expect
+<code>invoice.voided</code> to exist and arrive.</li>
+<li><strong>Explainability.</strong> When delivery behaves strangely,
+can anyone on the team explain <em>why</em> from the data you keep? If
+not, you have an observability problem as well as a functional one,
+which leads to part 3.</li>
+</ul>
+<p><strong>Applying this at work:</strong> before writing a single test,
+turn the hidden promises into an explicit claims list and take it to the
+PM and the docs owner. "Here are the eight decisions in the table above.
+For each one: what do we promise, what do we actually do, and who
+decided?" That conversation usually finds more risk than the first week
+of testing. It also turns your oracles from opinions into agreed
+claims.</p>
+<hr />
+<h2 id="3-observability-as-part-of-what-you-test">3. Observability as
+part of what you test</h2>
+<p>Parveen Khan's Thoughtworks piece on why observability matters for
+testers suggests starting with plain questions: are logs available and
+structured, which alerts and dashboards are needed after deployment, and
+does tracing cover the whole flow across services? Rob Meaney's TestBash
+talk makes the matching point: failure in production is inevitable, so
+<strong>detection and recovery</strong> deserve the same design
+attention as prevention.</p>
+<p>For webhooks, that's very concrete. Your tests can't see the
+receiver, but your <strong>delivery log</strong> can see every exchange
+with it. Treat that log as a test oracle, and test the log itself as a
+feature.</p>
+<p>A minimal useful delivery-attempt record looks like this:</p>
+<pre><code>event_id | delivery_id | tenant_id | endpoint_id | attempt_no | scheduled_at | sent_at
+http_status | latency_ms | response_body_snippet | error_class (timeout/TLS/DNS/redirect/4xx/5xx)
+signing_key_id | payload_sha256 | next_retry_at | final_state</code></pre>
+<p>Each field supports a specific check:</p>
+<ul>
+<li><code>payload_sha256</code> lets you prove the bytes you signed are
+the bytes you sent.</li>
+<li><code>signing_key_id</code> lets you debug rotation-window
+failures.</li>
+<li><code>attempt_no</code> plus <code>next_retry_at</code> let you
+check the backoff curve against the documented schedule, without waiting
+three days in real time.</li>
+<li><code>error_class</code> lets support say "your TLS certificate
+chain is incomplete" instead of "it failed."</li>
+</ul>
+<p>The metrics that matter:</p>
+<ul>
+<li><strong>Age of the oldest undelivered event, per tenant.</strong>
+This is the customer's real experience. A global success rate of 99.7%
+can hide one tenant whose invoices have been stuck for 40 hours.</li>
+<li><strong>Retry queue depth and dispatch lag.</strong> These watch for
+noisy neighbours.</li>
+<li><strong>Endpoints auto-disabled today,</strong> and whether each
+tenant was notified.</li>
+</ul>
+<p><strong>The observability test charter:</strong> <em>"Pick a real
+tenant and invoice from staging. Using only our tools, answer within 5
+minutes: did we send it, how many times, what did their server say, what
+will happen next, and can I safely resend it?"</em> If you can't, write
+that up as a bug with the same seriousness as a functional defect.
+Support will be asked exactly this question the first week after
+launch.</p>
+<hr />
+<h2 id="test-ideas-ordered-by-risk">Test ideas, ordered by risk</h2>
+<p><strong>Delivery and retries</strong></p>
+<ul>
+<li>Receiver returns <code>500</code> three times, then
+<code>200</code>. Verify the schedule, the <em>stable</em> event ID, and
+a <em>fresh</em> timestamp and signature on every attempt.</li>
+<li>Receiver processes the event but responds after the timeout. Verify
+the duplicate is the same <code>event_id</code>, so receiver-side dedup
+works.</li>
+<li>Receiver returns <code>301</code>/<code>302</code>. Does the system
+count this as a failure, and does the UI explain why?</li>
+<li>Receiver is down for longer than the retry window. What's the final
+state? Is the tenant notified? Can they replay? Does the replay keep the
+original IDs?</li>
+</ul>
+<p><strong>Ordering and stale snapshots</strong></p>
+<ul>
+<li>Issue and then void an invoice within the same second, with jitter
+injected in the dispatcher. Deliver the void first. Does your docs'
+advice ("fetch the current object from the API") actually work, meaning
+the API returns the voided state right away?</li>
+<li>Retry a <em>snapshot</em> payload on day 3. It still says
+<code>status: open</code> while the invoice was paid on day 1. Is that
+documented? Should these events be thin (ID only) instead?</li>
+</ul>
+<p><strong>Signing</strong></p>
+<ul>
+<li>Put a gzip/proxy/JSON-pretty-printing middleware between signer and
+sender. Check whether any layer re-serializes the payload.</li>
+<li>Rotate the secret mid-retry. Do both signatures appear? Does the old
+one disappear after the window?</li>
+<li>Check non-ASCII payloads (customer names like "Müller Haustechnik
+GmbH") against an independent verifier, such as one of the Standard
+Webhooks reference libraries. Encoding mismatches in signing come up
+repeatedly.</li>
+</ul>
+<p><strong>Multi-tenant fairness and security</strong></p>
+<ul>
+<li>One tenant's endpoint sleeps for 29 s on every request. Do other
+tenants' deliveries slow down? That would be head-of-line blocking in a
+shared queue.</li>
+<li><strong>SSRF:</strong> register
+<code>http://169.254.169.254/latest/meta-data/</code>,
+<code>http://localhost:8080/admin</code>, a public hostname that
+resolves to <code>10.x.x.x</code>, and a public URL that redirects to an
+internal one. OWASP's SSRF Prevention Cheat Sheet lists custom webhooks
+among SSRF contexts. It recommends deny-listing private and metadata
+ranges, disabling redirect-following, and validating the
+<em>resolved</em> IP to defeat DNS rebinding. A webhook feature is a
+user-controlled outbound HTTP client running inside your network, so
+test it as one.</li>
+</ul>
+<hr />
+<h2 id="the-soft-skill-part-explaining-a-risk-nobody-has-hit-yet">The
+soft-skill part: explaining a risk nobody has hit yet</h2>
+<p>The hardest part of this work is that every failure above happens
+<em>later</em>, at <em>someone else's company</em>. In refinement you'll
+hear: "We'll handle retries if customers complain."</p>
+<p>Don't argue about whether bugs exist. Make the cost of deciding later
+concrete:</p>
+<blockquote>
+<p>"Right now we haven't decided whether retries keep the event ID. If
+we ship with new IDs per retry and change it later, every customer who
+built dedup on our ID has to change their integration. That makes it a
+breaking API change. If we decide now, it costs a one-line decision and
+a doc sentence. I'm not asking for more testing time. I'm asking for
+someone to own these eight decisions before the docs go public."</p>
+</blockquote>
+<p>This works because it:</p>
+<ul>
+<li>frames the issue as <strong>reversibility</strong>, not quality.
+Public API semantics are expensive to change once customers depend on
+them.</li>
+<li>makes the request small and clear: a decision owner, not a
+delay.</li>
+<li>uses comparable products as evidence of choice rather than
+authority. "Stripe retries for three days and GitHub doesn't retry. Both
+are legitimate, and we need to pick one and say so."</li>
+</ul>
+<hr />
+<h2 id="challenge-4560-minutes">Challenge (45–60 minutes)</h2>
+<p>Use a webhook-sending feature at your company. If you don't have one,
+use any async integration, such as an event bus consumer, an export to a
+partner SFTP, or a callback to a payment provider.</p>
+<ol type="1">
+<li><strong>Claims audit (15 min).</strong> Fill in the eight-row table
+from part 1 for your system with three columns: <em>documented
+claim</em>, <em>actual behaviour (how you know)</em>, <em>decision
+owner</em>. Count the cells where you wrote "unknown."</li>
+<li><strong>Oracle check (10 min).</strong> For two of the unknowns,
+name which FEW HICCUPPS heuristic would reveal a problem, and what
+observation you'd need.</li>
+<li><strong>The 5-minute question (15 min).</strong> Pick one real event
+from a test environment and try to answer: <em>sent? how many times?
+receiver's response? next action? safe to resend?</em> using only
+production-grade tools. Not the database, not a developer's laptop.
+Write down every point where you got stuck.</li>
+<li><strong>Write the one-paragraph risk note</strong> for your PM, in
+the style of the soft-skill section. It should name one decision, its
+reversibility cost, and the owner you're asking for.</li>
+</ol>
+<p><strong>Stretch:</strong> write one automated check that fails if the
+signature on attempt 2 was computed with attempt 1's timestamp. Because
+it targets a bug that only appears on retries, it's worth more than the
+ten happy-path tests you already have.</p>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton (DevelopSense), <a
+href="https://developsense.com/blog/2012/07/few-hiccupps">FEW
+HICCUPPS</a>: consistency heuristics for recognizing problems, and the
+warning that oracles are fallible.</li>
+<li>Parveen Khan (Thoughtworks), <a
+href="https://www.thoughtworks.com/insights/blog/observability/why-observability-matters-testers">Why
+observability matters for testers</a></li>
+<li>Rob Meaney, <a
+href="https://ministryoftesting.com/testbash-sessions/observability-unlearn-guessing-reduce-stressing-and-learn-to-embrace-reality-rob-meaney">Observability:
+Unlearn Guessing, Reduce Stressing and Learn to Embrace Reality</a>
+(Ministry of Testing, TestBash)</li>
+<li>Stripe Docs, <a href="https://docs.stripe.com/webhooks">Receive
+Stripe events in your webhook endpoint</a>: duplicates, ordering, 3-day
+retries, raw-body signing, 5-minute tolerance, secret rotation.</li>
+<li>GitHub Docs, <a
+href="https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries">Handling
+failed webhook deliveries</a>: no automatic redelivery.</li>
+<li><a
+href="https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md">Standard
+Webhooks specification</a>: ID stable across retries, per-attempt
+timestamp, 2xx-only success, 15–30 s timeout guidance, disabling and
+notification.</li>
+<li>OWASP, <a
+href="https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html">Server-Side
+Request Forgery Prevention Cheat Sheet</a>: webhooks as an SSRF context,
+deny-listing internal ranges, redirects, and DNS rebinding.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-27.html" rel="prev"><span>Previous</span>Testing Ad Budget Pacing: The Budget Is a Promise About a Curve, Not a Final Number</a><a href="/qa-blog/posts/qa-thinking-day-29.html" rel="next"><span>Next</span>Testing Time-Zone Rule Changes: Your Fixture List Is Right Today and Wrong on November 1</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

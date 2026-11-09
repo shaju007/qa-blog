@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Today is 16 October 2026. In the next three weeks, several clock changes land on a sports-data platform at once:">
+  <meta name="color-scheme" content="light">
+  <title>Testing Time-Zone Rule Changes: Your Fixture List Is Right Today and Wrong on November 1 | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 29</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-29">QA Thinking — Day 29</h1>
+<h2
+id="testing-time-zone-rule-changes-your-fixture-list-is-right-today-and-wrong-on-november-1">Testing
+Time-Zone Rule Changes: Your Fixture List Is Right Today and Wrong on
+November 1</h2>
+<p>Today is 16 October 2026. In the next three weeks, several clock
+changes land on a sports-data platform at once:</p>
+<ul>
+<li><strong>25 October:</strong> the EU and UK fall back at 01:00 UTC.
+In Hamburg the hour from 02:00 to 03:00 happens twice, so that local day
+has 25 hours.</li>
+<li><strong>25 October to 1 November:</strong> Europe has fallen back
+and the US has not. For one week the UK is 4 hours ahead of US Eastern
+instead of 5, and Germany is 5 hours ahead instead of 6.</li>
+<li><strong>1 November:</strong> the US falls back. Three Canadian
+jurisdictions don't. British Columbia moved to permanent UTC−07 (tzdata
+2026b), Alberta to permanent UTC−06, which the province now calls
+"Alberta Time (ABT)" (tzdata 2026c), and the Northwest Territories also
+stay on −06 (tzdata 2026d, released 11 September).</li>
+<li>Morocco already moved to permanent UTC on 20 September (2026c).</li>
+</ul>
+<p>For a sports platform, an Edmonton or Calgary home game in November
+is now the riskiest kind of fixture you have. If any component in the
+chain is running time-zone data from before July 2026, it will think
+19:00 local is 02:00 UTC, when it is actually 01:00 UTC. Your app then
+shows the wrong start time, and your betting markets may suspend an hour
+late.</p>
+<p>Time-zone rule changes don't happen often, so there's usually no test
+for them. That's why they're worth a full lesson.</p>
+<hr />
+<h2 id="1-time-is-part-of-the-product-not-a-field">1. Time is part of
+the product, not a field</h2>
+<p>James Bach's <strong>Heuristic Test Strategy Model</strong> lists
+<em>Time</em> as its own product element, next to structure, function,
+data, interfaces, platform and operations. It means more than "the
+timestamp field": when input arrives, when output is produced, the
+delays between them, the pace of events, and what happens when things
+overlap. The HTSM's working definition of quality, "value to some person
+who matters at some time", applies literally here. A fixture time that
+was correct when the league published the schedule in summer can be
+wrong by the time the puck drops.</p>
+<p>The HTSM also gives you a second way to look at this:
+<strong>platform</strong>. Time-zone rules aren't your code. They're
+data maintained by the IANA tz project and copied into many places, each
+updated on its own schedule:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Where tz rules live</th>
+<th>Who updates them</th>
+<th>How to see the version</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OS / container base image</td>
+<td>Image rebuild, <code>tzdata</code> package</td>
+<td><code>zdump -v -c 2026,2027 America/Edmonton</code></td>
+</tr>
+<tr class="even">
+<td>JVM (ships its own tz data)</td>
+<td>JDK update or Oracle's TZUpdater</td>
+<td><code>ZoneRulesProvider.getVersions("America/Edmonton").lastKey()</code></td>
+</tr>
+<tr class="odd">
+<td>Node.js (uses ICU's tz data)</td>
+<td>Node release</td>
+<td><code>process.versions.tz</code></td>
+</tr>
+<tr class="even">
+<td>Python <code>zoneinfo</code></td>
+<td>System tz data, or the <code>tzdata</code> PyPI package</td>
+<td><code>tzdata.IANA_VERSION</code></td>
+</tr>
+<tr class="odd">
+<td>Database</td>
+<td>DB build and config (PostgreSQL may bundle its own)</td>
+<td>Compare <code>AT TIME ZONE</code> output with the app</td>
+</tr>
+<tr class="even">
+<td>Browsers / mobile OS</td>
+<td>OS vendor's release cadence; users may not update</td>
+<td>Test on real devices</td>
+</tr>
+</tbody>
+</table>
+<p>The useful question isn't "do we handle time zones?" It's
+<strong>"how many independent copies of the rules do we run, and do they
+agree?"</strong> When two components disagree about one fixture, you've
+found a bug, and you didn't need a spec to know it.</p>
+<p>One detail to notice: the tz maintainers modeled BC's and Alberta's
+changes as taking effect on 1 November 2026 at 02:00, even though the
+legal changes happened earlier. They did this to work around a CLDR
+limitation. Even your reference data contains judgment calls, so read
+the release notes; don't just bump the version.</p>
+<hr />
+<h2
+id="2-domain-primer-how-time-flows-through-a-sports-data-platform">2.
+Domain primer: how time flows through a sports-data platform</h2>
+<p>A fixture goes through these stages, and each one depends on the
+clock:</p>
+<ol type="1">
+<li><strong>Scheduled.</strong> The league or a data provider publishes
+kickoff (KO) or puck-drop times. Usually these are venue-local times
+("19:00 at Rogers Place"), converted to UTC somewhere upstream.</li>
+<li><strong>Pre-match.</strong> Odds are published, push notifications
+are queued ("starts in 30 minutes"), broadcast program guides (EPG) are
+exported, and <strong>fantasy lineup locks</strong> are calculated from
+the earliest kickoff in the round.</li>
+<li><strong>Start.</strong> Pre-match markets must suspend at the
+<em>actual</em> start. Bets accepted after the event begins are called
+<strong>past-posting</strong>. It's an integrity and financial risk, not
+a cosmetic one.</li>
+<li><strong>In-play and settlement.</strong> Settlement uses event
+timestamps from the feed. Reports group results by "match day."</li>
+</ol>
+<p>Business rules that depend on the clock:</p>
+<ul>
+<li>The <em>scheduled</em> time decides when users are told the event
+starts. The <em>actual</em> start decides when markets close. If the
+scheduled time is an hour off, any automation that relies on it as a
+fallback is also an hour off.</li>
+<li>Fantasy deadlines are fairness rules. Lock an hour late and some
+users can change their lineup after kickoff, and they'll complain
+publicly.</li>
+<li>Partners such as broadcasters, affiliates and B2B feed customers
+consume your times and redisplay them under <em>their own</em> tz
+data.</li>
+</ul>
+<p><strong>The core model: every event has three clocks plus one
+version.</strong></p>
+<ul>
+<li><strong>Instant:</strong> the UTC moment. You need it for sorting,
+suspension and settlement.</li>
+<li><strong>Venue intent:</strong> "19:00 in Edmonton." This is what the
+league actually promised.</li>
+<li><strong>Viewer wall clock:</strong> what a fan in Hamburg or Seattle
+sees.</li>
+<li><strong>Rules version:</strong> the tz data used to convert intent
+into an instant.</li>
+</ul>
+<p>Simon Willison's article on <a
+href="https://simonwillison.net/2024/Nov/27/storing-times-for-human-events/">storing
+times for human events</a> explains why storing only UTC is risky for
+future events. If you keep only the instant and the rules change, you
+can't tell which stored instants are now wrong. You need the original
+intent and location so you can recompute. His historical example is the
+2005 US Energy Policy Act, after which Microsoft had to ship a tool to
+repair Exchange calendar entries. For you, the testing question is:
+<strong>for future fixtures, does our system store the venue intent, or
+only a UTC value computed under rules we no longer trust?</strong></p>
+<hr />
+<h2 id="3-failure-modes-worth-a-session-this-week">3. Failure modes
+worth a session this week</h2>
+<p>Each one comes with a concrete test idea.</p>
+<p><strong>A. A stale copy of the rules in one component.</strong> The
+API (JVM, updated) says 01:00Z. The push-notification worker (old Node
+base image) calculates "starts in 30 min" from 02:00Z. <em>Test:</em>
+pick one November Edmonton fixture and follow it through every output:
+API, web, iOS, Android, push text, EPG export, market-suspension
+schedule and fantasy lock. Write them in one table. Any disagreement is
+a finding.</p>
+<p><strong>B. UTC computed under old rules and frozen.</strong> Fixtures
+imported in August were converted to UTC with pre-2026c data. They're
+stored "correctly" under the old rules and are now an hour off.
+<em>Test:</em> query future fixtures in <code>America/Vancouver</code>,
+<code>America/Edmonton</code> and <code>America/Inuvik</code> after 1
+November. Recompute UTC from venue-local time using current tz data and
+diff. If the system never stored venue-local time, that's your headline
+risk: the data can't be repaired from inside your system.</p>
+<p><strong>C. Zone aliasing and hard-coded offsets.</strong> Code that
+maps Vancouver to <code>America/Los_Angeles</code> "because they're both
+Pacific", or a config value like <code>ET_OFFSET = -5</code>. From 1
+November, Vancouver and Seattle are on different offsets for the first
+time. <em>Test:</em> search config and code for literal offsets, zone
+abbreviations and alias tables. Then check any Vancouver–Seattle fixture
+in the viewer's time zone on both sides of the border.</p>
+<p><strong>D. The one-week transatlantic gap.</strong> A Premier League
+match at 15:00 UK time on 31 October is 11:00 Eastern, not 10:00.
+<em>Test:</em> use a controllable clock (an injected <code>Clock</code>,
+not the system clock) and render fixtures dated 26–31 October for US
+viewers. Also check marketing copy and scheduled social posts that were
+written by hand with "10am ET".</p>
+<p><strong>E. The 25-hour day.</strong> On 25 October in Hamburg, local
+times from 02:00 to 02:59 occur twice. <em>Test:</em> do cron jobs
+scheduled in local time at 02:30 (odds snapshots, settlement batches,
+report exports) run twice, once, or not at all? Do "daily" trading
+reports keyed by local date expect 24 hourly buckets? Do log lines in
+local time without an offset become ambiguous during that hour?</p>
+<p><strong>F. Labels that confuse users.</strong> Alberta's government
+says "ABT". The tz data for the Northwest Territories uses "CST". Your
+UI might show "MST", "CST", "−06" or "ABT". <em>Test:</em> look at what
+the UI actually shows for these zones after 1 November, then ask the
+product owner which label fans will recognize. This is a product
+decision, not a technical one.</p>
+<p><strong>G. Devices you don't control.</strong> If the client formats
+times using the <em>device's</em> tz rules, users who haven't updated
+their OS will see wrong times even if your servers are perfect.
+<em>Test:</em> compare server-formatted times with client-formatted ones
+on an older device or emulator image. If formatting happens on the
+client, decide deliberately whether to send a pre-formatted venue-local
+string as well.</p>
+<hr />
+<h2 id="4-the-soft-skill-asking-which-clock-without-crying-wolf">4. The
+soft skill: asking "which clock?" without crying wolf</h2>
+<p>Testers lose credibility on time bugs in two ways: saying nothing, or
+sending an alarming "all our times might be wrong!" message to a
+channel. The Ministry of Testing Club thread <a
+href="https://club.ministryoftesting.com/t/how-to-learn-about-time-zones-and-testing-time-zones/82354"><em>How
+to learn about time zones and testing time zones?</em></a> is useful
+because the answers treat time zones as <strong>business rules</strong>,
+not a mysterious technical area. Mirek Długosz's answer distinguishes
+wall-clock time from monotonic instants, and storage from display. He
+points out the risk that stored instants become wrong when zone
+definitions change. That's the framing you should take into the
+conversation.</p>
+<p><strong>Questions for the product owner</strong> (about intent):</p>
+<ul>
+<li>When the league says 19:00, is our promise "19:00 at the venue" or a
+fixed UTC instant?</li>
+<li>Which time zone label should Alberta fans see after 1 November?</li>
+<li>If a fixture time changes because of a rules update, do we notify
+users, partners, or nobody?</li>
+</ul>
+<p><strong>Questions for developers</strong> (about mechanism):</p>
+<ul>
+<li>Where do we convert venue-local time to UTC: at import, at render,
+or both?</li>
+<li>Which tz data version does each service run, and who owns updating
+it?</li>
+<li>Can we recompute stored UTC values from the original intent?</li>
+</ul>
+<p><strong>Explaining the risk to the trading or product lead.</strong>
+Be specific, bounded and tied to evidence:</p>
+<blockquote>
+<p>"Our push-worker image ships tz data from 2025. For fixtures in
+Alberta, BC and the Northwest Territories after 1 November, it
+calculates start times one hour late. I've confirmed this for one
+Edmonton game (table attached). Impact: 'starts soon' notifications an
+hour late, and if the scheduled time is used as a fallback for market
+suspension, there's a past-posting exposure. I haven't yet checked the
+EPG export or fantasy locks. I need two hours for that. Proposed fix:
+rebuild the image with current tzdata, and run a one-off
+recompute-and-diff for future fixtures in these zones."</p>
+</blockquote>
+<p>This message separates what you've confirmed from what you haven't
+checked yet. It names the business consequence (past-posting, missed
+notifications) rather than "timezone bug". It also asks for a small,
+time-limited piece of work before a hard deadline. That's negotiating
+with evidence. You're not asking for a freeze; you're asking for two
+hours.</p>
+<hr />
+<h2 id="5-applying-this-to-other-domains">5. Applying this to other
+domains</h2>
+<p>The model of three clocks plus a rules version carries over to other
+domains:</p>
+<ul>
+<li><strong>Energy:</strong> a 25-hour local day has 100 quarter-hour
+intervals, not 96. Daily totals, time-of-use tariff windows and
+settlement files keyed by local date all need checking.</li>
+<li><strong>Ad tech:</strong> daily budgets in the advertiser's time
+zone. A 25-hour day can overspend a "daily" cap, and a rules change
+moves the reset time.</li>
+<li><strong>SaaS and payments:</strong> billing anchors at local
+midnight, payout cut-off times, and "end of trial" emails. Any business
+rule written as "by 23:59 local" depends on someone else's copy of the
+tz rules.</li>
+</ul>
+<hr />
+<h2
+id="practical-challenge-4560-minutes-do-it-before-25-october">Practical
+challenge (45–60 minutes, do it before 25 October)</h2>
+<ol type="1">
+<li><strong>Inventory (15 min).</strong> List every service, job and
+client in one fixture's path, from ingest to API, push, EPG, fantasy
+lock and market suspension. For each, record where its tz rules come
+from and the version, using the commands in section 1.</li>
+<li><strong>One fixture, every output (20 min).</strong> Pick a real
+November home game in Edmonton or Calgary and a Vancouver–Seattle
+fixture if you have one. Use a controllable clock or a staging
+environment to collect the start time from every output into one table.
+Mark disagreements.</li>
+<li><strong>Data diff (10 min).</strong> Write the query that recomputes
+UTC from venue-local time for future fixtures in the four affected
+zones, and count how many rows differ. If venue-local time isn't stored,
+write that down. It's your most important finding.</li>
+<li><strong>Risk note (10 min).</strong> Write a five-sentence message
+to the product owner in the format from section 4: what you saw, the
+impact in business terms, what you haven't checked, and one small action
+with a deadline.</li>
+</ol>
+<p><strong>Stretch goal:</strong> find a job scheduled at a local time
+between 02:00 and 03:00 Europe/Berlin and find out what it will do on 25
+October. Don't guess; read the scheduler's documentation or test it with
+a shifted clock.</p>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>James Bach, <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model (v6.3), Satisfice</a>: <em>Time</em> and
+<em>Platform</em> as product elements, and the definition of quality
+used above. A PDF copy is also hosted at <a
+href="https://developsense.com/htsm">DevelopSense</a>.</li>
+<li>Ministry of Testing Club, <a
+href="https://club.ministryoftesting.com/t/how-to-learn-about-time-zones-and-testing-time-zones/82354">How
+to learn about time zones and testing time zones?</a>: wall-clock vs.
+monotonic time, storage vs. display, and the risk of changing zone
+definitions.</li>
+<li>Simon Willison, <a
+href="https://simonwillison.net/2024/Nov/27/storing-times-for-human-events/">Storing
+times for human events</a>: store user intent and location, and derive
+UTC.</li>
+<li>IANA, <a href="https://www.iana.org/time-zones/releases/2026d">Time
+Zone Database Release 2026d</a>: the Northwest Territories stay on −06
+from 1 November 2026.</li>
+<li>IANA tz-announce, <a
+href="https://lists.iana.org/hyperkitty/list/tz-announce@iana.org/2026/7/">2026c
+announcement (July 2026 archive)</a>: Alberta on permanent −06, Morocco
+on permanent UTC, and the urgency note for downstream testing.</li>
+<li>IANA tz-announce, <a
+href="https://lists.iana.org/hyperkitty/list/tz-announce@iana.org/thread/VX2Z3CBO6KHTYZNBBKFFWM7ZCI6TVCXP/">2026b
+release</a>: British Columbia on permanent −07, and why the change is
+modeled on 1 November because of CLDR.</li>
+<li>Government of Alberta, <a
+href="https://www.alberta.ca/albertas-new-time-system-abt">Alberta's new
+time system (ABT)</a>: the official name, UTC−6, effective November
+2026.</li>
+<li>Universal Time Date, <a
+href="https://www.universaltimedate.com/articles/daylight-saving-time-2026-when-clocks-change">Daylight
+Saving Time 2026: When Clocks Change in Every Major Country</a>: EU
+change on 25 October at 01:00 UTC, US change on 1 November, and the
+week-long transatlantic gap.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-28.html" rel="prev"><span>Previous</span>Testing Outbound Webhooks: Your Feature Runs on a Server You Can&#39;t See</a><a href="/qa-blog/posts/qa-thinking-day-30.html" rel="next"><span>Next</span>Automate the Question, Not the Test Case: A Check Portfolio for SaaS Usage Metering</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario: You&#39;re the QA lead at a German energy supplier that has about 1.2 million household and small-business accounts. The QA environment currently runs on a masked subset of production: billing accounts, c">
+  <meta name="color-scheme" content="light">
+  <title>&quot;The synthetic dataset is 99% statistically faithful to production. We&#39;re deleting the masked copy.&quot; Do you agree? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 23</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-23">QA Interview Q&amp;A — Day 23</h1>
+<h2
+id="question-the-synthetic-dataset-is-99-statistically-faithful-to-production-were-deleting-the-masked-copy-do-you-agree">Question:
+"The synthetic dataset is 99% statistically faithful to production.
+We're deleting the masked copy." Do you agree?</h2>
+<p><strong>Scenario:</strong> You're the QA lead at a German energy
+supplier that has about 1.2 million household and small-business
+accounts. The QA environment currently runs on a masked subset of
+production: billing accounts, contracts, meter points, readings and
+payment history. The data-protection officer is uneasy about it, and
+refreshing it takes three weeks. The data platform team has trained a
+synthetic data generator on production and shows a dashboard: "99.1%
+statistical fidelity: distributions, correlations and cardinalities all
+match." Their proposal is to replace the masked subset with synthetic
+data from next quarter and delete the masked copy for good.</p>
+<p>In the planning meeting, the engineering manager asks: "QA, can we
+sign off on this?"</p>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>I'd support the direction and object to the deletion date. Synthetic
+data is probably the right default for most of our testing. But "99%
+statistically faithful" answers a different question from the one
+testing asks. Fidelity metrics describe the <strong>population</strong>.
+Testing mostly needs <strong>specific, awkward individuals</strong>: the
+account with three meter swaps in one billing period, or the contract
+migrated from a 2012 acquisition with a null start date. A dashboard can
+score 99% while every one of those individuals is missing. That isn't a
+flaw in the generator. Removing rare individuals is part of how a
+privacy-preserving generator works.</p>
+<p>So my answer is "yes, if we can show it covers the risks we care
+about." Until then it's "not yet." I'd also propose a cheap way to find
+out within a few weeks.</p>
+<h3 id="how-id-reason-about-it">How I'd reason about it</h3>
+<p><strong>1. What does "99% fidelity" measure?</strong> Usually it
+means marginal distributions (age of account, consumption bands, tariff
+mix), pairwise correlations and table sizes all match production. That's
+real and useful. A dataset can match all of that and still have no
+record where:</p>
+<ul>
+<li>a meter reading was corrected <em>after</em> the bill was issued,
+triggering a rebill</li>
+<li>a move-out and move-in at the same meter location overlap by one
+day</li>
+<li>a customer has an SEPA mandate, a payment plan and a dunning hold at
+the same time</li>
+<li>an address imported from the old system has <code>?</code> where an
+umlaut should be</li>
+<li>a contract violates a rule the current system enforces but the 2012
+system didn't</li>
+</ul>
+<p>Those are combinations, sequences and histories, not distributions.
+In the Heuristic Test Strategy Model, they fall under
+<strong>Data</strong> and <strong>Time</strong>: what the product does
+things to, and how it behaves over time. The data-related bugs I've seen
+in billing systems mostly live there.</p>
+<p><strong>2. Privacy-preserving generators deliberately smooth out
+outliers.</strong> I'd raise this point gently because it isn't a
+criticism of the platform team. The UK ICO's guidance on synthetic data
+names the tradeoff directly. The closer synthetic data mimics real data,
+the more useful it is, but also the more likely it is to reveal personal
+information. One recommended protection is suppressing outliers, meaning
+records with uniquely identifying features. So the property that makes
+the dataset safe to hand around is the same one that removes the weird
+records. Testers should expect the long tail to be thinner, and should
+check, not hope, whether the cases we need survived.</p>
+<p><strong>3. Generators learn the data as the current schema describes
+it.</strong> If the generator enforces today's constraints (foreign
+keys, enums, non-null columns), it can't produce records that break
+those constraints. Production can still contain them, from migrations,
+manual database fixes and old bugs. Those records are where support
+tickets come from. A synthetic dataset that's cleaner than production
+gives you false confidence: tests go green because the data is better
+behaved than reality.</p>
+<p><strong>4. Do the relationships hold across systems?</strong> Our
+billing data doesn't live in one database. CRM, meter data management,
+billing and payments each hold part of a customer. If the generator
+synthesizes each system separately, the joins between them may be
+statistically plausible but logically impossible. For example, a meter
+location whose readings start before its contract does. Or the joins may
+be so tidy that the reconciliation jobs never meet a mismatch.</p>
+<p><strong>5. "Synthetic" doesn't automatically mean
+"anonymous."</strong> The ICO guidance also says synthetic data can
+still be vulnerable to membership inference, model inversion and
+attribute disclosure. Whether this dataset counts as personal data is a
+decision for the DPO, not for QA. I'd mention it only so nobody assumes
+the privacy question is closed and starts copying the dataset to laptops
+and vendor sandboxes.</p>
+<h3 id="evidence-id-ask-for-before-the-masked-copy-is-deleted">Evidence
+I'd ask for before the masked copy is deleted</h3>
+<p>These are cheap and specific, and they turn opinions into data:</p>
+<ol type="1">
+<li><strong>Incident replay.</strong> Take the last 18 months of
+production incidents where data was the trigger. In a billing system
+that's probably 20 to 30. For each one, ask: does the synthetic dataset
+contain a record that would trigger it? Does the masked subset? If the
+masked subset covers 22 of 25 and the synthetic set covers 9, that's the
+most persuasive single number we can bring back.</li>
+<li><strong>Counting known anomalies.</strong> Ask someone with
+authorized production access to run aggregate-only queries for known
+anomaly patterns: records violating current constraints, overlapping
+contracts, corrected readings, umlaut encoding errors, orphan payments.
+Counts only, no rows. Run the same queries on the synthetic set.
+Non-zero in production and zero in synthetic marks a gap we know
+about.</li>
+<li><strong>Run both in parallel for one release.</strong> Run the
+regression suite and a few data-focused exploratory sessions against
+both datasets for one release. Compare which problems each one
+surfaced.</li>
+<li><strong>The generator's settings.</strong> Ask whether outlier
+suppression or differential privacy is on, at what strength, and whether
+constraints are enforced. This isn't a gotcha. It tells us which of the
+gaps above to expect.</li>
+</ol>
+<h3 id="what-id-actually-recommend">What I'd actually recommend</h3>
+<p>Layer the test data instead of making a yes/no choice:</p>
+<ul>
+<li><strong>Synthetic data as the default layer.</strong> Use it for CI,
+preview environments, demos, volume and performance work, and most
+automated regression. It's available on demand, nobody worries about
+sharing it, and it removes the three-week refresh. That fits DORA's
+guidance that test data should be available on demand, isolated per
+test, and created through the application's APIs wherever possible.</li>
+<li><strong>A small, deliberately built library of hard cases.</strong>
+Every record traces back to an incident or a named risk, such as
+<code>INC-4471: rebill after corrected reading</code>. It's built by
+hand or from rules, owned by QA and the domain team, and reviewed when
+the domain changes. This layer replaces "realism" with intent.</li>
+<li><strong>A governed route for investigating production-only
+issues.</strong> For example, read-only diagnostics by authorized
+engineers, or a narrowly scoped extract approved by the DPO. QA doesn't
+decide which. QA does need <em>some</em> route to exist before the only
+realistic dataset is deleted.</li>
+</ul>
+<h3 id="what-id-say-in-the-meeting">What I'd say in the meeting</h3>
+<blockquote>
+<p>"I think synthetic data should become our default, and I'd like to
+help make it work. I'm not comfortable signing off on deleting the
+masked copy yet. The fidelity number tells us the overall population
+looks right. Our worst bugs come from rare and historically messy
+records, and outlier suppression is designed to remove exactly those.
+I'm not saying the synthetic set is bad. I'm saying we don't yet know
+what it's missing.</p>
+<p>Here's a proposal: give me two weeks. We'll replay our last 18 months
+of data-driven incidents against both datasets and count known anomaly
+patterns in each. If the synthetic set covers them, or we can fill the
+gaps with a small curated set, I'll support the deletion date. If it
+doesn't, we'll have a concrete list of what to fix first. The DPO
+decides what happens to the masked data. I just want that decision made
+with this evidence in front of us."</p>
+</blockquote>
+<p>This avoids claiming a veto I don't have, offers a time-boxed
+alternative, and makes the decision easy to revisit later.</p>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"Synthetic data isn't real, so it can't be
+trusted."</strong> This is a reflex, not an analysis. It also ignores
+that the masked copy has its own problems: it's stale, slow to refresh
+and carries privacy risk.</li>
+<li><strong>"99% fidelity sounds great, approved."</strong> This treats
+a statistical summary as test coverage.</li>
+<li><strong>"QA needs production data, full stop."</strong> This claims
+an authority over data protection that QA doesn't have, and it loses the
+room.</li>
+<li><strong>"We'll add edge cases by hand."</strong> That's correct, but
+meaningless unless you can say <em>which</em> edge cases and how you
+know they matter. The incident replay answers that.</li>
+<li><strong>Treating it as a tool question.</strong> The real question
+is what test data is meant to reveal. Which generator to use is
+secondary.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><em>Six months later, the hard-case library has 300 records and
+nobody trusts half of them. How do you keep it from going stale, and who
+owns it?</em></li>
+<li><em>The performance team wants a synthetic dataset ten times
+production size for load testing next winter's peak. What changes about
+how you'd judge whether that data is "realistic enough"?</em></li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model, James Bach / Satisfice</a>: its product elements
+(Structure, Function, <strong>Data</strong>, Interfaces, Platform,
+<strong>Operations</strong>, <strong>Time</strong>) frame why
+distribution-level fidelity misses the histories, sequences and
+combinations that billing bugs depend on. DevelopSense also hosts the
+model: <a
+href="https://developsense.com/htsm">developsense.com/htsm</a>.</li>
+<li><a
+href="https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/privacy-enhancing-technologies/what-pets-are-there/synthetic-data/">ICO:
+Synthetic data (privacy-enhancing technologies guidance)</a>: primary
+regulator guidance on the utility-versus-privacy tradeoff, suppressing
+outliers, and residual risks such as membership inference and attribute
+disclosure. I used it here as a technical explanation. For a German
+company, the data-protection decision belongs to the DPO under the EU
+GDPR.</li>
+<li><a href="https://dora.dev/capabilities/test-data-management/">DORA:
+Test data management</a>: supports the "default layer" recommendation
+(test data available on demand, isolated per test, created through APIs)
+and warns against copying whole production databases and relying on
+stale data.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-22.html" rel="prev"><span>Previous</span>You spent a full day exploring a new feature and found zero bugs. At the debrief, your engineering manager asks: &quot;So it&#39;s ready — or was that a wasted day?&quot; What do you say?</a><a href="/qa-blog/posts/qa-interview-day-24.html" rel="next"><span>Next</span>Your product owner says, &quot;You find all the edge cases anyway. From next sprint, can you just write the acceptance criteria?&quot; Do you say yes?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

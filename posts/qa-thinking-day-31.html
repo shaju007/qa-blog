@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The domain: why a solar operator can be paid zero for an hour of generation">
+  <meta name="color-scheme" content="light">
+  <title>Testing a Rule That Pays You Nothing: Negative-Price Feed-In and What Testers Actually Find | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 31</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-31">QA Thinking — Day 31</h1>
+<h2
+id="testing-a-rule-that-pays-you-nothing-negative-price-feed-in-and-what-testers-actually-find">Testing
+a Rule That Pays You Nothing: Negative-Price Feed-In and What Testers
+Actually Find</h2>
+<h3
+id="the-domain-why-a-solar-operator-can-be-paid-zero-for-an-hour-of-generation">The
+domain: why a solar operator can be paid zero for an hour of
+generation</h3>
+<p>In Germany, many solar owners are paid a guaranteed rate for the
+power they feed in, under the EEG (Renewable Energy Sources Act). For
+years that payment was independent of the market price. <a
+href="https://www.cleanenergywire.org/factsheets/causes-and-effects-negative-power-prices">Clean
+Energy Wire's factsheet on negative power prices</a> explains how
+negative prices happen. Inflexible generation and low demand coincide,
+and the guaranteed payment is topped up through a levy on consumers. So
+an operator was paid even when the wholesale price was below zero, which
+gave them little reason to stop generating.</p>
+<p>The <strong>Solarspitzengesetz</strong> ("solar peak act") changes
+this for new systems. <a
+href="https://ratedpower.com/blog/how-solarspitzengesetz-affects-solar/">RatedPower's
+summary by Julian Scheer</a> describes these rules:</p>
+<ul>
+<li>The suspension applies to PV systems commissioned <strong>after 25
+February 2025</strong>. Systems under 2 kW are exempt.</li>
+<li>In any <strong>15-minute interval with a negative price</strong>,
+the subsidy is suspended.</li>
+<li>Operators with a smart meter can recover the lost intervals later.
+The 20-year support period is extended by the unpaid blocks. This is the
+"catch-up" mechanism in §51a.</li>
+<li>New systems under 100 kWp <strong>without</strong> a smart meter and
+remote control must limit feed-in to <strong>60% of installed
+capacity</strong> until those are installed and tested.</li>
+</ul>
+<p>Before you build test cases from this, check the details against the
+law itself or your own company's interpretation. RatedPower is a
+solar-software vendor, and a summary is not the statute. Use it to
+orient yourself, then get the real rule from your domain expert.</p>
+<h3 id="why-this-is-a-testing-problem-and-not-only-a-calculation">Why
+this is a testing problem and not only a calculation</h3>
+<p>An hour of solar generation now has a different financial outcome
+depending on facts that live in different systems:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Fact</th>
+<th>Where it probably lives</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Commissioning date (before or after the cutoff)</td>
+<td>Asset registry or onboarding</td>
+</tr>
+<tr class="even">
+<td>Size of the plant (under 2 kW, under 100 kWp)</td>
+<td>Asset registry</td>
+</tr>
+<tr class="odd">
+<td>Smart meter present and remote control tested</td>
+<td>Metering and grid-operator integration</td>
+</tr>
+<tr class="even">
+<td>Settlement interval price</td>
+<td>Market data feed</td>
+</tr>
+<tr class="odd">
+<td>Interval metered feed-in</td>
+<td>Meter data pipeline</td>
+</tr>
+<tr class="even">
+<td>Marketing form (fixed tariff or direct marketing)</td>
+<td>Contract</td>
+</tr>
+</tbody>
+</table>
+<p>The payout for one 15-minute block depends on all six, joined
+correctly. The failures are rarely arithmetic mistakes. They look like
+these:</p>
+<ul>
+<li><strong>A boundary date treated as a cutoff in the wrong time
+zone.</strong> A plant commissioned on 25 February could be classified
+either way.</li>
+<li><strong>A price of exactly 0.00 €/MWh.</strong> Is "negative"
+<code>&lt; 0</code> or <code>&lt;= 0</code>? Rounding of the price can
+also flip the outcome.</li>
+<li><strong>A price feed that is late or revised.</strong> Did you pay
+for an interval and later learn the price was negative?</li>
+<li><strong>The catch-up ledger.</strong> Unpaid intervals have to be
+added to the support period exactly once. A retried job could count them
+twice.</li>
+<li><strong>A state change mid-period.</strong> A smart meter is
+installed on the 14th. The 60% cap should stop applying from that point,
+not from the start of the month.</li>
+<li><strong>Mixed fleets.</strong> One customer has an old plant and a
+new one on the same meter.</li>
+</ul>
+<h3 id="applying-james-bachs-what-testers-find">Applying James Bach's
+"What Testers Find"</h3>
+<p>Bach's post <a
+href="https://www.satisfice.com/blog/archives/572">What Testers Find</a>
+says that testing produces more than bug reports. His categories are
+bugs, risks, issues, testability problems, artifacts, and curios. Most
+teams only report bugs, so a lot of valuable output gets lost. Here is
+how the categories look in this domain:</p>
+<ul>
+<li><strong>Bug.</strong> A 2.5 kW plant commissioned in March is paid
+during a negative-price interval.</li>
+<li><strong>Risk.</strong> Eligibility is derived from a free-text
+"commissioned" field that operators edit by hand. It works today. It
+could misclassify plants whenever someone changes the format.</li>
+<li><strong>Issue.</strong> Nobody can say whether a plant that changes
+its direct-marketing provider mid-year keeps its catch-up balance. This
+threatens the project, not the code, because the requirement is
+missing.</li>
+<li><strong>Testability problem.</strong> You cannot replay a past day's
+prices into the payout calculation. Without that, you cannot test the
+rule against real negative-price days.</li>
+<li><strong>Artifact.</strong> A mismatch caused by your test data. For
+example, you used a 60-minute price series where the system expects
+15-minute intervals.</li>
+<li><strong>Curio.</strong> In your data, negative prices cluster around
+public holidays. That might shape which days you test, though it isn't a
+defect.</li>
+</ul>
+<p>Bach's "artifact" category matters most when you work with time
+series data. Before you raise a bug, check whether your own fixture
+caused the discrepancy. That check protects your credibility with
+developers.</p>
+<h3 id="turning-it-into-test-ideas">Turning it into test ideas</h3>
+<ol type="1">
+<li><strong>Boundary table for eligibility.</strong> Test the cutoff
+date, the 2 kW and 100 kWp limits, and the combinations of smart meter
+and remote-control status.</li>
+<li><strong>Price boundary.</strong> Test −0.01, 0.00, and +0.01 €/MWh.
+Ask the domain expert what the market says about exactly zero.</li>
+<li><strong>Interval alignment.</strong> Test an interval that starts at
+11:45 and straddles a price change. Test the daylight-saving days too,
+which have 92 or 100 quarter-hours. (Day 29 covered clock changes. Here
+the point is that the payout needs a consistent interval key.)</li>
+<li><strong>Idempotency of catch-up.</strong> Run the end-of-period job
+twice and check the extension is added once.</li>
+<li><strong>Reconciliation invariant.</strong> Over any period,
+<code>intervals generated = intervals paid + intervals suspended</code>.
+If the sum doesn't hold, you have found something without needing a
+perfect oracle.</li>
+<li><strong>Late and revised price data.</strong> Replay a price
+correction after payout and see whether the system detects it, ignores
+it, or silently disagrees.</li>
+<li><strong>Customer-facing explanation.</strong> Does the statement
+show <em>why</em> an hour paid nothing? If a customer can't tell,
+support will get the tickets.</li>
+</ol>
+<h3 id="the-soft-skill-side-reporting-what-isnt-a-bug">The soft-skill
+side: reporting what isn't a bug</h3>
+<p>Suppose you find the "no replay of historical prices" gap. If you
+file it as a bug, it gets closed with "works as designed." Frame it as a
+testability problem: <em>"I can't verify the suspension rule against
+real negative-price days. I can check synthetic cases only, so the risk
+of misclassification on real data stays unmeasured. A replay endpoint or
+fixture import would close that. It is probably two days of
+work."</em></p>
+<p>That framing names the gap, what it prevents you from learning, and a
+concrete ask. Bach's categories give you the vocabulary to say what kind
+of finding it is, and the kind decides who owns it. A bug goes to a
+developer, an issue to the product owner, and a testability problem to
+the whole team's planning.</p>
+<h3 id="challenge">Challenge</h3>
+<p>Choose a rule in your current product that depends on a <strong>date,
+a threshold, and a status</strong> at once. Examples are a discount that
+applies to "new customers after a date", a rate limit by plan tier, or a
+fee waiver above a balance.</p>
+<ol type="1">
+<li>Write down every input fact and where it lives.</li>
+<li>Make a boundary table with at least eight rows, including one row
+you expect to be ambiguous.</li>
+<li>Run it, or review it with a developer.</li>
+<li>Write up your results as <strong>at least one finding from three
+different Bach categories</strong>, not only bugs. Use one sentence each
+for the finding, its impact, and the person who should act.</li>
+</ol>
+<p>If all your findings are bugs, check whether you left risks, issues,
+or testability problems unreported.</p>
+<h3 id="sources">Sources</h3>
+<ul>
+<li>James Bach, <a
+href="https://www.satisfice.com/blog/archives/572">What Testers
+Find</a>, Satisfice</li>
+<li>Julian Scheer, <a
+href="https://ratedpower.com/blog/how-solarspitzengesetz-affects-solar/">How
+the Solarspitzengesetz affects solar</a>, RatedPower (vendor blog;
+verify the rules against the law)</li>
+<li>Clean Energy Wire, <a
+href="https://www.cleanenergywire.org/factsheets/causes-and-effects-negative-power-prices">Causes
+and effects of negative power prices</a> (the figures it gives are from
+2016–2017, so use it for the mechanism, not current numbers)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-30.html" rel="prev"><span>Previous</span>Automate the Question, Not the Test Case: A Check Portfolio for SaaS Usage Metering</a><a href="/qa-blog/posts/qa-thinking-day-32.html" rel="next"><span>Next</span>Testing the Silence: Can Your Alerts See a Meter Data Pipeline Failing Quietly?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The short version: I wouldn&#39;t review the prototype for bugs. I&#39;d use it to find what the prototype doesn&#39;t show. A clickable prototype is a model of the happy path built with clean data, English labels, a fast">
+  <meta name="color-scheme" content="light">
+  <title>A designer shares a clickable prototype of the new seller-onboarding flow for your marketplace and says, &quot;Any feedback before I hand off to dev on Thursday?&quot; You have 45 minutes. What do you do with it? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 16</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-16">QA Interview Q&amp;A — Day 16</h1>
+<h2
+id="question-a-designer-shares-a-clickable-prototype-of-the-new-seller-onboarding-flow-for-your-marketplace-and-says-any-feedback-before-i-hand-off-to-dev-on-thursday-you-have-45-minutes-what-do-you-do-with-it">Question:
+A designer shares a clickable prototype of the new seller-onboarding
+flow for your marketplace and says, "Any feedback before I hand off to
+dev on Thursday?" You have 45 minutes. What do you do with it?</h2>
+<h2 id="answer">Answer</h2>
+<p><strong>The short version:</strong> I wouldn't review the prototype
+for bugs. I'd use it to find what the prototype doesn't show. A
+clickable prototype is a model of the happy path built with clean data,
+English labels, a fast network and a user who never makes mistakes. Most
+of what will hurt us later is missing from it. Thursday is cheap,
+because changing a Figma frame costs minutes and changing shipped
+behaviour costs a sprint.</p>
+<h3 id="the-scenario">The scenario</h3>
+<p>Say onboarding has five screens: business details, identity
+verification, bank account for payouts, tax information, and a "You're
+live!" confirmation. It looks clean and the designer has tested it with
+five users, who liked it.</p>
+<h3 id="what-id-do-in-the-45-minutes">What I'd do in the 45 minutes</h3>
+<p><strong>1. Ask what the prototype is for (3 min).</strong> I'd ask
+the designer: "What decisions have you already made, and where do you
+want to be challenged?" If the layout and tone are settled and they're
+unsure about the error handling, I'll spend my time there. It also shows
+I'm not trying to reopen their decisions.</p>
+<p><strong>2. Walk the flow looking for missing states, not wrong pixels
+(20 min).</strong> I'd use Michael Bolton's questions as a frame: what
+are we building, for whom, what could go wrong, and how would we know.
+Applied to this flow:</p>
+<ul>
+<li><strong>Failure states.</strong> What does the user see if identity
+verification is "pending review" for two days, or rejected? Is there a
+path back, or a dead end? Can they save and resume?</li>
+<li><strong>Interruption and re-entry.</strong> If the user closes the
+tab on step 3 and returns on their phone a week later, where do they
+land? What happens to half-entered data?</li>
+<li><strong>Real data.</strong> Long German company names ("Müller &amp;
+Söhne Gesellschaft für …"), names with apostrophes or non-Latin
+characters, IBANs with spaces, VAT IDs in different national formats. Do
+the fields, truncation, labels and validation messages cope?</li>
+<li><strong>Who isn't in the prototype.</strong> Sellers who are sole
+traders versus companies, sellers in countries where a step doesn't
+apply, and sellers who made an error and need to edit a submitted
+field.</li>
+<li><strong>Keyboard and assistive technology.</strong> Is the focus
+order visible in the design? Are the error messages tied to fields, not
+just colored red? Are the tap targets large enough on mobile? WCAG 2.2
+added criteria that are easy to miss in a mockup, such as Target Size
+(Minimum, 24×24 CSS px) and Focus Not Obscured, for example when a
+sticky "Continue" bar covers the focused field. These are cheap to fix
+in design and annoying to retrofit.</li>
+<li><strong>The system's side.</strong> The bank step probably depends
+on a third-party verification provider. What does the UI do when that
+provider is slow or down? Can the design say "we'll email you" instead
+of spinning forever?</li>
+<li><strong>Observability.</strong> Where would we see that 40% of
+sellers drop off at step 3? Is the funnel instrumented, and can we tell
+"abandoned" from "failed"? That's a design-adjacent question because it
+affects which states exist.</li>
+</ul>
+<p><strong>3. Sort my notes into three kinds (10 min).</strong></p>
+<ul>
+<li><em>Questions</em>: "What should happen when…?" I don't know the
+answer, and neither may anyone else yet.</li>
+<li><em>Risks with a concrete example</em>: "If the sole trader has no
+company name, step 1 blocks them. Here's the field."</li>
+<li><em>Observations about consistency</em>: "The error pattern on step
+2 differs from step 4."</li>
+</ul>
+<p>I'd keep these separate so the designer isn't handed a list of 30
+"issues" and can see what's blocking versus what's polish.</p>
+<p><strong>4. Close the loop (10 min).</strong> I'd share the notes in
+the designer's own space (the Figma file's comments, or a short doc),
+not in a ticket they have to triage. I'd agree on which gaps need a
+design answer before Thursday and which can become stories with
+acceptance criteria. I'd offer to pair on the error-state frames and to
+review them again after the handoff.</p>
+<h3 id="what-id-say-aloud">What I'd say aloud</h3>
+<blockquote>
+<p>"I'm not signing off on the design. I'm trying to find the states we
+haven't drawn yet. I've found six, and three of them I think need your
+call before Thursday: rejected verification, resume-later, and the
+provider timeout. The rest I'd turn into acceptance criteria. Where do
+you disagree?"</p>
+</blockquote>
+<p>I don't have authority over design decisions, so I frame things as
+questions and evidence and let the designer and product owner decide.
+The designer knows things I don't, such as research findings and brand
+constraints, and some gaps may be deliberate (for example, "we'll handle
+rejection by email in v1").</p>
+<h3 id="trade-offs">Trade-offs</h3>
+<ul>
+<li><strong>Depth versus the deadline.</strong> In 45 minutes I can't
+cover everything. I'd prioritize flows where failure costs money or
+trust, here identity and payout details, over cosmetic variants.</li>
+<li><strong>Early feedback versus noise.</strong> Raising 40 small items
+makes me less useful than raising 5 that matter. If the designer is
+nervous or the team is under pressure, I'd lead with the top three.</li>
+<li><strong>Design completeness versus learning.</strong> Not every
+state must be designed up front. Sometimes it's better to build the
+happy path and discover real error behaviour from the provider's
+sandbox. I'd say which is which.</li>
+</ul>
+<h3 id="evidence-id-look-for">Evidence I'd look for</h3>
+<ul>
+<li>Support tickets or drop-off data from the current onboarding flow,
+which show where sellers actually fail.</li>
+<li>The provider's documented statuses and error codes (do they match
+the states in the prototype?).</li>
+<li>The usability test notes: were participants given realistic data, or
+the designer's sample names?</li>
+<li>Whether the design system already has patterns for error, empty,
+loading and disabled states that this prototype should reuse.</li>
+</ul>
+<h3 id="weak-answers-and-assumptions">Weak answers and assumptions</h3>
+<ul>
+<li><strong>"I'd wait for the build and test it."</strong> This throws
+away the cheapest point at which to find problems.</li>
+<li><strong>"I'd check that it matches the requirements."</strong>
+Prototypes and requirements share the same blind spots.</li>
+<li><strong>Giving only visual feedback</strong> ("this button should be
+bigger") without raising behaviour, data or failure modes.</li>
+<li><strong>Treating it as a gate</strong>: "I'll approve it once the
+states are added." You have no authority for this, and it turns
+collaboration into policing.</li>
+<li><strong>Assuming designers don't care about edge cases.</strong>
+Most do, but they rarely have the system knowledge to see which edges
+exist. QA can supply that.</li>
+</ul>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li>The designer replies, "Edge cases are for later; we need to validate
+the main idea with users first." How do you respond, and what would you
+accept as a reasonable compromise?</li>
+<li>During the build, the developer implements a rejection state
+differently from the designer's later frames. Who decides what ships,
+and what's your role?</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, DevelopSense, <a
+href="https://developsense.com/?p=1568">"Four (and More) Questions for
+Testers to Ask"</a>. I used the question set (what are we building, for
+whom, what could go wrong, how would we know) and the extra prompts
+about missing things and people we aren't building for, as the frame for
+reviewing a prototype.</li>
+<li>Ministry of Testing, <a
+href="https://www.ministryoftesting.com/media-sessions/99-second-introduction-what-is-the-relationship-between-the-tester-and-the-ux-designer">"99-Second
+Introduction: What is the Relationship Between the Tester and the UX
+Designer?"</a>. I used it only to confirm that testers and UX designers
+working together is an established practice. The session itself is
+members-only, so I couldn't read it and have not relied on its
+content.</li>
+<li>W3C WAI, <a
+href="https://w3.org/WAI/standards-guidelines/wcag/new-in-22/">"What's
+New in WCAG 2.2"</a>. I used it for the Target Size (Minimum, 2.5.8) and
+Focus Not Obscured (Minimum, 2.4.11) criteria, which are easy to miss in
+static or prototype designs and cheaper to fix before handoff.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-15.html" rel="prev"><span>Previous</span>&quot;It&#39;s behind a feature flag, so there&#39;s nothing for you to test yet.&quot; Is the developer right?</a><a href="/qa-blog/posts/qa-interview-day-17.html" rel="next"><span>Next</span>In bug triage, you report that a customer can be charged twice if the payment call times out and they tap &quot;Pay&quot; again. The developer says, &quot;That&#39;s maybe 1 in 500 checkouts, and support can refund it. Low priority.&quot; You have no authority over the backlog. What do you say?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

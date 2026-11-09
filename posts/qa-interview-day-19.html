@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Context: You work on a SaaS shop platform. Thousands of merchants run their storefronts on your themes, and many of them sell to consumers in Germany and elsewhere in the EU. The new checkout theme goes to all">
+  <meta name="color-scheme" content="light">
+  <title>Your new checkout theme scores 96 Performance, 100 Accessibility and 100 Best Practices in Lighthouse CI. Marketing wants to tell merchants it is &quot;fast, accessible and secure — EAA-ready.&quot; Can QA sign off on that sentence? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 19</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-19">QA Interview Q&amp;A — Day 19</h1>
+<h2
+id="question-your-new-checkout-theme-scores-96-performance-100-accessibility-and-100-best-practices-in-lighthouse-ci-marketing-wants-to-tell-merchants-it-is-fast-accessible-and-secure--eaa-ready-can-qa-sign-off-on-that-sentence">Question:
+Your new checkout theme scores 96 Performance, 100 Accessibility and 100
+Best Practices in Lighthouse CI. Marketing wants to tell merchants it is
+"fast, accessible and secure — EAA-ready." Can QA sign off on that
+sentence?</h2>
+<p><strong>Context:</strong> You work on a SaaS shop platform. Thousands
+of merchants run their storefronts on your themes, and many of them sell
+to consumers in Germany and elsewhere in the EU. The new checkout theme
+goes to all merchants on 10 November, ahead of Black Friday (27
+November). Lighthouse runs in CI against a demo shop on every merge, and
+the scores are visible on a dashboard. The product marketing manager
+wants the sentence in the merchant newsletter, and the product owner
+asks you in planning: "The numbers are green. Any reason we can't say
+this?"</p>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-answer">The short answer</h3>
+<p>Not as written. Each of the four claims in that sentence promises
+more than three Lighthouse scores can show. "EAA-ready" is also a legal
+claim, so neither QA nor marketing can approve it on its own.</p>
+<p>A good answer does not stop at "no." QA's job here is to:</p>
+<ul>
+<li>explain what the scores do and do not show,</li>
+<li>find out what can be shown before the newsletter goes out, and</li>
+<li>help the team write a sentence that is true.</li>
+</ul>
+<p>This is not a turf fight with marketing. If merchants get a claim
+that turns out to be false, they inherit the risk: an accessibility
+complaint, a slow checkout on Black Friday.</p>
+<h3 id="how-an-experienced-tester-reasons-through-it">How an experienced
+tester reasons through it</h3>
+<p>The useful frame is Bach and Bolton's distinction between
+<strong>checking</strong> and <strong>testing</strong>. Checking is the
+mechanical verification of specific statements about a product. Testing
+is learning about the product by experiencing it, exploring it and
+experimenting with it. Lighthouse is a good checking tool. The
+newsletter sentence makes claims that need testing. So for each claim,
+ask: <em>what did the tool actually observe, and what would have to be
+true for the sentence to hold?</em></p>
+<p><strong>1. "Fast"</strong></p>
+<p>What Lighthouse measured:</p>
+<ul>
+<li>one page load,</li>
+<li>of one demo shop,</li>
+<li>with a cold cache,</li>
+<li>on a simulated mid-tier phone over a throttled connection,</li>
+<li>with no real user interacting.</li>
+</ul>
+<p>That makes it a lab measurement. Google's guidance on lab vs. field
+data says field data reflects what real users experience, and lab data
+is for diagnosis. Interaction to Next Paint (INP) depends on real
+interactions at the moment users make them, so a lab load test cannot
+really measure it.</p>
+<p>What the score leaves out:</p>
+<ul>
+<li><strong>Merchant content.</strong> Real merchants add tracking
+pixels, chat widgets, review apps, large hero images and 40-item carts.
+The demo shop has none of these.</li>
+<li><strong>The slow parts of a checkout are interactions, not the first
+load.</strong> Examples: address autocomplete, changing the shipping
+method so totals recalculate, applying a voucher, the payment-provider
+iframe, the 3-D Secure redirect.</li>
+<li><strong>Capacity.</strong> "Fast" in a Black Friday newsletter will
+be read as "fast under Black Friday traffic." Lighthouse measures one
+browser. It says nothing about the backend at 20× normal load.</li>
+</ul>
+<p><strong>2. "Accessible" (100 in Lighthouse)</strong></p>
+<ul>
+<li>Lighthouse's own scoring docs say the score is a weighted average of
+automated pass/fail audits, and manual audits don't affect the
+score.</li>
+<li>In GOV.UK's audit of 10 automated tools, the team built a page with
+143 known barriers. The best tool found 41% of them, and 29% were missed
+by every tool.</li>
+<li>Ady Stokes makes the same point in his Ministry of Testing talk:
+these tools don't understand context.</li>
+</ul>
+<p>In practice, a perfect score can coexist with a checkout that a
+screen-reader user cannot finish.</p>
+<p>WCAG 2.2 AA (the version most EU guidance now points to) added
+criteria that hit checkouts directly, and automated tools mostly can't
+judge them:</p>
+<ul>
+<li><strong>2.4.11 Focus Not Obscured:</strong> a sticky order summary
+or the cookie banner can cover the focused field.</li>
+<li><strong>2.5.8 Target Size (Minimum):</strong> small quantity
+steppers or "remove item" icons on mobile.</li>
+<li><strong>3.3.7 Redundant Entry:</strong> does "billing same as
+shipping" really avoid asking for the address again?</li>
+<li><strong>3.3.8 Accessible Authentication (Minimum):</strong> login,
+one-time-password and CAPTCHA steps, including whatever bot protection
+was added at checkout.</li>
+</ul>
+<p>Also check whether error messages are announced, and how session
+timeouts behave.</p>
+<p><strong>3. "Secure"</strong></p>
+<p>Best Practices is a hygiene category: HTTPS, console errors,
+deprecated APIs, and an evaluation of whether the Content Security
+Policy (CSP) could be bypassed. Even that CSP check judges the policy,
+not your code. None of it tests:</p>
+<ul>
+<li>whether one merchant's admin can see another merchant's orders,</li>
+<li>how sessions behave across the payment redirect,</li>
+<li>whether prices and vouchers are checked on the server.</li>
+</ul>
+<p>QA should not claim "secure" at all. That word belongs to the
+security team, and usually to no marketing copy.</p>
+<p><strong>4. "EAA-ready"</strong></p>
+<p>Since 28 June 2025, the European Accessibility Act (Germany's version
+is the Barrierefreiheitsstärkungsgesetz, or BFSG) covers consumer
+e-commerce. The obligation sits with the <strong>merchant</strong> as
+the service provider. Your platform supplies part of what they need.</p>
+<p>Practitioner and legal guidance points to EN 301 549 / WCAG AA as the
+benchmark, and German accessibility statements are expected to list
+known non-conformances. That has two consequences:</p>
+<ul>
+<li>A blanket "EAA-ready" could mislead merchants into thinking they
+have nothing to do. Their alt text, product descriptions and third-party
+apps are still theirs.</li>
+<li>The wording needs legal or your accessibility owner, not a QA
+thumbs-up.</li>
+</ul>
+<h3
+id="what-evidence-to-seek-before-the-newsletter-realistically-in-a-few-days">What
+evidence to seek before the newsletter (realistically, in a few
+days)</h3>
+<p><strong>Performance</strong></p>
+<ul>
+<li>Real-user data from pilot merchants already on the new theme: field
+Core Web Vitals (LCP, INP, CLS) at the 75th percentile, compared with
+the old theme on similar shops.</li>
+<li>Run Lighthouse and a trace against a "heavy" reference shop: real
+third-party apps, a large cart, high-resolution images.</li>
+<li>Profile the checkout interactions (shipping change, voucher, address
+autocomplete) on a real low-end Android phone, not only in
+emulation.</li>
+<li>Ask the platform team whether there are load-test results for
+checkout at peak traffic. If there are none, the newsletter should not
+imply anything about Black Friday.</li>
+</ul>
+<p><strong>Accessibility (a time-boxed pass, not a full
+audit)</strong></p>
+<ul>
+<li>Keyboard only: complete a purchase end to end, including the payment
+iframe and the 3DS challenge.</li>
+<li>NVDA with Chrome or Firefox, and VoiceOver on iOS Safari: can you
+complete a purchase, and are errors and total updates announced?</li>
+<li>200% zoom and 320 px reflow.</li>
+<li>Walk through the four WCAG 2.2 criteria above.</li>
+<li>Note which barriers live in components you don't control (the
+payment provider's fields, issuer 3DS pages). Those belong in the
+statement, not in a "fixed" column.</li>
+</ul>
+<p><strong>Security</strong></p>
+<ul>
+<li>Ask security what has been reviewed for this release: a threat
+model, a pentest, the multi-tenant authorization tests. Report their
+answer as theirs.</li>
+</ul>
+<h3 id="what-to-say-in-the-meeting">What to say in the meeting</h3>
+<blockquote>
+<p>"The Lighthouse scores are good news, and we should keep them as a CI
+tripwire. But they measure a demo shop loading once in a lab with
+automated rules. They don't tell us real merchants' checkouts are fast,
+that a screen-reader user can finish a purchase, or anything meaningful
+about security. I'd suggest we either narrow the sentence to what we've
+shown, or give me until Thursday for a focused check on real-user
+performance data and a manual accessibility pass. 'Secure' and
+'EAA-ready' I'd route to security and legal. EAA obligations sit with
+merchants, and we don't want to give them a reason to skip their own
+part."</p>
+</blockquote>
+<p>Then offer a replacement sentence, for example:</p>
+<blockquote>
+<p>"The new checkout theme was built and tested against WCAG 2.2 AA,
+including keyboard and screen-reader testing, and loads faster than the
+previous theme in our tests on real merchant shops. See our
+accessibility notes for known limitations and what you need to check in
+your own content."</p>
+</blockquote>
+<p>Every clause of that should be backed by evidence you can show.</p>
+<p>You don't hold the pen on the newsletter. You do decide what QA puts
+its name to. Write down what you verified, what you didn't, and who owns
+the remaining claims, and send it to the product owner and marketing
+manager. That turns your concern into a decision someone else can make
+knowingly.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"100 is 100 — sign it off."</strong> This treats a check as
+if it were a test, and an automated subset as if it were
+conformance.</li>
+<li><strong>"Lighthouse is useless; ignore it."</strong> It's also
+wrong. Lab scores in CI are a cheap regression tripwire. They just don't
+support a public claim.</li>
+<li><strong>"QA blocks the newsletter."</strong> You can't block it, and
+you shouldn't try. Offer better wording and a short evidence plan.</li>
+<li><strong>Running a full WCAG audit before saying anything.</strong>
+That's disproportionate to the decision. Time-box the work and name what
+is still unknown.</li>
+<li><strong>Leaving out the platform/merchant split.</strong> On a
+multi-tenant SaaS platform, most real accessibility and performance
+problems come from content and add-ons you don't control.</li>
+</ul>
+<h2 id="follow-up-questions">Follow-up questions</h2>
+<ol type="1">
+<li><p><strong>"Should we make the Lighthouse CI gate stricter, say fail
+below 95?"</strong> Gate on specific metric budgets and specific failed
+audits, not on the overall score. A score threshold can hide a
+regression that is offset by an improvement elsewhere, and lab variance
+causes flaky failures. Pair the gate with field monitoring on real
+merchant traffic, which is where real problems show up.</p></li>
+<li><p><strong>"A competitor's newsletter says 'fully WCAG compliant.'
+Why can't we?"</strong> Because our claim reaches thousands of merchants
+who are each legally responsible for their own service. If the claim is
+wrong, they take the complaints, not us. A specific, evidenced claim
+that lists its limitations ages better than a broad one, and it gives
+merchants something they can actually use in their own accessibility
+statement.</p></li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li>James Bach &amp; Michael Bolton, <a
+href="https://www.satisfice.com/blog/archives/856">Testing and Checking
+Refined (Satisfice)</a>. Defines checking as the mechanical verification
+of propositions and testing as learning through exploring and
+experimenting. This is the frame for why a green tool score can't
+support a broad product claim.</li>
+<li>Michael Bolton, <a
+href="https://developsense.com/blog/2025/04/checking-is-inside-testing">Checking
+is Inside Testing (DevelopSense)</a>. Treats checking as part of
+testing, not a replacement for it. This supports keeping Lighthouse as a
+CI tripwire while adding human testing.</li>
+<li>Ady Stokes, <a
+href="https://www.ministryoftesting.com/media-sessions/tools-to-help-you-with-accessibility-testing">Tools
+to help you with accessibility testing (Ministry of Testing)</a>. A
+practitioner demo of WAVE, Lighthouse and IBM's checker. Its point that
+automated tools lack context and need human judgment underpins the
+manual accessibility pass.</li>
+<li>Chrome for Developers, <a
+href="https://developer.chrome.com/docs/lighthouse/accessibility/scoring">Lighthouse
+accessibility scoring</a>. Primary documentation: the score is a
+weighted average of automated pass/fail audits, and manual audits don't
+affect it.</li>
+<li>GOV.UK Accessibility Blog, <a
+href="https://accessibility.blog.gov.uk/2017/02/24/what-we-found-when-we-tested-tools-on-the-worlds-least-accessible-webpage/">What
+we found when we tested tools on the world's least-accessible
+webpage</a>. Source of the 143-barrier, 41%-best-tool and 29%-undetected
+figures.</li>
+<li>web.dev, <a
+href="https://web.dev/articles/lab-and-field-data-differences">Why lab
+and field data can be different</a>. Explains cold vs. warm cache, why
+INP depends on real interactions, and why field data should come first.
+This underpins the "fast" critique.</li>
+<li>Chrome for Developers, <a
+href="https://developer.chrome.com/docs/lighthouse/best-practices/csp-xss">Ensure
+CSP is effective against XSS attacks</a>. Shows the Best Practices
+category judges the strength of a CSP policy, not whether the
+application is secure.</li>
+<li>W3C WAI, <a
+href="https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/">What's
+New in WCAG 2.2</a>. Primary source for 2.4.11, 2.5.8, 3.3.7 and 3.3.8
+used in the checkout walkthrough.</li>
+<li>Noerr, <a
+href="https://www.noerr.com/en/insights/accessibility-in-e-commerce-new-obligations-for-online-shop-operators-starting-from-june-2025">Accessibility
+in e-commerce: new obligations for online shop operators starting from
+June 2025</a>, and Bird &amp; Bird, <a
+href="https://www.twobirds.com/en/insights/2025/germany/germany-ready-for-the-eaa-european-accessibility-act-implementation-entering-into-force-on-28-june-2">Germany:
+Ready for the EAA?</a>. Legal-practitioner context showing that EAA/BFSG
+obligations apply to online shop operators from 28 June 2025. This is
+why "EAA-ready" is a legal claim that goes to legal, not QA.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-18.html" rel="prev"><span>Previous</span>A payments partner emails: &quot;Next Tuesday we&#39;re adding a new value, REQUIRES_REVIEW, to the status field on our payout API. It&#39;s a backward-compatible change, so no action is needed.&quot; Your marketplace pays out to sellers from that API. Do you agree it needs no action, and what do you do this week?</a><a href="/qa-blog/posts/qa-interview-day-20.html" rel="next"><span>Next</span>Your retail-media platform caps a campaign at 3 impressions per user per day. The advertiser&#39;s report for Tuesday shows an average frequency of 3.4. A developer says, &quot;Caps are best-effort in distributed systems. That&#39;s expected.&quot; Is it a bug?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

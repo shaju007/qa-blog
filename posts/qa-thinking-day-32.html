@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most of the failures we&#39;ve looked at so far announce themselves. A webhook returns a 500, a payment goes to &quot;failed&quot;, a flaky check goes red. Today&#39;s failure is different. Nothing breaks, nothing alerts, and th">
+  <meta name="color-scheme" content="light">
+  <title>Testing the Silence: Can Your Alerts See a Meter Data Pipeline Failing Quietly? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 32</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-32">QA Thinking — Day 32</h1>
+<h2
+id="testing-the-silence-can-your-alerts-see-a-meter-data-pipeline-failing-quietly">Testing
+the Silence: Can Your Alerts See a Meter Data Pipeline Failing
+Quietly?</h2>
+<p>Most of the failures we've looked at so far announce themselves. A
+webhook returns a 500, a payment goes to "failed", a flaky check goes
+red. Today's failure is different. Nothing breaks, nothing alerts, and
+the dashboards stay green while the data underneath them goes stale or
+wrong.</p>
+<p>Smart-meter ingestion is a good place to study this. If you work in
+energy, metering or billing, you'll recognise it. If you work in ad
+tech, sports data or marketplaces, the same pattern appears in every
+pipeline you own.</p>
+<h3 id="the-domain-in-60-seconds">The domain in 60 seconds</h3>
+<p>A utility's meter data management (MDM) system receives interval
+reads, often every 15 or 30 minutes, from millions of meters. Before
+billing can use them, a <strong>VEE</strong> step (Validation,
+Estimation, Editing) runs. Typical rules, as described in <a
+href="https://nites.eu/products/mdm/">this MDM overview</a> and in the
+VEE patent literature, are:</p>
+<ul>
+<li>Flag <strong>missing reads</strong>.</li>
+<li>Flag <strong>roll-over</strong> (the current register read is lower
+than the previous one).</li>
+<li>Flag <strong>consecutive zero intervals</strong>.</li>
+<li>Run <strong>sum checks</strong> between interval and register
+data.</li>
+<li><strong>Estimate</strong> gaps from interpolation, history or a
+replacement profile.</li>
+<li>Open a field service order after X consecutive days of missing
+data.</li>
+</ul>
+<p>The point that matters for testing is that estimation hides gaps on
+purpose. An estimated read is a valid input to a bill. That is a
+business decision, but it also means a broken collector can look like
+healthy data for days.</p>
+<h3
+id="the-testing-idea-observability-is-how-you-ask-the-system-questions-you-didnt-plan-for">The
+testing idea: observability is how you ask the system questions you
+didn't plan for</h3>
+<p><a
+href="https://www.thoughtworks.com/en-ca/insights/blog/observability/why-observability-matters-testers">Parveen
+Khan's piece for Thoughtworks</a> argues that observability gives
+testers richer information during exploration and lets them chase
+"unknown unknowns". It also says testers should advocate for the
+telemetry. I'd go one step further. <strong>Treat your alerts and
+dashboards as a product that needs testing, with its own
+oracles.</strong></p>
+<p><a
+href="https://www.ministryoftesting.com/moments/stop-guessing-start-seeing-the-rise-of-observability-driven-testing">David
+Burns' Ministry of Testing talk summary</a> makes a related point.
+Expected results are often not fixed values, so real production journeys
+and telemetry can serve as the oracle. I'm applying that idea to the
+pipeline's own health, not only to features.</p>
+<p>There are three practical consequences.</p>
+<p><strong>1. Write the failure, then ask "who would notice, and
+when?"</strong></p>
+<p>For each failure mode, name the signal that should reveal it and the
+delay before anyone sees it.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Failure mode</th>
+<th>Obvious signal?</th>
+<th>What would actually reveal it</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Collector for one region stops sending</td>
+<td>No errors, since nothing arrives to fail</td>
+<td>Expected-vs-received count per region per interval</td>
+</tr>
+<tr class="even">
+<td>Firmware change shifts timestamps by one hour (DST or time
+zone)</td>
+<td>Reads arrive and pass schema checks</td>
+<td>Distribution of read timestamps vs. expected slot boundaries</td>
+</tr>
+<tr class="odd">
+<td>Estimation rate climbs from 2% to 18%</td>
+<td>Bills still generate</td>
+<td>Estimated-read ratio per segment, trended</td>
+</tr>
+<tr class="even">
+<td>Duplicate reads after a retry storm</td>
+<td>Row count looks high, which is "good"</td>
+<td>Unique (meter, interval) vs. total rows</td>
+</tr>
+<tr class="odd">
+<td>VEE rule silently disabled by config</td>
+<td>Nothing fails</td>
+<td>A canary meter with a known roll-over that must be flagged
+daily</td>
+</tr>
+</tbody>
+</table>
+<p>The last row is the strongest idea here. A <strong>canary
+input</strong> is a known-bad record you inject regularly, and the
+pipeline must flag it. If it ever stops being flagged, you've learned
+the check itself is dead.</p>
+<p><strong>2. Distinguish "the alert exists" from "the alert
+works"</strong></p>
+<p>Alert tests worth running:</p>
+<ul>
+<li><strong>Fires?</strong> Induce the condition in a test environment
+and see if the alert triggers.</li>
+<li><strong>Fires in time?</strong> Compare detection delay to the
+business deadline. If billing runs at 02:00 and your alert has a 6-hour
+aggregation window, it is useless for that purpose.</li>
+<li><strong>Fires for the right people?</strong> Check the routing. An
+alert that goes to a channel nobody reads is a decoration.</li>
+<li><strong>Doesn't fire falsely?</strong> A legitimate outage (storm,
+planned maintenance) should not page the team hundreds of times. Alert
+fatigue is a quality defect.</li>
+<li><strong>Is actionable?</strong> Does the alert say which region,
+which interval, and what to check first?</li>
+</ul>
+<p><strong>3. Use telemetry to ask better questions in exploratory
+sessions</strong></p>
+<p>Instead of "does ingestion work?", try questions like these:</p>
+<ul>
+<li>Which meters report late most often, and is that a device model, a
+network or a region?</li>
+<li>What does the estimated-read ratio look like by day of week? Where
+are the shape differences?</li>
+<li>When we replayed last Tuesday's traffic, did the dashboard totals
+match the raw files?</li>
+</ul>
+<p>Each answer is evidence you can bring to a developer or product
+owner. "Region North's estimated reads went from 2% to 18% starting
+Thursday 03:00, and it coincides with the collector release" is a much
+stronger bug report than "billing seems off".</p>
+<h3 id="a-caution-about-oracles">A caution about oracles</h3>
+<p>Production telemetry is not truth. It's another claim made by the
+system, with its own bugs. A dashboard can be wrong because a metric
+counts retries as successes, or because a time zone is mishandled in an
+aggregation. Before trusting a dashboard as an oracle, cross-check it
+against an independent source such as raw files, a database count or a
+manual sample. Otherwise you test a system using its own opinion of
+itself.</p>
+<p>The statistics in vendor articles about observability (for example
+"2.1× more likely to detect issues") are marketing-grade evidence. I
+wouldn't use them to argue for a budget. Your own incident timeline will
+persuade people far better.</p>
+<h3 id="applying-it-to-other-domains">Applying it to other domains</h3>
+<ul>
+<li><strong>Ad tech:</strong> An impression counter that silently drops
+5% for one SSP. Canary: synthetic bid requests with known outcomes.</li>
+<li><strong>Sports data:</strong> A feed provider stops sending
+substitutions. Expected-vs-received event counts per match phase would
+catch it.</li>
+<li><strong>Marketplace payouts:</strong> Payout batches that complete
+but skip one seller currency. Reconcile batch totals per currency.</li>
+<li><strong>SaaS metering:</strong> Usage events that arrive late and
+fall into the wrong billing period. Watch event-time vs. ingest-time
+lag.</li>
+</ul>
+<h3 id="challenge-30-minutes">Challenge (30 minutes)</h3>
+<p>Choose one data pipeline you work with: meter reads, ad events, a
+feed, or order events.</p>
+<ol type="1">
+<li>List five <strong>quiet failures</strong>, meaning cases where data
+is missing, late, duplicated, shifted or silently altered but nothing
+errors.</li>
+<li>For each, fill in a row: <em>Which signal should reveal this? What's
+the detection delay? Who gets told? What's the deadline by which it must
+be noticed?</em></li>
+<li>Pick the two rows with the biggest gap between "must be noticed by"
+and "would actually be noticed by". Design a <strong>canary
+input</strong> or a <strong>reconciliation check</strong> for each.</li>
+<li>Write a three-sentence message to the developer or ops owner asking
+for the one piece of telemetry you're missing. Frame it around a
+specific failure and its cost, not "we need more logging".</li>
+</ol>
+<p>Bonus: Find one dashboard number your team trusts and verify it
+independently against raw data. Record any mismatch, however small.</p>
+<h3 id="takeaways">Takeaways</h3>
+<ul>
+<li>A green dashboard shows only what someone chose to measure. Ask what
+a failure would look like on it.</li>
+<li>Alerts need tests for firing, timing, routing, noise and
+actionability.</li>
+<li>Canary inputs prove that your detection still works.</li>
+<li>Telemetry is evidence, not truth. Cross-check it.</li>
+<li>When you request observability, tie it to a concrete failure and a
+deadline.</li>
+</ul>
+<p><strong>Sources</strong></p>
+<ul>
+<li>Parveen Khan, <a
+href="https://www.thoughtworks.com/en-ca/insights/blog/observability/why-observability-matters-testers">Why
+observability matters for testers</a> (Thoughtworks)</li>
+<li>David Burns, <a
+href="https://www.ministryoftesting.com/moments/stop-guessing-start-seeing-the-rise-of-observability-driven-testing">Stop
+guessing, start seeing: the rise of Observability-Driven Testing</a>
+(Ministry of Testing)</li>
+<li><a href="https://nites.eu/products/mdm/">Meter Data Management (MDM)
+overview</a>, for background on VEE. This is a vendor page, so I used it
+for terminology only. Check rules against your own utility's
+specification.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-31.html" rel="prev"><span>Previous</span>Testing a Rule That Pays You Nothing: Negative-Price Feed-In and What Testers Actually Find</a><a href="/qa-blog/posts/qa-thinking-day-33.html" rel="next"><span>Next</span>Testing a League Table: The Same Tie-Break Rules Give a Different Answer Depending on When You Ask</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

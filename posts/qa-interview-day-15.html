@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The scenario: You&#39;re the tester on the checkout team of a European fashion marketplace. On Thursday afternoon a senior developer posts in the team channel:">
+  <meta name="color-scheme" content="light">
+  <title>&quot;It&#39;s behind a feature flag, so there&#39;s nothing for you to test yet.&quot; Is the developer right? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 15</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-15">QA Interview Q&amp;A — Day 15</h1>
+<h2
+id="question-its-behind-a-feature-flag-so-theres-nothing-for-you-to-test-yet-is-the-developer-right">Question:
+"It's behind a feature flag, so there's nothing for you to test yet." Is
+the developer right?</h2>
+<p><strong>The scenario:</strong> You're the tester on the checkout team
+of a European fashion marketplace. On Thursday afternoon a senior
+developer posts in the team channel:</p>
+<blockquote>
+<p>"Promotion stacking v2 is merged and goes out in tomorrow morning's
+deploy, behind <code>promo-stacking-v2</code>. The flag is off in prod.
+Nothing for QA until we start the rollout in three weeks."</p>
+</blockquote>
+<p>The pull request has about 1,400 changed lines in 23 files. A quick
+skim shows three things that aren't only about stacking. It refactors
+the shared cart-total calculation into a new pricing pipeline. It adds a
+migration to the <code>promotions</code> table. And it adds an
+<code>applied_promotions</code> field to the cart API response.</p>
+<p>What do you reply, and what do you do before tomorrow's deploy?</p>
+<hr />
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>The developer is half right. The flag hides the <strong>new
+behavior</strong>, but it doesn't hide the <strong>change</strong>.
+Anything that runs whatever the flag says goes live tomorrow. Here that
+means the refactored shared code, the migration, the new API field, the
+flag-evaluation code and what it does when the flag service fails, and
+the flag's configuration in each environment.</p>
+<p>So test that now, in a small and targeted way. Leave the stacking
+rules alone until they're ready to test. And raise it as a question for
+the developer, not a correction.</p>
+<h3 id="start-with-what-the-developer-has-right">Start with what the
+developer has right</h3>
+<p>Feature flags let a team deploy code without releasing it to users.
+Pete Hodgson's article on feature toggles makes this the main reason
+they exist. Testing the stacking rules now would waste time, because
+they will probably change over the next three weeks.</p>
+<p>If QA insisted on a full test cycle for every flagged merge,
+developers would go back to long-lived branches. QA would become the
+bottleneck the flag was supposed to remove. A strong candidate says this
+plainly. It shows you know why the team works this way and that you
+aren't just defending your own job.</p>
+<h3 id="what-actually-ships-with-the-flag-off">What actually ships with
+the flag off</h3>
+<p>I don't write a test plan here. I spend about 20 minutes going
+through the diff with the product elements from James Bach's Heuristic
+Test Strategy Model (SFDIPOT) as a checklist. The question for each one
+is: what changes for a customer, or for the system, even with the flag
+off?</p>
+<ul>
+<li><strong>Structure: code outside the <code>if (flag)</code>
+check.</strong> Both the old and new paths now call the refactored
+cart-total function. From tomorrow, every customer goes through the
+refactored code. This is the biggest risk. It's a "no behavior change"
+refactor of code that calculates money, and that's exactly the kind of
+claim that needs evidence, not just confidence.</li>
+<li><strong>Data: the migration.</strong> It adds a
+<code>stack_priority</code> column and backfills it for existing
+promotions. Questions to ask:
+<ul>
+<li>Does it lock a busy table during the morning deploy?</li>
+<li>If we roll back the app, can the old code run against the new
+schema?</li>
+<li>Can the migration itself be reversed?</li>
+</ul></li>
+<li><strong>Interfaces: the API response.</strong> Is
+<code>applied_promotions</code> returned even when the flag is off? Is
+it an empty array, <code>null</code>, or left out completely? What
+happens in the oldest app version we still support, and in partner
+integrations that parse this response strictly?</li>
+<li><strong>Platform: what happens when flag evaluation fails.</strong>
+Under the OpenFeature specification, if evaluation fails, the SDK must
+return the default value supplied in the code. It must not throw an
+error (requirement 1.4.10). LaunchDarkly works the same way: if the SDK
+can't reach its service and has no cached value, it returns the fallback
+value from the code. So the real "off" switch is partly in the code. If
+the code says <code>getBooleanValue("promo-stacking-v2", true)</code>, a
+flag-service outage turns the feature on for everyone.</li>
+<li><strong>Operations: who controls the flag.</strong> Who can change
+it, in which environments, and is it really off in every production
+project or region? Do targeting rules already exist? For example, an
+"internal users" segment might include customer-service accounts that
+place real orders. One more detail: in LaunchDarkly, turning a flag off
+serves its <strong>off variation</strong>, and that setting can be
+changed. For a boolean flag it starts as <code>false</code>, but someone
+can change it. "Off" in the dashboard doesn't guarantee
+<code>false</code> in the code.</li>
+<li><strong>Time: consistency and timing.</strong> Is the flag checked
+once, or separately in the cart service and the order service? If
+someone changes it while a customer is checking out, the cart could show
+€18 off while the order charges €12 off. Also:
+<ul>
+<li>Did the cart-total cache key change? Then the cache starts empty
+after the deploy, which could slow things down at peak time.</li>
+<li>During a rolling deploy, old and new pods run side by side and share
+that cache.</li>
+</ul></li>
+</ul>
+<p>There's a well-known example of how a flag's meaning depends on what
+code is actually running. According to the SEC, Knight Capital's router
+sent more than 4 million orders in 45 minutes while trying to fill 212
+customer orders, and the firm lost more than $460 million. The SEC order
+describes the cause: a repurposed flag reached a server still running
+old, unused code. The lesson isn't "flags are dangerous." It's that "the
+flag is off" says nothing about the code that ships with it. (Use this
+example once in an interview. Don't build the answer around it.)</p>
+<h3 id="what-id-reply-to-the-developer">What I'd reply to the
+developer</h3>
+<p>I'd reply in the same channel, quickly, and keep it short:</p>
+<blockquote>
+<p>"Agreed, no point testing the stacking rules yet; they'll change. A
+few things do go live tomorrow with the flag off, though, and I'd rather
+understand them before the deploy than after:</p>
+<ol type="1">
+<li>The cart-total refactor runs for every customer. How do we know
+totals come out the same, to the cent?</li>
+<li>What does the code return if the flag service can't be reached?</li>
+<li>Is the <code>promotions</code> migration safe under load, and safe
+to roll back past? Have you got 20 minutes after stand-up to walk me
+through the diff?"</li>
+</ol>
+</blockquote>
+<p>Why this works:</p>
+<ul>
+<li>It agrees with the developer's actual point.</li>
+<li>It asks for <strong>evidence</strong>, not a "QA phase."</li>
+<li>It offers my time instead of handing them work.</li>
+<li>It names a deadline, the deploy, without claiming I can block
+it.</li>
+</ul>
+<h3
+id="what-id-test-before-the-deploy-about-half-a-day-much-of-it-paired">What
+I'd test before the deploy (about half a day, much of it paired)</h3>
+<ol type="1">
+<li><strong>Compare old and new totals.</strong> Run the old and new
+pricing code on a sample of real cart shapes, taken from last month's
+orders with personal data removed. Include several promotions on one
+cart, gift cards, mixed VAT rates, store credit and rounding edge cases,
+then compare totals to the cent. The developer can often build this into
+a unit-test harness faster than I could. Unit-test coverage only shows
+which lines ran. This shows whether the answers match.</li>
+<li><strong>Targeted flag-off regression</strong> in staging, covering
+promotions, checkout and refunds. Don't rerun the whole suite just to
+say it ran.</li>
+<li><strong>Flag-service outage.</strong> Block the SDK's network access
+in staging, or give it an invalid key, and restart the service. Then
+check two things:
+<ul>
+<li>Did we get flag-off behavior?</li>
+<li>Does the service start promptly instead of hanging while it waits
+for the flag service?</li>
+</ul></li>
+<li><strong>Migration rehearsal.</strong> Run the migration on a
+production-sized masked copy, time it, and check for locks. Then run the
+previous app version against the migrated schema to prove a rollback
+works.</li>
+<li><strong>API comparison.</strong> Compare the cart response before
+and after the change, with the flag off. Then check it against the
+oldest supported app version.</li>
+<li><strong>Kill-switch test.</strong> In staging, switch the flag off,
+then on, then off again, with active carts and a checkout in progress.
+Strictly speaking, this is flag-on testing. But the rollout in three
+weeks depends on the kill switch working, so I'd want to know it works
+now.</li>
+</ol>
+<p><strong>Deliberately left out:</strong> stacking-rule combinations,
+discount wording, and the admin screen for setting stack priority. Those
+come later, along with the configurations Hodgson suggests prioritizing:
+the one going live and the one expected next, not every possible
+combination.</p>
+<h3 id="evidence-to-ask-for-after-the-deploy">Evidence to ask for after
+the deploy</h3>
+<ul>
+<li>Log the evaluated variant and the reason on every cart and order.
+OpenFeature's evaluation details include a reason and an error code for
+this.</li>
+<li>Watch three signals:
+<ul>
+<li>How many evaluations return the default value or an error.</li>
+<li>Discount per order compared with the same weekday last week.</li>
+<li>Total mismatches between the cart and the payment step.</li>
+</ul></li>
+<li><strong>Agree before the deploy</strong> what number triggers a
+rollback, and who makes that call. After the deploy, everyone is busy
+and nobody wants to decide.</li>
+</ul>
+<h3 id="if-the-developer-still-disagrees">If the developer still
+disagrees</h3>
+<p>The developer might say, "The refactor doesn't change anything. I'm
+confident." I'd answer: "I believe you. I'd like that confidence to be
+visible to the next person who touches this code. Can we add the
+comparison to the PR?"</p>
+<p>If the team ships without it, that's the engineering manager's
+decision, not mine. I'd write the risk in the ticket in plain words:</p>
+<blockquote>
+<p>"The refactored total calculation reaches all customers on Friday
+without a comparison against the old calculation. If it's wrong, the
+first signal will be customer complaints or the finance team's
+reconciliation. Rollback means redeploying the previous version. The
+migration has to stay compatible with it."</p>
+</blockquote>
+<p>That's a clear statement of risk, not a veto, and not a quiet "I told
+you so."</p>
+<h3 id="also-raise-now-when-does-the-flag-go-away">Also raise now: when
+does the flag go away?</h3>
+<p>Hodgson describes toggles as inventory with a carrying cost. Ask for
+a removal ticket now, with a date. Otherwise, in six months there will
+be two pricing paths, tests for both, and a flag name someone might
+reuse.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Agreed, nothing to test."</strong> This mixes up whether
+customers can see the feature with whether anything changed.</li>
+<li><strong>"Nothing merges until QA has tested it."</strong> This
+ignores why the team uses flags, turns QA into a bottleneck, and tests
+behavior that will change anyway.</li>
+<li><strong>"Test every flag combination."</strong> That's a
+combinatorial explosion. Choose configurations based on risk and on what
+will actually go live.</li>
+<li><strong>"The regression suite is green, so flag-off is
+fine."</strong> That's true only if the suite checks the money edge
+cases the refactor touched. Look at what it actually checks.</li>
+<li><strong>"I'll escalate to the manager."</strong> This skips the
+person who knows the code best. Talk to the developer first.</li>
+<li><strong>"Flag-off means it behaves like the previous
+release."</strong> It doesn't. It's new code taking the old route.</li>
+</ul>
+<h3 id="what-a-strong-answer-shows">What a strong answer shows</h3>
+<p>The candidate:</p>
+<ul>
+<li>reads the diff, or asks for a walkthrough</li>
+<li>separates new behavior from new change</li>
+<li>knows how flag defaults and fallbacks work</li>
+<li>proposes cheap, targeted checks</li>
+<li>respects how the developers work</li>
+<li>communicates risk without claiming authority they don't have</li>
+</ul>
+<hr />
+<h2 id="follow-up-questions">Follow-up questions</h2>
+<p><strong>1. "Three weeks later the flag has been at 100% for two
+weeks. The developer wants to delete the old path and the flag in one
+PR. What do you check?"</strong></p>
+<p>That PR changes behavior for anyone who wasn't actually getting the
+new path. Check for:</p>
+<ul>
+<li>segments that were excluded from targeting</li>
+<li>services that check the flag separately</li>
+<li>background jobs that never had a user context, for example nightly
+price recalculation using the fallback value</li>
+</ul>
+<p>Ask for the evaluation logs: is anything still receiving
+<code>false</code>? Also confirm whether tests for the old path will be
+deleted or rewritten. Deleting them quietly can hide edge cases that
+only those tests covered.</p>
+<p><strong>2. "The developer says the refactor has 95% unit-test
+coverage. What do you ask next?"</strong></p>
+<p>Coverage shows which lines ran, not whether the answers are right.
+Ask three things:</p>
+<ul>
+<li>Which assertions compare full totals, rather than intermediate
+values?</li>
+<li>Does the test data include several promotions on one cart, mixed VAT
+rates and values that round at half a cent?</li>
+<li>Was any test changed so that it would pass after the refactor?
+That's the quickest sign the behavior actually changed.</li>
+</ul>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li><strong>Pete Hodgson, <a
+href="https://martinfowler.com/articles/feature-toggles.html">"Feature
+Toggles (aka Feature Flags)"</a>, martinfowler.com.</strong> Used for:
+separating deployment from release, testing both the on and off states,
+prioritizing the configuration you expect to go live, avoiding
+every-combination testing, and treating toggles as inventory with a
+carrying cost. The article also cites Knight Capital as a
+flag-management warning.</li>
+<li><strong>James Bach / Satisfice, <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model (v6.3)</a>.</strong> Its product elements
+(Structure, Function, Data, Interfaces, Platform, Operations, Time)
+provide the quick checklist for reviewing what ships with the flag
+off.</li>
+<li><strong>Ministry of Testing Club, <a
+href="https://club.ministryoftesting.com/t/whats-the-best-test-strategy-that-fits-the-use-of-feature-toggles/68082">"What's
+the best test strategy that fits the use of feature
+toggles?"</a>.</strong> A practitioner discussion. Colm O'Connor's reply
+treats testing both toggle states as an investment decision, which
+supports testing flag-off risk now and stacking rules later.</li>
+<li><strong><a
+href="https://openfeature.dev/specification/sections/flag-evaluation">OpenFeature
+Specification: Flag Evaluation API</a>.</strong> Requirement 1.4.10 says
+evaluation must not throw and must return the caller's default value
+when something goes wrong. That's why the default value in the code is a
+real production setting.</li>
+<li><strong>LaunchDarkly docs, <a
+href="https://launchdarkly.com/docs/home/flags/off-variation">"The off
+variation"</a>, and the support article <a
+href="https://support.launchdarkly.com/hc/en-us/articles/40294488101787-How-to-avoid-unknown-flag-variations-when-evaluating-a-flag">"How
+to avoid unknown flag variations"</a>.</strong> Primary documentation
+showing that "off" serves a configurable variation, and that the SDK
+returns the code's fallback value when it can't connect or
+initialize.</li>
+<li><strong>U.S. SEC, <a
+href="https://www.sec.gov/news/press-release/2013-222">press release
+2013-222 on Knight Capital</a>.</strong> Source for the figures: more
+than 4 million orders in 45 minutes while trying to fill 212 customer
+orders, and losses above $460 million. The full <a
+href="https://www.sec.gov/litigation/admin/2013/34-70694.pdf">SEC order
+(Release No. 34-70694)</a> describes the repurposed flag and the server
+running old code. The PDF couldn't be read as text during research, so
+that detail is also backed by Hodgson's summary.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-14.html" rel="prev"><span>Previous</span>&quot;I don&#39;t need the details. Out of 100, how confident are you that it&#39;s ready?&quot; What do you tell a product owner who needs one number for a steering-committee slide tomorrow?</a><a href="/qa-blog/posts/qa-interview-day-16.html" rel="next"><span>Next</span>A designer shares a clickable prototype of the new seller-onboarding flow for your marketplace and says, &quot;Any feedback before I hand off to dev on Thursday?&quot; You have 45 minutes. What do you do with it?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="It&#39;s Thursday afternoon. Your ticketing platform opens sales for a stadium tour tomorrow at 10:00 CET, and you expect a few hundred thousand people in the waiting room. The same release adds &quot;all-in&quot; price disp">
+  <meta name="color-scheme" content="light">
+  <title>Reporting on a Ticket On-Sale: &quot;It Works&quot; Describes What You Saw. It Can&#39;t Promise Friday at 10:00 | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 39</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-39">QA Thinking — Day 39</h1>
+<h2
+id="reporting-on-a-ticket-on-sale-it-works-describes-what-you-saw-it-cant-promise-friday-at-1000">Reporting
+on a Ticket On-Sale: "It Works" Describes What You Saw. It Can't Promise
+Friday at 10:00</h2>
+<p>It's Thursday afternoon. Your ticketing platform opens sales for a
+stadium tour tomorrow at 10:00 CET, and you expect a few hundred
+thousand people in the waiting room. The same release adds "all-in"
+price display for US events. The product owner messages you:
+<strong>"Are we good for tomorrow?"</strong></p>
+<p>You've spent three days testing. You found and retested two bugs.
+Your regression suite is green. The easy reply is "Yes, looks good
+👍".</p>
+<p>Today's lesson is about why that reply is risky, and what to send
+instead. It comes in two parts: the domain (how an on-sale works and
+where it breaks) and the communication skill (reporting what you know so
+that a decision-maker doesn't confuse your coverage with a
+guarantee).</p>
+<hr />
+<h3 id="part-1-domain-primer-how-a-ticket-on-sale-works">Part 1: Domain
+primer. How a ticket on-sale works</h3>
+<p>Ticketing looks like e-commerce, but its business model is different
+in ways that change your risk model:</p>
+<ul>
+<li><strong>Inventory is unique and perishable.</strong> Seat 14, Row F,
+Block 112 exists once, and it's worth nothing after the show starts. You
+can't restock it.</li>
+<li><strong>Demand arrives all at once.</strong> Most of the revenue for
+a big show can come in the first minutes of the on-sale. Load is a
+spike, not a curve.</li>
+<li><strong>There are two markets.</strong> The <em>primary</em> market
+sells tickets at face value for the promoter or venue. The
+<em>secondary</em> market (resale) is a marketplace where fans list
+tickets at prices they set, and the platform takes fees. Many platforms
+run both.</li>
+<li><strong>Fairness is part of the product.</strong> Fans and press
+judge an on-sale on whether real fans got a fair chance, not only on
+uptime.</li>
+</ul>
+<p><strong>The on-sale lifecycle and its vocabulary:</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>Stage</th>
+<th>What happens</th>
+<th>Typical business rules</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Pre-queue</strong></td>
+<td>Early arrivals wait on a countdown page</td>
+<td>Arrival before start shouldn't give an advantage</td>
+</tr>
+<tr class="even">
+<td><strong>Queue randomization</strong></td>
+<td>At start time, everyone in the pre-queue gets a random position.
+Queue-it, for example, <a
+href="https://queue-it.com/product/scheduled/">describes its scheduled
+waiting room</a> as randomizing on-time visitors and then serving
+latecomers first-in, first-out</td>
+<td>Boundary at T₀: who counts as "on time"?</td>
+</tr>
+<tr class="odd">
+<td><strong>Admission</strong></td>
+<td>Users are let through at a controlled <em>inflow rate</em> and get a
+token that grants access to the protected site</td>
+<td>One token per visitor; tokens expire; tokens shouldn't be
+shareable</td>
+</tr>
+<tr class="even">
+<td><strong>Selection</strong></td>
+<td>Seat map or "best available" within a <em>price level</em></td>
+<td>Some seats are held back by the venue or promoter and never go on
+sale; presale codes unlock some allocations</td>
+</tr>
+<tr class="odd">
+<td><strong>Hold</strong></td>
+<td>Selected seats are reserved for a limited time</td>
+<td>Unpaid holds go back to the pool when they expire; per-account
+ticket limits apply</td>
+</tr>
+<tr class="even">
+<td><strong>Payment</strong></td>
+<td>Authorize and capture</td>
+<td>A hold expiring during payment is the classic race condition</td>
+</tr>
+<tr class="odd">
+<td><strong>Fulfilment</strong></td>
+<td>Mobile ticket, often with a rotating barcode</td>
+<td>Only issue a ticket for a captured payment, and issue it exactly
+once</td>
+</tr>
+<tr class="even">
+<td><strong>Afterlife</strong></td>
+<td>Transfer, resale, cancellation/refund</td>
+<td>Resale price caps, refund rules for fees, name changes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Failure modes worth knowing by name:</strong></p>
+<ul>
+<li><strong>Orphaned holds.</strong> A client crashes and the release
+job lags, so seats look sold out while nobody is buying them. Fans see
+"no tickets", then tickets "reappear" ten minutes later and the press
+calls it a scam.</li>
+<li><strong>Hold/payment split-brain.</strong> The hold expires, someone
+else takes the seat, and then the first buyer's payment succeeds. One
+seat now has two paid buyers, or one payment has no ticket.</li>
+<li><strong>Limit bypass.</strong> A six-ticket limit is enforced per
+session, not per account or per payment card, so two browser tabs give
+you twelve.</li>
+<li><strong>Queue leakage.</strong> An admission token works in a second
+browser, or a direct deep link to checkout skips the queue
+entirely.</li>
+<li><strong>Price-display drift.</strong> The price on the event page,
+the seat map tooltip, the cart and the confirmation email are computed
+by different code paths and disagree.</li>
+</ul>
+<p>That last one is not hypothetical.</p>
+<h3 id="the-case-that-should-change-how-you-report">The case that should
+change how you report</h3>
+<p>In the US, the FTC's <a href="https://www.ftc.gov/node/88198">Rule on
+Unfair or Deceptive Fees</a> took effect on <strong>12 May
+2025</strong>. It covers live-event tickets and short-term lodging and
+requires businesses to disclose the <strong>total price</strong>,
+including mandatory fees, up front and clearly and conspicuously. It
+does not ban fees. It bans hiding them.</p>
+<p>In April 2026 the FTC announced that <a
+href="https://www.ftc.gov/news-events/news/press-releases/2026/04/stubhub-refunding-10-million-fees-consumers-after-deceptive-ticket-pricing">StubHub
+would pay $10 million</a> over violations on <strong>12–14 May
+2025</strong>, the rule's first three days. According to the FTC,
+StubHub didn't give the total price on its first three pricing displays.
+On the first two, the advertised price left out mandatory fees. On the
+third, fees were listed but the total still wasn't shown.</p>
+<p>Look at this from a tester's point of view. Imagine a tester who
+reported "All-in pricing verified ✅" after checking that checkout
+showed the right total. That tester may have been <strong>completely
+truthful about what they observed</strong> and still left
+decision-makers believing something false. The rule applies to the
+<strong>pricing displays a buyer sees on the way to checkout</strong>,
+not only to checkout. The coverage gap wasn't in the testing. It was in
+the report, which never said what wasn't covered.</p>
+<p>(One caveat: I'm not saying anything about how StubHub tested
+internally. I don't know, and the FTC release doesn't say. The case is
+useful as a model of how a narrow observation becomes a broad
+claim.)</p>
+<hr />
+<h3
+id="part-2-the-skill-reporting-what-you-know-without-overclaiming">Part
+2: The skill. Reporting what you know without overclaiming</h3>
+<p>Michael Bolton's article <a
+href="https://developsense.com/blog/2018/02/how-is-the-testing-going/">How
+is the testing going?</a> argues that a useful answer weaves together
+three strands:</p>
+<ol type="1">
+<li><strong>The product story:</strong> what you learned about the
+product, especially problems and risks.</li>
+<li><strong>The testing story:</strong> how you tested, what you
+covered, and what you <em>haven't</em> covered and won't unless
+something changes.</li>
+<li><strong>The quality-of-testing story:</strong> what made testing
+harder, slower or less trustworthy. These are <em>issues</em>, as
+distinct from product <em>bugs</em>.</li>
+</ol>
+<p>A vague "testing is going well" is dangerous because each listener
+applies it to whichever strand they care about. The PO hears "the
+product is fine". The engineering manager hears "QA has no blockers".
+Neither is what you meant.</p>
+<p>In an older DevelopSense post, <a
+href="https://developsense.com/?p=529">Statistician or Journalist?</a>,
+Bolton makes a related point: numbers are incidental to the story, not
+central to it. "47/47 checks passed" isn't a status. It's one fact
+inside a story that you still have to tell.</p>
+<p>Rapid Software Testing pairs this with <strong>safety
+language</strong>: wording that marks the limits of a claim. "So far…",
+"I haven't yet seen…", "It appears…", "I infer…", "I assumed…" (see the
+<a
+href="https://www.slideshare.net/slideshow/rapid-software-testing-reporting/36885704">RST
+Reporting slides by Bach and Bolton</a>). Safety language isn't hedging
+to protect yourself. Used well, it's <strong>precision</strong>. Each
+qualifier tells the listener which kind of evidence stands behind the
+claim.</p>
+<h4 id="a-working-tool-the-claim-ledger">A working tool: the claim
+ledger</h4>
+<p>Before you answer "are we good?", spend ten minutes sorting your
+claims into four bins:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Bin</th>
+<th>Wording</th>
+<th>Example from tomorrow's on-sale</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Observed</strong></td>
+<td>"I saw…"</td>
+<td>"I saw the total price, fees included, on the event page, seat-map
+tooltip and checkout for US events on web, desktop and mobile
+Chrome."</td>
+</tr>
+<tr class="even">
+<td><strong>Inferred</strong></td>
+<td>"I infer… because…"</td>
+<td>"I infer the iOS app shows the same totals because it calls the same
+pricing endpoint. I haven't looked at the app."</td>
+</tr>
+<tr class="odd">
+<td><strong>Assumed</strong></td>
+<td>"We're assuming…"</td>
+<td>"We're assuming the hold-release job keeps up at peak. Load testing
+ran at 40% of expected admissions/minute."</td>
+</tr>
+<tr class="even">
+<td><strong>Not covered</strong></td>
+<td>"I haven't checked…, and here's why it matters…"</td>
+<td>"I haven't checked the 'sort by price' filter, the confirmation
+email or the affiliate listing feed. Those are pricing displays
+too."</td>
+</tr>
+</tbody>
+</table>
+<p>Then write your reply so that each sentence draws on one bin and the
+reader can tell which.</p>
+<h4 id="before-and-after">Before and after</h4>
+<p><strong>Before:</strong></p>
+<blockquote>
+<p>Yes, looks good! All-in pricing verified, queue tested, the two hold
+bugs are fixed. 👍</p>
+</blockquote>
+<p><strong>After (about 120 words, three strands):</strong></p>
+<blockquote>
+<p><strong>Product:</strong> No blocking problems known. Both
+hold-expiry bugs are fixed and retested. Expired holds now return seats
+within ~5 s in staging. <strong>Coverage:</strong> All-in totals
+confirmed on event page, seat map and checkout (web). <strong>Not yet
+checked:</strong> iOS/Android app, price-sorted search results,
+confirmation email, affiliate feed. Some of these count as pricing
+displays under the FTC fees rule, so they're a compliance risk, not
+polish. Queue randomization tested at the T₀ boundary. Token reuse
+across browsers is rejected. <strong>Testing limits:</strong> Load
+tested at 40% of planned inflow. We don't know how hold release behaves
+at peak. <strong>Recommendation:</strong> Go is defensible if someone
+checks the four uncovered price surfaces by 18:00 (I can do two). For
+10:00–10:30 I'd watch holds created vs. released vs. converted, and
+payments captured without a ticket issued.</p>
+</blockquote>
+<p>The second version is longer but faster to act on. The PO can decide
+in one read, and it's clear who decides: you inform the decision and
+don't make it.</p>
+<h4 id="when-they-push-back-just-give-me-a-yes-or-no">When they push
+back: "Just give me a yes or no"</h4>
+<p>That request is reasonable. The PO has a decision to make. Don't
+refuse it. <strong>Answer it with conditions:</strong></p>
+<ul>
+<li><em>"Yes, if X. If X can't happen, I'd still go, but with Y watched
+live."</em> This gives a yes or no and keeps the uncertainty
+visible.</li>
+<li>Put the <strong>cost of the gap</strong> in their terms: "If the app
+shows a pre-fee price to US buyers, that's the exact pattern the FTC
+acted on last spring." One concrete precedent persuades more than "there
+might be compliance issues".</li>
+<li>If they accept the risk, <strong>write down the acceptance</strong>
+in one line in the release ticket: "Shipping without app price check;
+accepted by [PO], 16:40." This isn't a trap. It makes sure the next
+person knows it was a decision, not an oversight.</li>
+<li>Don't <strong>inflate uncertainty to win.</strong> If you've seen
+the hold release work reliably 200 times, say so plainly. Safety
+language that hides real confidence is as misleading as
+overclaiming.</li>
+</ul>
+<hr />
+<h3 id="part-3-test-ideas-for-an-on-sale">Part 3: Test ideas for an
+on-sale</h3>
+<p>The questions to test the domain with, rather than more checks to
+automate:</p>
+<p><strong>Queue and fairness</strong></p>
+<ul>
+<li>Join the pre-queue at T₀−1 s and T₀+1 s. Which group do you land in?
+Is "on time" decided by the client clock or the server clock?</li>
+<li>Copy the admission token or cookie to a second browser or device.
+Does it work in both?</li>
+<li>Deep-link straight to <code>/checkout?event=…</code> without a
+token.</li>
+<li>If you refresh in the queue, do you keep your place or lose it? Does
+the on-screen copy match what actually happens?</li>
+</ul>
+<p><strong>Holds and limits</strong></p>
+<ul>
+<li>Let a hold expire <em>while</em> the payment request is in flight.
+Who owns the seat afterwards? Is there a payment with no ticket?</li>
+<li>Two tabs on the same account, each holding the per-account maximum.
+Is the limit enforced at hold, at payment, or at issuance?</li>
+<li>Abandon checkout by killing the app rather than clicking "cancel".
+How long until the seat comes back to the pool?</li>
+</ul>
+<p><strong>Price parity (the StubHub lesson)</strong></p>
+<ul>
+<li><strong>Inventory every surface that shows a price</strong> before
+you test any of them: search results, sort/filter, event page, seat map,
+cart, checkout, emails, push notifications, app, affiliate and partner
+feeds, ads. The inventory is the coverage claim. Testing without it only
+gives you anecdotes.</li>
+<li>Turn on a "show prices without fees" toggle if one exists. What is
+the default for a US visitor arriving from a search ad?</li>
+<li>Resale listings: when the platform fee depends on the seller's
+price, is the buyer's total recomputed when the seller edits the
+price?</li>
+<li>Check which fees are excluded from the total under the rule (the FTC
+lists government charges, shipping and optional add-ons) and make sure
+your product classifies each fee the same way legal does.</li>
+</ul>
+<p><strong>Observability during the on-sale</strong></p>
+<ul>
+<li>Are there live counters for holds created, released and converted? A
+rising "held" line with flat "converted" is how orphaned holds show
+up.</li>
+<li>Can someone see "payment captured, no ticket issued" within minutes,
+not at tomorrow's reconciliation?</li>
+</ul>
+<hr />
+<h3 id="challenge-3040-minutes">Challenge (30–40 minutes)</h3>
+<p>Pick a feature your team ships this week. It doesn't have to be
+ticketing.</p>
+<ol type="1">
+<li><strong>Build a claim ledger.</strong> List at least 8 claims you'd
+make about it, sorted into <em>Observed / Inferred / Assumed / Not
+covered</em>. You'll probably find that some claims you'd have reported
+as "verified" are really inferences.</li>
+<li><strong>Inventory the surfaces.</strong> Find one value that shows
+up in more than one place: a price, a balance, a stock level, a score, a
+meter reading. List <em>every</em> surface that shows it. Mark the ones
+you actually looked at.</li>
+<li><strong>Write the report.</strong> Send a three-strand status in no
+more than 120 words, ending in a conditional recommendation ("Go if…,
+watch…").</li>
+<li><strong>Reflect afterwards.</strong> Did anyone ask about an
+uncovered item? Did the conditional recommendation change what happened?
+Write down one sentence you'd phrase differently next time.</li>
+</ol>
+<p><strong>Stretch:</strong> Take the ticketing scenario and design one
+<em>monitoring</em> check for 10:00–10:30 that would catch hold/payment
+split-brain within five minutes. Specify the signal, the threshold and
+who gets paged.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Michael Bolton, DevelopSense: <a
+href="https://developsense.com/blog/2018/02/how-is-the-testing-going/">How
+is the testing going?</a> (the three-strand testing story)</li>
+<li>Michael Bolton, DevelopSense: <a
+href="https://developsense.com/?p=529">Statistician or
+Journalist?</a></li>
+<li>James Bach &amp; Michael Bolton: <a
+href="https://www.slideshare.net/slideshow/rapid-software-testing-reporting/36885704">Rapid
+Software Testing: Reporting (slides)</a> (safety language)</li>
+<li>U.S. FTC: <a href="https://www.ftc.gov/node/88198">FTC Rule on
+Unfair or Deceptive Fees to Take Effect on May 12, 2025</a></li>
+<li>U.S. FTC: <a
+href="https://www.ftc.gov/news-events/news/press-releases/2026/04/stubhub-refunding-10-million-fees-consumers-after-deceptive-ticket-pricing">StubHub
+Refunding $10 Million in Fees to Consumers After Deceptive Ticket
+Pricing</a> (April 2026)</li>
+<li>Queue-it: <a
+href="https://queue-it.com/product/scheduled/">Scheduled waiting
+room</a> (vendor page, used only to describe how pre-queue randomization
+and admission tokens work, not as evidence of effectiveness)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-38.html" rel="prev"><span>Previous</span>Testing SCIM Deprovisioning: active: false Is a Request to Revoke Access, Not Proof That Access Is Gone</a><a href="/qa-blog/posts/qa-thinking-day-40.html" rel="next"><span>Next</span>Testing Bet Settlement: A Rule Table Is a Domain With Gaps, Not a Lookup to Copy Into Your Tests</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

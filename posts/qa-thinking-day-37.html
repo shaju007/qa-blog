@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A product owner on a European checkout team comes to you with a clear goal: &quot;Small payments should go through without a 3-D Secure challenge. Cut the friction.&quot; The developers wire up exemption flags with the p">
+  <meta name="color-scheme" content="light">
+  <title>Testing SCA Exemptions: You Can Ask for a Frictionless Payment, but the Issuer Decides | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 37</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-37">QA Thinking — Day 37</h1>
+<h2
+id="testing-sca-exemptions-you-can-ask-for-a-frictionless-payment-but-the-issuer-decides">Testing
+SCA Exemptions: You Can Ask for a Frictionless Payment, but the Issuer
+Decides</h2>
+<p>A product owner on a European checkout team comes to you with a clear
+goal: "Small payments should go through without a 3-D Secure challenge.
+Cut the friction." The developers wire up exemption flags with the
+payment provider and the sandbox tests pass. The ticket says "SCA
+exemptions implemented. It works."</p>
+<p>The phrase "it works" is today's risk. Your code sends a
+<em>request</em> for an exemption. Someone else grants or refuses it,
+using information you will never see, and every answer has a cost.
+Today's lesson covers the domain, a structured way to find the risks,
+and how to report what you know without overclaiming.</p>
+<hr />
+<h3 id="1-the-domain-in-five-minutes-who-decides-what">1. The domain in
+five minutes: who decides what</h3>
+<p>Under PSD2, remote card payments in the EEA generally need
+<strong>Strong Customer Authentication (SCA)</strong>, which means two
+independent factors. Online, that usually happens through 3-D Secure
+(3DS). The Regulatory Technical Standards (RTS) define
+<strong>exemptions</strong>. The two that matter most for checkout
+teams:</p>
+<ul>
+<li><strong>Low-value (RTS Art. 16):</strong> single remote payments up
+to €30. Once the payments exempted since the last SCA exceed €100 in
+total, or once there have been five of them, SCA comes back. (<a
+href="https://www.osborneclarke.com/insights/psd2-the-ebas-standards-on-strong-customer-authentication-where-are-we-now">Osborne
+Clarke summary of the EBA standards</a>)</li>
+<li><strong>Transaction Risk Analysis (TRA, Art. 18):</strong> payments
+up to €100, €250 or €500 can be exempted. Which ceiling applies depends
+on the PSP's measured fraud rate: 0.13%, 0.06% and 0.01% respectively
+for card payments. (<a
+href="https://docs.stripe.com/payments/3d-secure/strong-customer-authentication-exemptions">Stripe:
+SCA exemptions</a>)</li>
+</ul>
+<p>Next to these sit <strong>merchant-initiated transactions
+(MITs)</strong>: off-session charges on a stored card, such as
+subscription renewals. They are out of scope for SCA, but only if the
+card was authenticated when it was saved and the customer agreed to
+future charges. Stripe notes that in practice, flagging a payment as MIT
+works much like requesting an exemption.</p>
+<p>Four facts change how you test this:</p>
+<ol type="1">
+<li><strong>The counters live at the issuer.</strong> The "five payments
+/ €100 since last SCA" counter covers the cardholder's activity with
+<em>every</em> merchant. Your system cannot know that this card was used
+for four coffees elsewhere this morning. You are not testing whether
+your counter is correct, because you don't own one. You are testing what
+you do when the issuer's counter says no.</li>
+<li><strong>An exemption is a request.</strong> Stripe's documentation
+says plainly that the issuer may still require SCA for low-value
+payments.</li>
+<li><strong>Frictionless costs liability.</strong> If the issuer
+approves an exemption, the fraud liability shift is lost (Stripe again).
+An approved exemption that turns into a fraud chargeback lands on the
+merchant. That connects directly to Day 26's dispute economics.</li>
+<li><strong>A refusal arrives as a soft decline.</strong> The issuer
+answers "authentication required": Visa uses response code
+<strong>1A</strong> and Mastercard uses <strong>65</strong>. The correct
+reaction is to run 3DS and resubmit with the authentication result, not
+to retry the same request. A retry engine that treats all declines alike
+will miss this, and may also retry hard declines, which breaks scheme
+rules. (<a
+href="https://www.checkout.com/resources/blog/how-and-when-to-retry-sca-related-soft-declined-transactions">Checkout.com:
+how and when to retry SCA soft declines</a>; <a
+href="https://www.checkout.com/docs/risk-management/3d-secure/automated-sca-soft-decline-retry">Checkout.com
+docs: automated SCA soft-decline retry</a>). Checkout.com's docs add one
+constraint: only customer-initiated payments can be retried this way,
+because the cardholder has to be in session to authenticate. A soft
+decline on an MIT usually points to a setup problem with the original
+authentication.</li>
+</ol>
+<p>Two more details to note. First, thresholds in non-euro currencies
+are not obvious. The EBA says PSPs should convert using the average ECB
+reference rate, and may round only if the rounded amount is unlikely to
+breach the euro threshold. That can require periodic adjustment (<a
+href="https://www.eba.europa.eu/single-rule-book-qa/qna/view/publicId/2018_4040">EBA
+Q&amp;A 2018_4040</a>). So "30" in SEK, PLN or DKK is a number that
+changes over time. Second, the UK now has its own figures (£25 / £85 per
+Stripe's docs), so "EEA + UK" is not one ruleset.</p>
+<hr />
+<h3 id="2-finding-the-risks-sfdipot-on-an-exemption-flow">2. Finding the
+risks: SFDIPOT on an exemption flow</h3>
+<p>James Bach's <a href="https://www.satisfice.com/?p=13">Heuristic Test
+Strategy Model (v6.3, Satisfice)</a> lists <em>product factors</em> as
+guidewords: Structure, Function, Data, Interfaces, Platform, Operations,
+Time. Use them to generate questions about this feature, not as a
+checklist to tick. Here is how they apply:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Guideword</th>
+<th>Question it prompts here</th>
+<th>Concrete test idea</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Structure</strong></td>
+<td>Which component decides to request an exemption: our code, the PSP's
+engine, or both?</td>
+<td>Find out whether our "request low-value" flag <em>overrides</em> the
+PSP's own optimisation or competes with it. Get the actual request
+payload for a €29 order.</td>
+</tr>
+<tr class="even">
+<td><strong>Function</strong></td>
+<td>What happens after a soft decline?</td>
+<td>Simulate 1A/65. Expected: a 3DS challenge is shown in-session and
+the order is created once. Check for a <em>second</em> authorization
+attempt without authentication data, a duplicate order, or a stuck
+"pending" state (see Day 7).</td>
+</tr>
+<tr class="odd">
+<td><strong>Data</strong></td>
+<td>What amount is compared against the threshold?</td>
+<td>Basket €31 with a €2 voucher, so €29 charged. Also: totals with
+shipping added after the decision, and a SEK basket near the converted
+limit. Is the check made on the <em>final authorized</em> amount in the
+<em>charge</em> currency?</td>
+</tr>
+<tr class="even">
+<td><strong>Interfaces</strong></td>
+<td>What does the customer see when the issuer steps up
+unexpectedly?</td>
+<td>A challenge that appears inside a "one-click" UI built on the
+assumption of no challenge. Check mobile webview redirects, popup
+blockers, and returning to the app after a bank-app approval.</td>
+</tr>
+<tr class="odd">
+<td><strong>Platform</strong></td>
+<td>Does sandbox behaviour match production?</td>
+<td>Sandbox issuers follow scripts: a magic card number always says
+"exempt OK". That checks our reaction to a verdict, not the verdict
+itself (see section 3).</td>
+</tr>
+<tr class="even">
+<td><strong>Operations</strong></td>
+<td>How do real customers use this?</td>
+<td>Five quick €8 top-ups in a gaming wallet, so the sixth is stepped
+up. Or a customer who paid at three other shops this morning, so <em>our
+first</em> payment is stepped up. Both are normal behaviour, not edge
+cases.</td>
+</tr>
+<tr class="odd">
+<td><strong>Time</strong></td>
+<td>What expires?</td>
+<td>3DS sessions time out. Cart reservations (Day 15) may expire while
+the customer is in their bank app. Renewals (MITs) run months after the
+original authentication, and sometimes the card has been replaced since
+then.</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Time</strong> row and the MIT setup usually expose the
+expensive bug. If the card was saved <em>without</em> proper initial
+authentication, every renewal months later can come back soft-declined,
+and the customer isn't present to complete a challenge. Release testing
+won't catch this, because nothing renews during the test cycle.</p>
+<hr />
+<h3 id="3-the-oracle-problem-what-can-a-green-test-actually-tell-you">3.
+The oracle problem: what can a green test actually tell you?</h3>
+<p>A useful habit: for each check, write what it can and cannot
+detect.</p>
+<ul>
+<li><strong>It can detect:</strong> whether we send the right exemption
+indicator, whether we handle a 1A/65 by stepping up, whether we avoid
+duplicate orders, and whether the UI survives a challenge it didn't
+expect.</li>
+<li><strong>It cannot detect:</strong> how often real issuers accept our
+exemption requests, whether our PSP's TRA ceiling is actually €250 for
+us this quarter (it depends on fraud rates), or what the extra fraud
+liability costs us.</li>
+</ul>
+<p>The second list is not a testing failure. It is information that only
+<strong>production observation</strong> can give. So your test strategy
+should include something that isn't a test case: a dashboard or query
+that splits outcomes by <em>exemption requested × issuer response ×
+final outcome × card country</em>. If step-up rates for one issuer
+country jump after a release, you have learned something no sandbox
+could show. Agree on this before go-live, or "measure it later" will
+never happen.</p>
+<hr />
+<h3
+id="4-the-soft-skill-replace-it-works-with-a-claim-you-can-defend">4.
+The soft skill: replace "it works" with a claim you can defend</h3>
+<p>In a Ministry of Testing talk, <a
+href="https://www.ministryoftesting.com/testbash-talks/the-rapid-software-testing-guide-to-what-you-meant-to-say-michael-bolton"><em>The
+Rapid Software Testing Guide to What You Meant to Say</em></a>, Michael
+Bolton names "It works!" as one of the phrases testers say without
+meaning it. The phrase can mislead clients <em>and</em> the tester who
+says it. Here, "it works" makes a product owner believe something false:
+that small payments will now be frictionless.</p>
+<p>A more precise status update to the PO looks like this:</p>
+<blockquote>
+<p>"Our checkout now <strong>requests</strong> low-value and TRA
+exemptions, and in the sandbox it correctly handles both an issuer
+approval and an issuer 'authentication required' response by switching
+to 3DS without creating duplicate orders. What we <strong>can't</strong>
+know before launch is how often real issuers will accept the request.
+Each issuer tracks the cardholder's history with other merchants, so
+some €10 payments will still be challenged and that's expected
+behaviour. Two decisions are yours: (1) approved exemptions move fraud
+liability back to us. Is the conversion gain worth that for every
+category, including gift cards? (2) Can we agree on the acceptance and
+step-up dashboard as a launch criterion, so we judge this with real
+numbers in two weeks?"</p>
+</blockquote>
+<p>This update states what was tested and what was observed. It names
+the boundary of the evidence, explains why that boundary exists, and
+turns a hidden trade-off into a decision with an owner. You are not
+blocking the release. You are making sure the PO isn't guessing (Day
+17's theme, applied).</p>
+<p><strong>When a developer pushes back</strong> ("the PSP handles all
+that, it's not our problem"), don't argue about whose responsibility it
+is. Ask for an observation instead: "Can we look at one real
+soft-decline response from the PSP in staging and trace what our code
+does with it?" Either it shows you're right, or you learn something.
+Both outcomes beat a debate.</p>
+<hr />
+<h3 id="5-practical-challenge-45-minutes">5. Practical challenge (45
+minutes)</h3>
+<p>Pick any flow you test that depends on a <strong>third party's
+verdict</strong>: card issuer, fraud engine, KYC provider, sports-data
+feed confirming a result, ad exchange, grid operator. Then:</p>
+<ol type="1">
+<li><strong>Map who decides.</strong> List each decision in the flow and
+mark whether <em>we</em> make it or <em>they</em> do. For each "they",
+write what information they have that we don't (like the issuer's
+cross-merchant counter).</li>
+<li><strong>Run SFDIPOT on one "they" decision.</strong> Write at least
+one test idea per guideword. At least two must involve
+<strong>Time</strong>.</li>
+<li><strong>Split your evidence.</strong> Make two columns: "Our checks
+can show…" and "Only production can show…". For every item in the second
+column, name the signal, the query or dashboard, and who looks at it in
+week one.</li>
+<li><strong>Rewrite your last "it works" or "done" status</strong> as
+the four-part update above: tested and observed, what we can't know and
+why, the trade-off, the decision owner.</li>
+</ol>
+<p><strong>Payments stretch:</strong> Design a test for this scenario. A
+subscription card was saved with a frictionless 3DS result. The renewal
+30 days later is an MIT, and the issuer returns code 65. What
+<em>should</em> happen, given the customer isn't in session? What does
+your system actually do? Who gets told: the customer, support, finance?
+If you can't answer the last question, you've found the bug.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>James Bach, Satisfice: <a
+href="https://www.satisfice.com/?p=13">Heuristic Test Strategy Model
+v6.3</a></li>
+<li>Michael Bolton, Ministry of Testing: <a
+href="https://www.ministryoftesting.com/testbash-talks/the-rapid-software-testing-guide-to-what-you-meant-to-say-michael-bolton">The
+Rapid Software Testing Guide to What You Meant to Say</a></li>
+<li>European Banking Authority: <a
+href="https://www.eba.europa.eu/single-rule-book-qa/qna/view/publicId/2018_4040">Q&amp;A
+2018_4040, converting EUR SCA thresholds into other currencies</a></li>
+<li>Osborne Clarke: <a
+href="https://www.osborneclarke.com/insights/psd2-the-ebas-standards-on-strong-customer-authentication-where-are-we-now">PSD2:
+The EBA's standards on strong customer authentication</a></li>
+<li>Stripe Docs: <a
+href="https://docs.stripe.com/payments/3d-secure/strong-customer-authentication-exemptions">Strong
+Customer Authentication exemptions</a> (vendor documentation; used for
+issuer discretion, liability shift and TRA thresholds)</li>
+<li>Checkout.com: <a
+href="https://www.checkout.com/resources/blog/how-and-when-to-retry-sca-related-soft-declined-transactions">How
+and when to retry SCA-related soft-declined transactions</a> and <a
+href="https://www.checkout.com/docs/risk-management/3d-secure/automated-sca-soft-decline-retry">Automated
+SCA soft-decline retry docs</a> (vendor sources; used only for
+response-code handling, not product claims)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-36.html" rel="prev"><span>Previous</span>Testing Consent Signals in Ad Tech: A Consent String Is a Record With a Birth Date, Not a Yes/No Flag</a><a href="/qa-blog/posts/qa-thinking-day-38.html" rel="next"><span>Next</span>Testing SCIM Deprovisioning: active: false Is a Request to Revoke Access, Not Proof That Access Is Gone</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

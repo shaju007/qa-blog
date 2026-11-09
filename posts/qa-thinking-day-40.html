@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="You&#39;re the tester on a sportsbook&#39;s settlement service. The new feature handles horse-racing non-runners: when a horse is withdrawn after you&#39;ve bet on another runner at a fixed price, your winnings are reduced">
+  <meta name="color-scheme" content="light">
+  <title>Testing Bet Settlement: A Rule Table Is a Domain With Gaps, Not a Lookup to Copy Into Your Tests | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 40</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-40">QA Thinking — Day 40</h1>
+<h2
+id="testing-bet-settlement-a-rule-table-is-a-domain-with-gaps-not-a-lookup-to-copy-into-your-tests">Testing
+Bet Settlement: A Rule Table Is a Domain With Gaps, Not a Lookup to Copy
+Into Your Tests</h2>
+<h3 id="the-situation">The situation</h3>
+<p>You're the tester on a sportsbook's settlement service. The new
+feature handles horse-racing <strong>non-runners</strong>: when a horse
+is withdrawn after you've bet on another runner at a fixed price, your
+winnings are reduced under <strong>Tattersalls Rule 4</strong>. The
+ticket includes the deduction table, and the product owner says:
+<em>"It's an industry-standard table. Just check every row."</em></p>
+<p>That would give you 19 green checks, and they'd tell you almost
+nothing. The table is a specification of a <strong>domain</strong>: a
+set of variables, classes and boundaries. Today's lesson is about
+reading it that way. Cem Kaner's domain testing gives you the method,
+and racing and tennis settlement give you a domain where the risk is
+concrete. One penny in the wrong place, repeated across a busy
+Saturday's bets, adds up to real money. A badly chosen input price can
+also become a regulatory story.</p>
+<hr />
+<h3 id="part-1-domain-primer--what-settlement-actually-means">Part 1:
+Domain primer — what "settlement" actually means</h3>
+<p>You can't partition a domain you don't understand. Here's the minimum
+vocabulary:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Term</th>
+<th>What it means</th>
+<th>Why a tester cares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Settlement</strong></td>
+<td>Turning an official result into a payout or a loss for every open
+bet</td>
+<td>It's a batch job over a huge number of bets. A systematic error hits
+everyone.</td>
+</tr>
+<tr class="even">
+<td><strong>Fixed / early price vs. SP</strong></td>
+<td>A fixed-odds bet locks in the price at the time it was placed. A
+Starting Price (SP) bet is paid at the price returned when the race
+starts.</td>
+<td>Rule 4 applies to fixed prices taken <em>before</em> the withdrawal.
+SP bets don't get a deduction because the market reforms and the SP
+already reflects the smaller field (<a
+href="https://www.sportinglife.com/free-bets/guides/horse-racing-beginners-guide/rule-4-explained">Sporting
+Life</a>).</td>
+</tr>
+<tr class="odd">
+<td><strong>Non-runner / reformed market</strong></td>
+<td>A declared runner is withdrawn, and the market is rebuilt without
+it</td>
+<td>Every bet's deduction depends on <em>when the bet was placed</em>
+relative to <em>each</em> withdrawal</td>
+</tr>
+<tr class="even">
+<td><strong>Rule 4 deduction</strong></td>
+<td>Pence per £1 of winnings, scaled by how short the withdrawn horse's
+price was: 90p at 1/9 or shorter, down to 5p at 10/1–14/1, nothing
+beyond 14/1. With several withdrawals the total is capped at 90p (<a
+href="https://www.sportinglife.com/free-bets/guides/horse-racing-beginners-guide/rule-4-explained">Sporting
+Life</a>).</td>
+<td>It comes off winnings only. The stake is always returned.</td>
+</tr>
+<tr class="odd">
+<td><strong>Dead heat</strong></td>
+<td>Runners tie for a paying position. The stake is split by the number
+tied, and each part is paid at full odds.</td>
+<td>The stake is split, so a "winning" bet can return less than its
+stake</td>
+</tr>
+<tr class="even">
+<td><strong>Void / retirement rules</strong></td>
+<td>The conditions under which a bet stands, is refunded, or is
+settled</td>
+<td>These differ by operator. In tennis, depending on the book, a match
+bet may stand from the first ball, only after the first set is
+completed, or only if the match is completed (<a
+href="https://www.actionnetwork.com/tennis/tennis-betting-rules-player-retires-rain-weather-delay">Action
+Network</a>).</td>
+</tr>
+</tbody>
+</table>
+<p>There's also an integrity side. In 2018 the UK Gambling Commission
+published lessons from a 2015 case. A trader had deliberately shortened
+the price of a horse (Tango Sky) that was known to be coming out, which
+made the Rule 4 deduction applied to customers' winning bets bigger. The
+Commission set out expectations on policies, training, monitoring and
+clear terms. It also warned that it could mandate how Rule 4 is
+calculated if operators fell short (<a
+href="https://www.gamblingcommission.gov.uk/news/article/important-lessons-for-the-betting-industry-on-rule-4-application">UKGC,
+4 July 2018</a>). For a tester, that turns <em>"which price did we use,
+and can we prove it?"</em> into a requirement, not a nice-to-have.</p>
+<hr />
+<h3
+id="part-2-kaners-lens--domain-testing-is-about-modelling-not-reading-rows">Part
+2: Kaner's lens — domain testing is about modelling, not reading
+rows</h3>
+<p>Kaner, Padmanabhan and Hoffman describe domain testing as a
+generalized approach to equivalence class analysis and boundary testing.
+Their workbook builds it around <strong>notional variables</strong>: the
+tester's model of a variable "as if it were part of the code", whether
+or not the code has it (<a href="https://kaner.com/?p=363">Kaner,
+<em>The Domain Testing Workbook</em></a>). Their related paper treats
+domain testing as a way to <em>sample</em> an almost unlimited input
+space. You group values by <strong>how the program might fail</strong>,
+pick the <strong>best representatives</strong> (usually boundaries), and
+then follow the variable into what uses it downstream and how it
+combines with other variables (<a
+href="https://kaner.com/pdfs/kanerPadmanabhanDomainTesting.pdf">Kaner
+&amp; Padmanabhan, PDF</a>).</p>
+<p>Applied at work, that means three moves the "check every row"
+approach skips.</p>
+<h4 id="move-1-list-the-notional-variables-not-the-table-rows">Move 1:
+List the notional variables, not the table rows</h4>
+<p>The table shows one input: the withdrawn horse's odds. Settlement
+actually depends on at least these:</p>
+<ol type="1">
+<li><strong>Withdrawn runner's price</strong>, but <em>which</em> price?
+The last traded price, the displayed board price, or the price at the
+moment of withdrawal? The UKGC case shows this choice isn't
+neutral.</li>
+<li><strong>Bet placement time</strong> relative to
+<strong>each</strong> withdrawal time</li>
+<li><strong>Number of withdrawals</strong>, and the reformed price used
+for each one after the first</li>
+<li><strong>Accumulated deduction</strong>, capped at 90p</li>
+<li><strong>Bet type</strong>: fixed price vs. SP, win vs. each-way (two
+parts with different place terms)</li>
+<li><strong>Dead-heat factor</strong> (1/2, 1/3, …)</li>
+<li><strong>Multiples</strong>: a deduction applies per leg, and the
+legs' returns compound</li>
+<li><strong>Rounding policy and order of operations</strong></li>
+</ol>
+<p>Rule 4 belongs to each bet, not to the race. Two customers on the
+same horse in the same race can get different deductions: one bet before
+the first withdrawal, the other between the first and second. If your
+fixtures put one deduction on the race, your tests have the same blind
+spot as a buggy implementation.</p>
+<h4 id="move-2-look-for-gaps-between-classes-not-just-edges">Move 2:
+Look for gaps between classes, not just edges</h4>
+<p>The table is written in <strong>fractional odds</strong>. Your system
+almost certainly stores <strong>decimal</strong> odds, and price boosts,
+exchange-derived prices and odds-format conversion all produce values
+that aren't on the traditional ladder. Convert the published bands to
+decimal and lay them end to end:</p>
+<ul>
+<li>25p band ends at <strong>3/1</strong> (4.00); 20p band starts at
+<strong>16/5</strong> (4.20). So where does <strong>31/10</strong>
+(4.10) go?</li>
+<li>20p band ends at <strong>4/1</strong> (5.00); 15p band starts at
+<strong>9/2</strong> (5.50). Where does <strong>17/4</strong> (5.25)
+go?</li>
+<li>10p band ends at <strong>9/1</strong>; 5p band starts at
+<strong>10/1</strong>. Where does <strong>19/2</strong> go?</li>
+<li>"Over 14/1: no deduction". Is exactly 14/1 a 5p deduction (yes, per
+the table), and what about 14/1 stored as <code>15.0000001</code> after
+a float conversion?</li>
+</ul>
+<p>These are <strong>unassigned regions</strong> in the specification.
+The code will do <em>something</em> with them: fall through to the next
+band, round to the nearest ladder price, or throw. Each choice is a
+business decision someone has made without saying so. Your job isn't to
+pick the right answer. It's to show that the question exists.</p>
+<p>One caveat. I've used a commonly published version of the table
+(Sporting Life's). Before raising gaps, get the version your operator's
+terms actually publish, because that's the contract with customers.</p>
+<h4 id="move-3-follow-the-value-downstream-where-invariants-hide">Move
+3: Follow the value downstream, where invariants hide</h4>
+<p>Here's a worked example where order of operations matters. A £1.00
+win bet at 5/2 dead-heats three ways, and there's a 15p Rule 4
+deduction:</p>
+<ul>
+<li><strong>Unrounded:</strong> stake share £0.3333 → winnings £0.8333 →
+after Rule 4 £0.7083 → return <strong>£1.04</strong></li>
+<li><strong>Rounding the stake share first</strong> (£0.33): winnings
+£0.825 → after Rule 4 £0.70125 → <strong>£1.03</strong></li>
+</ul>
+<p>The difference is one penny. It's tiny per bet, but it applies to
+every bet settled that way and compounds inside accumulators. Whichever
+policy is right, it should be <strong>written down and applied the same
+way</strong> in settlement, the bet-history display, the cash-out
+calculation and finance reconciliation. Four components each rounding
+their own way is the actual bug pattern.</p>
+<p>The domain also corrects a tempting invariant. <em>"A winning bet
+always returns at least its stake"</em> holds for Rule 4, because only
+winnings are reduced. It's <strong>false</strong> under dead heat: £10
+at 1/2 split two ways returns £7.50. If you add the unqualified
+invariant to a property-based test, you'll either get false alarms or
+quietly weaken the check until it's worthless. Invariants hold within
+classes, so state the class:</p>
+<ul>
+<li>Deduction is non-increasing as the withdrawn price lengthens</li>
+<li>Total deduction ≤ 90p, however many withdrawals there are</li>
+<li>For <em>non-dead-heat</em> winning bets, return ≥ stake</li>
+<li>SP bets never get a Rule 4 deduction</li>
+<li>A bet placed after a withdrawal gets no deduction <em>for that
+withdrawal</em></li>
+</ul>
+<hr />
+<h3
+id="part-3-the-same-lens-on-a-sports-data-feed-tennis-retirements">Part
+3: The same lens on a sports-data feed (tennis retirements)</h3>
+<p>Now switch roles. You work for a <strong>sports-data
+platform</strong> that sells results to dozens of sportsbooks. A player
+retires in a match. Your feed sends <code>winner: Player A</code>.</p>
+<p>Here the notional variable is <strong>match progress at the moment of
+retirement</strong>, and the classes come from your <em>customers'</em>
+rules, not yours:</p>
+<ul>
+<li>Before the first ball (a walkover, not a retirement, but do the
+records distinguish them?)</li>
+<li>During the first set</li>
+<li><strong>Exactly at the end of the first set</strong>, before the
+first point of set two (a boundary that "first set completed" rules
+depend on)</li>
+<li>Mid-match, after one or more sets</li>
+<li>During a tiebreak, or a match-tiebreak deciding set</li>
+</ul>
+<p>A feed that sends only the winner gives a "first ball" book
+everything it needs and a "first set completed" book nothing. The
+domain-testing question for a B2B data product is: <strong>for each
+customer rule class, does the payload carry enough facts to settle
+correctly?</strong> That means sets completed, a retirement flag, a
+walkover flag, and timestamps. That's a contract-coverage question, and
+it's how you find feed gaps before an operator's customers do.</p>
+<hr />
+<h3
+id="part-4-the-soft-skill--raising-a-spec-gap-without-starting-a-turf-war">Part
+4: The soft skill — raising a spec gap without starting a turf war</h3>
+<p>Rule 4 belongs to trading and compliance, not engineering. When
+you've found the 3/1–16/5 gap, two approaches tend to fail:</p>
+<ul>
+<li><strong>"The spec is wrong."</strong> That's accusatory, and the
+people who own the spec can quote it from memory.</li>
+<li><strong>Quietly deciding in a test fixture.</strong> Your automation
+now encodes a business rule nobody approved, and it becomes the de facto
+policy.</li>
+</ul>
+<p>What works is a short message that brings evidence, keeps ownership
+with the owners and makes the decision cheap to take:</p>
+<blockquote>
+<p><em>"Converting our published Rule 4 table to decimal odds, I found
+four price regions that no band covers (attached: band edges in decimal,
+plus three real boosted prices from last month that fell into them).
+Today the code puts them in [observed behaviour]. I'm not proposing an
+answer. Can trading confirm the intended band for each? I'll then add
+one check per boundary so we notice if it ever changes. Also: which
+price snapshot is authoritative for the withdrawn runner, and do we keep
+it in the bet's audit trail?"</em></p>
+</blockquote>
+<p>That message does five things. It shows the gap with data rather than
+opinion. It reports what the system actually does. It asks the owner to
+decide. It offers to protect whatever they decide. And it connects to
+the audit-trail expectation the regulator has already stated, which
+turns "QA nitpick" into "compliance exposure". That's influence without
+authority built from evidence.</p>
+<hr />
+<h3 id="practical-challenge-45-minutes">Practical challenge (45
+minutes)</h3>
+<p><strong>Part A: Partition (20 min).</strong> Choose a rule table from
+your own product. Fee tiers, shipping thresholds, tariff bands,
+commission rates and volume discounts all work. Then:</p>
+<ol type="1">
+<li>List the notional variables. The table usually shows one or two, and
+settlement-style logic depends on five or more.</li>
+<li>Convert the bands to the representation the system actually stores
+(decimal, cents, kWh, integer units). Mark every gap, overlap and
+ambiguous inclusive/exclusive edge.</li>
+<li>Write three invariants and state the class each one holds in. Find
+one that's false in a neighbouring class, like "return ≥ stake" under
+dead heat.</li>
+</ol>
+<p><strong>Part B: Calculate (10 min).</strong> Work out the return on
+each of these, and say what you'd need to ask before you could be
+sure:</p>
+<ul>
+<li>£20 win, fixed 4/1, placed <em>before</em> two withdrawals: first
+runner at 6/4, second at 2/1 in the reformed market</li>
+<li>£20 win, same horse and price, placed <em>between</em> the two
+withdrawals</li>
+<li>£10 each-way at 8/1, 1/5 odds for places, horse dead-heats for third
+(the last paying place) with one other, plus a 10p Rule 4</li>
+</ul>
+<p><strong>Part C: Communicate (15 min).</strong> Write the message
+you'd send to the rule's owner about your biggest gap, using the
+four-part structure above: evidence, observed behaviour, a decision
+request, and an offer to protect the decision. Keep it under 120
+words.</p>
+<p><em>Stretch:</em> if you work on a data feed, list your customers'
+settlement rules for one market and check whether your payload carries
+enough facts for each.</p>
+<hr />
+<h3 id="takeaway">Takeaway</h3>
+<p>A rule table is a <strong>summary of a domain</strong>, written for
+humans and in the humans' notation. Checking every row confirms that the
+code copied the table. Domain testing, as Kaner frames it, asks what
+variables sit behind the table, where its classes leave gaps, and where
+the value flows next. In settlement those answers are worth money, and
+sometimes they're what a regulator will ask about.</p>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Cem Kaner — <a href="https://kaner.com/?p=363">New Book: <em>The
+Domain Testing Workbook</em></a> (domain testing as generalized
+equivalence/boundary analysis; notional variables)</li>
+<li>Kaner &amp; Padmanabhan — <a
+href="https://kaner.com/pdfs/kanerPadmanabhanDomainTesting.pdf">Domain
+Testing paper (PDF)</a> (risk-based classes, best representatives,
+downstream and multi-variable analysis)</li>
+<li>Sporting Life — <a
+href="https://www.sportinglife.com/free-bets/guides/horse-racing-beginners-guide/rule-4-explained">What
+is a Rule 4 in horse racing and how does it work?</a> (deduction bands,
+90p cap, reformed-market rule, SP vs. early prices)</li>
+<li>UK Gambling Commission — <a
+href="https://www.gamblingcommission.gov.uk/news/article/important-lessons-for-the-betting-industry-on-rule-4-application">Important
+lessons for the betting industry on Rule 4 application (4 July 2018)</a>
+(Tango Sky case; operator expectations)</li>
+<li>Action Network — <a
+href="https://www.actionnetwork.com/tennis/tennis-betting-rules-player-retires-rain-weather-delay">Tennis
+betting rules: player retires, rain/weather delay</a> (variation in
+retirement rules across operators)</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-39.html" rel="prev"><span>Previous</span>Reporting on a Ticket On-Sale: &quot;It Works&quot; Describes What You Saw. It Can&#39;t Promise Friday at 10:00</a><a href="/qa-blog/posts/qa-thinking-day-41.html" rel="next"><span>Next</span>Switching Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a Historical Stats Migration</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

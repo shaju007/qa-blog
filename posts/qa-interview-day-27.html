@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario for the interview: You test the mobile app of a UK energy supplier. Thursday&#39;s release replaces the prepayment smart-meter top-up flow. The old flow showed &quot;Top-up pending&quot; until the meter confirmed it">
+  <meta name="color-scheme" content="light">
+  <title>&quot;Can you just change it from Critical to Major? The release gate only blocks on Criticals, and we&#39;ll fix it next sprint.&quot; Do you change the label? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 27</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-27">QA Interview Q&amp;A — Day 27</h1>
+<h2
+id="question-can-you-just-change-it-from-critical-to-major-the-release-gate-only-blocks-on-criticals-and-well-fix-it-next-sprint-do-you-change-the-label">Question:
+"Can you just change it from Critical to Major? The release gate only
+blocks on Criticals, and we'll fix it next sprint." Do you change the
+label?</h2>
+<p><strong>Scenario for the interview:</strong> You test the mobile app
+of a UK energy supplier. Thursday's release replaces the prepayment
+smart-meter top-up flow. The old flow showed "Top-up pending" until the
+meter confirmed it had received the credit. The new flow shows
+<strong>"Top-up successful ✓"</strong> as soon as the card payment is
+authorised.</p>
+<p>During a load test that replayed last winter's evening peak, about
+0.4% of top-ups took 2–6 hours to reach the meter. The cause was a
+backed-up queue in the head-end system, the platform that sends credit
+to meters. You filed this as Critical. The team's release gate is
+simple: no open Critical bugs. In the go/no-go meeting, the product
+owner says: "It's not a crash, and the credit arrives in the end. Make
+it Major so we can ship. We'll fix it next sprint." You don't own the
+release decision.</p>
+<hr />
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>No, I don't change the label so that a gate turns green. I also don't
+make the meeting about the label. Severity is my best account of how bad
+the problem is. Whether to ship anyway belongs to the product owner and
+whoever they answer to. My job is to keep the two separate: an honest
+severity, plus a clear route for someone with authority to accept the
+risk and put their name on it.</p>
+<p>If I quietly downgrade the bug, the record says the gate passed, when
+really someone decided to ship past it. When this hurts a customer in
+January, nobody will be able to see who accepted the risk or why.</p>
+<h3 id="first-check-whether-im-actually-right">First, check whether I'm
+actually right</h3>
+<p>Bug advocacy only works if people trust you. Before I defend
+"Critical", I check my own claim.</p>
+<ol type="1">
+<li><strong>What does our severity scale actually say?</strong> If our
+definitions say "Critical = crash, data loss or security breach", then
+Major may be the <em>correct</em> label under the current scale. If so,
+I say that openly: "By our current definitions this is Major. I think
+that shows a gap in the definitions, because this bug can leave a
+customer without energy." That keeps my credibility and still keeps the
+impact visible.</li>
+<li><strong>Is the delay new, or is the message new?</strong> I check
+the old flow and production telemetry. If the head-end queue already
+backs up at peak today, the delay isn't new. What's new is that we now
+<strong>tell the customer it worked when we don't yet know</strong>.
+That changes the fix: it may be a copy-and-state change, not an
+infrastructure project.</li>
+<li><strong>How often does this happen in production?</strong> A
+replayed load test isn't production. I ask for last winter's head-end
+delivery latency (p95/p99 by hour) and how many evenings it went above,
+say, 30 minutes. 0.4% of top-ups during peak is a very different number
+from 0.4% of all top-ups.</li>
+<li><strong>Who is affected?</strong> People topping up in the evening
+often have little or no credit left, and some are already on emergency
+credit. I ask the data team how many top-ups happen when the balance is
+near zero. I don't guess.</li>
+<li><strong>What can support see?</strong> If a customer calls, can the
+agent see "payment taken, not yet delivered to the meter"? Or will they
+read out the same "successful" status the customer sees?</li>
+</ol>
+<p>Michael Bolton describes severity as "not a property; it's a
+relationship" between a problem and the people it affects. These
+questions are how I describe that relationship with evidence instead of
+adjectives.</p>
+<h3 id="why-this-is-serious-stated-without-drama">Why this is serious,
+stated without drama</h3>
+<p>The symptom sounds harmless: a payment confirmation arrives before
+the credit. The impact is different. A customer with almost no credit on
+a November evening sees "successful", stops worrying, and may run out of
+credit overnight. Because the app already said "done", they have no
+reason to call anyone.</p>
+<p>Prepayment customers are also a group that energy regulators treat
+with care. In the UK, Ofgem's 2020 decision on self-disconnection
+requires suppliers to identify prepayment customers who are
+self-disconnecting and to offer emergency and friendly-hours credit. I'm
+not a compliance expert, and I won't claim this bug breaches a licence
+condition. I will say: "This touches a regulated, vulnerable-customer
+area. Compliance should see it before we decide, not after."</p>
+<p>What I avoid saying is "someone could freeze." It might be true in an
+extreme case, but I can't support it with evidence. Overstating it would
+make people trust my next Critical less.</p>
+<h3 id="what-i-say-in-the-meeting">What I say in the meeting</h3>
+<blockquote>
+<p>"I'd rather not relabel it. The label is there so the next person
+reading this ticket knows how bad it is. But I'm not trying to block
+Thursday. That's your call, not mine. Here's what I know and what I
+don't.</p>
+<p><strong>What I know:</strong> in a replay of last winter's peak, 0.4%
+of top-ups took 2–6 hours to reach the meter. The new flow tells those
+customers 'successful' straight away. The old flow said 'pending'.</p>
+<p><strong>What I don't know yet:</strong> how often the queue backed up
+in production last winter, and how many of those customers were near
+zero credit. I've asked data for both. We should have them by tomorrow
+midday.</p>
+<p><strong>What worries me:</strong> a customer with low credit believes
+the top-up worked and runs out overnight. It's rare, but it's hard to
+undo, it falls on vulnerable customers, and it's in an area Ofgem
+watches.</p>
+<p><strong>Options, roughly cheapest first:</strong></p>
+<ol type="1">
+<li>Change the confirmation to 'Payment received, sending to your
+meter', with a push notification when the meter confirms. I've asked
+[dev] for an estimate, and they think it might be under a day.</li>
+<li>Ship Thursday, but keep prepayment customers on the old flow behind
+the flag until (1) is done.</li>
+<li>Ship as planned, with an alert on top-up delivery latency, a support
+script, and a fix date.</li>
+</ol>
+<p>If you choose option 3, I'm fine with that being recorded as a risk
+acceptance under your name, with compliance informed. I just don't want
+the ticket to say it was Major when it wasn't."</p>
+</blockquote>
+<p>That last line matters. It's not an accusation. It offers the product
+owner a legitimate way to do what they want, without the data being
+changed to make it happen.</p>
+<h3 id="after-the-meeting-whatever-they-decide">After the meeting,
+whatever they decide</h3>
+<ul>
+<li><strong>Write the decision down in the ticket:</strong> who accepted
+the risk, which option they chose, what monitoring exists, and the
+agreed fix date. Use neutral language. No "QA disagreed" notes added for
+self-protection.</li>
+<li><strong>Check the safeguards myself.</strong> If we ship with an
+alert, I make sure it fires. I push a delayed top-up through staging and
+confirm someone gets paged.</li>
+<li><strong>Propose fixing the gate, not just the bug.</strong> A gate
+that only counts labels invites people to change labels. A better rule:
+"Open Criticals block the release unless a named owner records a risk
+acceptance." Pressure to relabel then becomes a normal, visible decision
+instead of a quiet edit. I raise this in the retro, not in the middle of
+the release argument.</li>
+<li><strong>If the product owner changes the label themselves,</strong>
+I don't start an edit war. I add a comment: "Severity changed from
+Critical to Major by [name] on [date] for release gating. Original
+assessment and evidence above." Then I mention it to my lead. Covering
+it up would be worse than the change itself.</li>
+</ul>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Yes, the PO owns priority."</strong> True, but they're
+asking about <em>severity</em>. Bolton's point is that management
+decides priority. Severity is the tester's input to that decision, and
+changing it to fit the decision ruins the input.</li>
+<li><strong>"No. I'll block the release."</strong> You don't have that
+authority, and pretending you do turns a risk discussion into a power
+struggle you will lose.</li>
+<li><strong>Escalating to the director straight away.</strong> Try the
+meeting first. Escalate if a risk is being hidden, not because someone
+disagrees with you.</li>
+<li><strong>Fighting over the label.</strong> If the whole meeting is
+"Critical vs Major", nobody talks about the cheap fix in option 1, which
+is the most useful outcome you could get.</li>
+<li><strong>Disaster language without evidence.</strong> Kaner and
+Bach's bug advocacy material is about researching a bug until its real
+reach is clear: following up to see whether it is more general or more
+serious than it first looked. It is not about turning up the volume.
+Credibility is what you spend in these meetings.</li>
+</ul>
+<h3 id="what-a-strong-candidate-shows">What a strong candidate
+shows</h3>
+<p>They separate the facts from the decision. They check their own
+severity call before defending it. They turn "it's bad" into something
+concrete about real customers. They offer options cheaper than "delay
+the release". They make risk acceptance visible and owned instead of
+quiet. And they stay calm when they lose the argument.</p>
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><strong>"Your team's Criticals have been inflated for months, and
+developers now ignore them. How do you rebuild trust in severity without
+relabelling everyone's old bugs?"</strong> Look for: calibrating against
+real incidents, short impact statements on every Critical, and starting
+with your own reports.</li>
+<li><strong>"Data comes back tomorrow: the production queue never went
+over five minutes last winter. What do you do with your
+Critical?"</strong> Look for: downgrading it openly with the evidence
+attached, and keeping the message-wording issue open as a separate,
+smaller bug. Being able to say you were wrong is part of being
+credible.</li>
+</ol>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, DevelopSense — <a
+href="https://developsense.com/blog/2013/03/severity-vs-priority">"Severity
+vs. Priority"</a>. Source for "severity is a relationship, not a
+property", for the view that people with authority over the work decide
+priority, and for saying a problem <em>looks like</em> a trivial one
+rather than <em>is</em>. This is the core of why the tester keeps
+severity honest and leaves the ship decision to others.</li>
+<li>Michael Bolton, DevelopSense — <a
+href="https://developsense.com/blog/2015/01/taking-severity-seriously">"Taking
+Severity Seriously"</a>. Argues that severity scales should describe the
+effect on people and the business (regulators, refunds, reputation), not
+only how the system fails. Used for the "our scale may be missing this"
+step and for the advice to redesign the gate.</li>
+<li>Cem Kaner — <a href="https://kaner.com/?page_id=7">Publications
+page</a>, which lists his <em>Bug Advocacy</em> (2000) and <em>Effective
+Bug Reporting</em> (2002) slides. It's the original source for treating
+a bug report as something you research and argue for, not just log. I
+couldn't extract text from the PDF slides, so the follow-up-testing
+point rests on the next source.</li>
+<li>Parwal &amp; Rajpurohit — <a
+href="https://leanpub.com/bugadvocacy"><em>Bug Advocacy</em>
+(Leanpub)</a>. A summary of Kaner and Bach's BBST Bug Advocacy course.
+Used for the distinction between finding a problem and getting it
+addressed, and for its emphasis on credibility and influence.</li>
+<li>Ofgem — <a
+href="https://www.ofgem.gov.uk/publications/self-disconnection-and-self-rationing-decision">"Self-disconnection
+and self-rationing: decision"</a> (decided 19 October 2020, in force 15
+December 2020). Primary source for the domain risk: suppliers must
+identify prepayment customers who are self-disconnecting and offer
+emergency, friendly-hours and additional support credit. It shows why a
+misleading "successful" message on prepayment top-ups belongs in a
+regulated area and should be raised with compliance.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-26.html" rel="prev"><span>Previous</span>Two days before release, your designer files 47 &quot;design QA&quot; tickets against the redesigned live match centre. In triage, the engineering lead says: &quot;QA, can you close the cosmetic ones so we can ship?&quot; What do you do?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
