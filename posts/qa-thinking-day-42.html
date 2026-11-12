@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="It&#39;s Thursday afternoon in Hamburg. Your product owner messages you:">
+  <meta name="color-scheme" content="light">
+  <title>&quot;How Long Will Testing Take?&quot; Is a Negotiation: Estimating a §14a Grid-Dimming Release Without Making a Promise You Can&#39;t Keep | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 42</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-42">QA Thinking — Day 42</h1>
+<h2
+id="how-long-will-testing-take-is-a-negotiation-estimating-a-14a-grid-dimming-release-without-making-a-promise-you-cant-keep">"How
+Long Will Testing Take?" Is a Negotiation: Estimating a §14a
+Grid-Dimming Release Without Making a Promise You Can't Keep</h2>
+<p>It's Thursday afternoon in Hamburg. Your product owner messages
+you:</p>
+<blockquote>
+<p>"The grid operator wants to start the §14a pilot on December 1. Dev
+says the dimming feature is code-complete Monday. How long will testing
+take? I need a number for the steering call tomorrow."</p>
+</blockquote>
+<p>There are two easy ways to get this wrong. You can say "two weeks,"
+and that becomes a promise that December 1 is safe. Or you can say "it
+depends," which is true and tells them nothing, so the PO will stop
+asking you next time.</p>
+<p>Today's lesson is a third option: <strong>treat the estimate as a
+negotiation over what information decision-makers will have, and by
+when.</strong> The domain is German controllable-device dimming under
+§14a EnWG. In this domain a "done" that turns out wrong can mean a
+family's heat pump gets starved in January.</p>
+<hr />
+<h2 id="part-1-the-domain-youre-estimating-for">Part 1: The domain
+you're estimating for</h2>
+<p>You can't estimate testing on a domain you don't understand, because
+the domain is where the risks are. Here's the minimum you need.</p>
+<h3 id="the-business-deal">The business deal</h3>
+<p>Since 1 January 2024, new heat pumps, private wallboxes, AC units and
+batteries with more than 4.2 kW connection power in Germany are
+"controllable consumption devices" (<em>steuerbare
+Verbrauchseinrichtungen</em>). The deal works like this:</p>
+<ul>
+<li><strong>The grid operator (VNB)</strong> may temporarily
+<em>reduce</em> the power the device draws when the low-voltage grid is
+at risk of overload. It may reduce power, but it may not switch the
+device off.</li>
+<li><strong>The customer</strong> gets lower network fees in return.
+They pick a module: a flat annual reduction (Module 1), a 40% cut on the
+per-kWh network fee with a separate meter (Module 2), or, from April
+2025, time-variable network fees combined with Module 1 (Module 3).</li>
+<li><strong>The grid operator also can't refuse to connect</strong> a
+new device by citing grid capacity.</li>
+</ul>
+<h3 id="the-rules-your-system-has-to-respect">The rules your system has
+to respect</h3>
+<p>From the Bundesnetzagentur's §14a pages:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Rule</th>
+<th>What it means for testing</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Dimming may go down to <strong>4.2 kW</strong>, not below</td>
+<td>The floor is a hard oracle. Under-delivery hurts the customer.</td>
+</tr>
+<tr class="even">
+<td>Heat pumps/AC <strong>&gt; 11 kW</strong>: minimum = connection
+power × <strong>0.4</strong> scaling factor</td>
+<td>A second formula, with a boundary at 11 kW</td>
+</tr>
+<tr class="odd">
+<td>With an <strong>energy management system (EMS)</strong>, the
+operator sets <em>one aggregate limit</em> for all devices, scaled by a
+<strong>simultaneity factor</strong> that depends on how many devices
+there are. The customer's EMS splits it between devices.</td>
+<td>Aggregation logic and how the split is distributed both need
+testing</td>
+</tr>
+<tr class="even">
+<td>Power from the customer's own PV or battery <strong>does not count
+against the limit</strong></td>
+<td>Your oracle is <em>grid draw at the connection point</em>, not
+device consumption</td>
+</tr>
+<tr class="odd">
+<td>Normally, control must be based on a <strong>real-time network state
+assessment</strong> and must end as soon as the grid situation
+allows</td>
+<td>You have to test that dimming gets <em>lifted</em>, not just
+applied</td>
+</tr>
+<tr class="even">
+<td>Interim "preventive" control: max <strong>2 hours/day</strong>, max
+<strong>24 months</strong> per grid area from first use, only until end
+of 2028</td>
+<td>Time-window and duration limits have to be enforced and
+recorded</td>
+</tr>
+<tr class="odd">
+<td>Since 1 March 2025, operators <strong>publish control
+actions</strong> in a standardised format</td>
+<td>Your execution records become evidence that outsiders will read</td>
+</tr>
+</tbody>
+</table>
+<p>VDE FNN has published implementation recommendations: EEBUS as the
+minimum digital interface to devices, minimum requirements for
+documenting control commands, parameters for gradually lifting control
+measures, and a maximum response time between detecting grid state and
+dimming.</p>
+<h3 id="where-it-breaks">Where it breaks</h3>
+<p>Follow one dim command from start to finish: grid operator → smart
+meter gateway → control box (<em>Steuerbox</em>) → customer EMS → EEBUS
+→ wallbox or heat pump → measured grid draw → documentation →
+network-fee billing. These are the typical failure modes along that
+path:</p>
+<ul>
+<li><strong>Acknowledged but not obeyed.</strong> The wallbox confirms
+the EEBUS limit but only applies it at the start of the <em>next</em>
+charging session. It keeps drawing 11 kW. Every log line says
+"success."</li>
+<li><strong>The floor gets violated through aggregation.</strong> The
+EMS applies 4.2 kW as the <em>total</em> for heat pump plus wallbox
+instead of using the aggregate formula. The heat pump gets starved.</li>
+<li><strong>The wrong oracle.</strong> A test asserts "device
+consumption ≤ limit." Because PV covers part of the load, grid draw is
+fine while the device's own number looks "too high." The result is false
+alarms, or worse, the team learns to ignore the check.</li>
+<li><strong>The dimming never gets lifted.</strong> The release command
+is lost, the gateway reboots mid-window, or communication drops. Nobody
+notices because "dimmed" looks like a quiet, healthy state.</li>
+<li><strong>The evidence doesn't match reality.</strong> The documented
+control action says 14:00–15:00, but the device was actually limited
+until 15:40. That record goes into published reports.</li>
+<li><strong>Billing doesn't match controllability.</strong> The customer
+gets the Module 2 discount while their device was never actually
+controllable, or the other way round.</li>
+</ul>
+<p>Notice that every item here needs <strong>real hardware or real meter
+data</strong> to observe. That fact will shape your whole estimate.</p>
+<hr />
+<h2
+id="part-2-why-how-long-is-the-wrong-question-and-what-to-answer-instead">Part
+2: Why "how long?" is the wrong question, and what to answer
+instead</h2>
+<p>Michael Bolton argues in <a
+href="https://developsense.com/blog/2018/04/how-long-will-the-testing-take">How
+Long Will the Testing Take?</a> that the person asking usually means
+something else: <em>when will I know enough about the product to decide
+whether to ship?</em> Testing doesn't end at a finish line. It ends when
+decision-makers are satisfied they know enough. In his words,
+"satisfaction is a feeling, not a finish line."</p>
+<p>In <a
+href="https://developsense.com/blog/2010/10/project-estimation-and-black-swans-part-5-test-estimation">Project
+Estimation and Black Swans, Part 5</a>, he takes apart estimation by
+counting test cases. A "step" can take five seconds or half a day. He
+suggests replacing "estimate the testing phase" with <strong>negotiating
+and refining the test strategy within the project</strong>, and doing
+capacity planning in time-boxed sessions.</p>
+<p>In <a
+href="https://developsense.com/blog/2009/11/what-does-testing-take-so-long-part-2">Why
+Is Testing Taking So Long? (Part 2)</a>, he shows the effect that wrecks
+most estimates. In his model, a clean test takes 2 minutes, a test that
+finds a bug costs 8 more minutes to investigate and report, and each fix
+costs 6 minutes to verify. Over the same two days, a buggy module got
+about <strong>20% of the coverage</strong> of a clean one. <strong>The
+product's quality determines how fast you can test it.</strong> Any
+estimate that doesn't say this out loud is hiding an assumption that the
+code is good.</p>
+<p>So don't answer with a duration. Answer with <strong>a menu of
+information-by-date options, each listing its assumptions and blind
+spots.</strong></p>
+<hr />
+<h2 id="part-3-building-the-negotiation-step-by-step">Part 3: Building
+the negotiation, step by step</h2>
+<h3 id="step-1-turn-the-question-into-decisions">Step 1: Turn the
+question into decisions</h3>
+<p>Before you size anything, ask the PO two questions:</p>
+<ol type="1">
+<li>"What decision gets made on December 1? Is it 'connect 20 pilot
+households' or 'enable for all Module-2 customers'?"</li>
+<li>"Who else has to be satisfied: the grid operator, our metering point
+operator, customer service?"</li>
+</ol>
+<p>In our scenario, the answers are: a pilot with ~20 households, one
+wallbox model, plus heat pumps from two vendors, and the grid operator
+wants a test protocol. That already cuts the scope a lot. Many estimates
+go wrong because the tester assumes full rollout when the decision is
+actually a pilot.</p>
+<h3 id="step-2-size-the-project-not-just-the-product">Step 2: Size the
+<em>project</em>, not just the product</h3>
+<p>Use the Project Environment part of James Bach's <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a> (Mission, Information, Developer Relations, Test
+Team, Equipment &amp; Tools, Schedule, Test Items, Deliverables) to find
+the constraints that will actually decide the date. Product complexity
+usually isn't the main one:</p>
+<ul>
+<li><strong>Equipment &amp; Tools:</strong> There's one real gateway and
+control box in the lab, shared with the firmware team, available to you
+only in the mornings. <em>This is your bottleneck. No amount of effort
+from the testers can change it.</em></li>
+<li><strong>Test Items:</strong> The wallbox firmware with the EEBUS fix
+arrives on November 20, not Monday.</li>
+<li><strong>Information:</strong> Which simultaneity factors does the
+grid operator use? Is the FNN response-time requirement part of the
+pilot acceptance criteria?</li>
+<li><strong>Deliverables:</strong> The grid operator wants a protocol.
+That's documentation work, which takes sessions too.</li>
+</ul>
+<h3
+id="step-3-count-capacity-in-sessions-then-subtract-the-bug-tax">Step 3:
+Count capacity in sessions, then subtract the bug tax</h3>
+<p>Working days from Mon 16 Nov to Fri 27 Nov: <strong>10</strong>.
+Testers: <strong>2</strong>. Sessions per day (90 min each):
+<strong>3</strong>.</p>
+<table>
+<thead>
+<tr class="header">
+<th></th>
+<th>Sessions</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Nominal: 2 × 10 × 3</td>
+<td>60</td>
+</tr>
+<tr class="even">
+<td>Minus meetings, environment setup, protocol writing</td>
+<td>−18</td>
+</tr>
+<tr class="odd">
+<td><strong>Available</strong></td>
+<td><strong>42</strong></td>
+</tr>
+<tr class="even">
+<td>Held back for investigation and fix verification (the "bug
+tax")</td>
+<td>−12</td>
+</tr>
+<tr class="odd">
+<td><strong>Available for new coverage</strong></td>
+<td><strong>30</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Of those 30, real-hardware sessions are capped by lab mornings: about
+1 per day → <strong>≤ 10</strong>.</p>
+<p>Now set what the risks need against that capacity:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Risk area</th>
+<th>Sessions</th>
+<th>Needs real hardware?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>A. Floor/limit calculation: single device, &gt;11 kW heat pump at
+0.4, EMS aggregate</td>
+<td>6</td>
+<td>No (simulator + API)</td>
+</tr>
+<tr class="even">
+<td>B. End-to-end: command → device → <em>measured grid draw</em>, PV
+on/off</td>
+<td>10</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td>C. Lifting, comms loss, gateway reboot, overlapping commands, 2h/day
+preventive cap</td>
+<td>7</td>
+<td>Partly (4)</td>
+</tr>
+<tr class="even">
+<td>D. Execution documentation matches measured reality</td>
+<td>4</td>
+<td>Partly (2)</td>
+</tr>
+<tr class="odd">
+<td>E. Network-fee module ↔︎ controllability status in billing</td>
+<td>6</td>
+<td>No</td>
+</tr>
+<tr class="even">
+<td>F. Customer app messaging during dimming</td>
+<td>2</td>
+<td>No</td>
+</tr>
+<tr class="odd">
+<td><strong>Total</strong></td>
+<td><strong>35</strong></td>
+<td><strong>16 on hardware</strong></td>
+</tr>
+</tbody>
+</table>
+<p>There are two gaps: 35 &gt; 30 overall, and 16 &gt; 10 on hardware.
+<strong>This table is your negotiating position.</strong> It isn't a
+complaint. It's a visible model the PO can argue with.</p>
+<h3
+id="step-4-offer-options-each-with-what-youll-know-and-what-you-wont">Step
+4: Offer options, each with what you'll know and what you won't</h3>
+<blockquote>
+<p><strong>Option 1: Pilot Dec 1, narrow scope.</strong> Covered: A, B
+for one wallbox model and one heat pump vendor, C core paths (lift,
+comms loss), D. <em>Not known on Dec 1:</em> second heat pump vendor on
+real hardware; billing (E). Pilot households go on Module 1 only, so a
+billing error costs at most a correction to a flat amount.
+<em>Condition:</em> wallbox firmware arrives by Nov 20.</p>
+<p><strong>Option 2: Pilot Dec 1, full scope.</strong> Only credible if
+we get the lab all day (firmware team moves to afternoons) <em>and</em>
+the first week finds few floor violations. I'd rather not promise
+this.</p>
+<p><strong>Option 3: Pilot Dec 1 for wallbox households only; heat pump
+households join Dec 15.</strong> Heat pumps carry the higher
+customer-harm risk in December (heating). This option buys hardware time
+where the harm is greatest.</p>
+</blockquote>
+<p>Every option is honest about what it leaves unknown. Making that
+explicit is the point.</p>
+<h3 id="step-5-name-the-tripwires-up-front">Step 5: Name the tripwires
+up front</h3>
+<p>Agree now on the signals that will reopen the estimate, so a re-plan
+later doesn't look like an excuse:</p>
+<ul>
+<li>More than <strong>3 floor or aggregation bugs</strong> in the first
+5 sessions of area A → coverage will drop the way Bolton's model
+predicts. We re-plan on Nov 20, not Nov 30.</li>
+<li>Firmware later than <strong>Nov 20</strong> → Option 1 slides day
+for day, or wallbox households drop out of the pilot.</li>
+<li><strong>Any</strong> case where measured grid draw differs from the
+documented control window by more than the agreed tolerance →
+stop-the-line conversation, because that record is published.</li>
+</ul>
+<hr />
+<h2 id="part-4-handling-the-pushback">Part 4: Handling the pushback</h2>
+<p><strong>"Just give me one number."</strong> "If the code is in decent
+shape and the firmware lands on the 20th: ready for a narrow pilot on
+Dec 1. If either of those fails, I'll tell you by the 20th, not the
+30th. One number would hide the two things most likely to move it."</p>
+<p><strong>"Dev says it's simple, just a limit value."</strong> Don't
+argue about complexity. Give an example: "Agreed, setting the value is
+simple. What I need to see is the wallbox that accepts the value and
+keeps drawing 11 kW until the next session. Our logs would say
+'success.' I can only see that on real hardware with meter readings, and
+the lab gives me one morning a day."</p>
+<p><strong>"Can't you automate it to go faster?"</strong> "Area A, yes.
+I'll write API checks for the formulas and boundaries (4.2 kW, 11 kW,
+0.4, number of devices), and they'll keep paying off. B and C depend on
+physical devices and timing. The bottleneck there is lab time, not
+typing."</p>
+<p><strong>"Skip the documentation part, it's paperwork."</strong>
+"Those records get published as control actions. If they say we dimmed
+for one hour and the meter says 100 minutes, that's not a paperwork
+problem. It's evidence against us."</p>
+<p>The pattern behind all four answers: <strong>move the conversation
+from your effort to their risk.</strong> You aren't defending your time.
+You're making sure the decision on December 1 is made knowingly.</p>
+<hr />
+<h2 id="part-5-a-one-paragraph-estimate-you-can-actually-send">Part 5: A
+one-paragraph estimate you can actually send</h2>
+<blockquote>
+<p><strong>Testing for §14a pilot: estimate as of Thu 12 Nov</strong>
+For a 20-household pilot on Dec 1 I recommend Option 1: wallbox + one
+heat pump vendor tested end-to-end on real hardware, measured against
+grid draw, including lifting and comms loss; billing restricted to
+Module 1. The bottleneck is lab time (one morning per day), not tester
+effort. Assumes wallbox firmware by Nov 20 and a reasonable bug rate in
+the limit calculation. I'll report against both on Nov 20. Not covered
+by Dec 1: second heat pump vendor on hardware, Module 2/3 billing. Full
+model and options: [link].</p>
+</blockquote>
+<p>It fits in a Slack message, and it leaves the decision with the
+people who own it.</p>
+<hr />
+<h2 id="todays-challenge-45-minutes">Today's challenge (45 minutes)</h2>
+<p>Pick a feature your team is about to ship, or use the §14a
+scenario.</p>
+<ol type="1">
+<li><strong>Write down the decision</strong> the release date serves, in
+one sentence, and who has to be satisfied.</li>
+<li><strong>Run the eight Project Environment guidewords</strong> from
+the HTSM over it and find your <em>non-tester</em> bottleneck (hardware,
+data, a third party, an approver).</li>
+<li><strong>Do the session arithmetic:</strong> nominal → available →
+minus bug tax → coverage sessions. Then list risk areas with session
+needs. Find the gap.</li>
+<li><strong>Write three options.</strong> Each states what will be
+<em>known</em> and what will be <em>unknown</em> on the date.</li>
+<li><strong>Write two tripwires</strong> with a number and a date.</li>
+<li><strong>Bonus (domain):</strong> For §14a, design the oracle for
+this case: heat pump 12 kW plus wallbox 11 kW behind one EMS, PV
+producing 3 kW, dim command active. What exactly do you measure, where,
+and against which limit? (Hint: which formula applies to the heat pump,
+and does the PV count?) Leave the simultaneity factor as a named
+parameter instead of guessing it, and write down who you'd ask for the
+real value.</li>
+</ol>
+<p>If you do steps 1–5 for a real release, send the paragraph from Part
+5 to your PO before they ask. Then note how the conversation
+changes.</p>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, DevelopSense: <a
+href="https://developsense.com/blog/2018/04/how-long-will-the-testing-take">How
+Long Will the Testing Take?</a></li>
+<li>Michael Bolton, DevelopSense: <a
+href="https://developsense.com/blog/2010/10/project-estimation-and-black-swans-part-5-test-estimation">Project
+Estimation and Black Swans (Part 5): Test Estimation</a></li>
+<li>Michael Bolton, DevelopSense: <a
+href="https://developsense.com/blog/2009/11/what-does-testing-take-so-long-part-2">Why
+Is Testing Taking So Long? (Part 2)</a></li>
+<li>James Bach, Satisfice: <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Heuristic
+Test Strategy Model</a></li>
+<li>Bundesnetzagentur: <a
+href="https://www.bundesnetzagentur.de/DE/Vportal/Energie/SteuerbareVBE/start.html">Steuerbare
+Verbrauchseinrichtungen (§14a EnWG) overview</a></li>
+<li>Bundesnetzagentur: <a
+href="https://bundesnetzagentur.de/DE/Vportal/Energie/SteuerbareVBE/artikel.html?nn=877500">Integration
+von steuerbaren Verbrauchseinrichtungen (details: minimum power, 0.4
+factor, preventive control limits)</a></li>
+<li>Bundesnetzagentur: <a
+href="https://www.bundesnetzagentur.de/DE/Beschlusskammern/1_GZ/BK6-GZ/2022/BK6-22-300/Mitteilung/Mitteilung_06/Mitteilung_Nr_06.html">Mitteilung
+Nr. 6 zum Beschluss BK6-22-300</a></li>
+<li>VDE FNN: <a
+href="https://www.vde.com/de/fnn/aktuelles/vde-fnn-empfehlungen-foerdern-die-massengeschaeftstaugliche-umsetzung-der-netzorientierten-steuerung">Empfehlungen
+zur massengeschäftstauglichen Umsetzung der netzorientierten
+Steuerung</a></li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-41.html" rel="prev"><span>Previous</span>Switching Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a Historical Stats Migration</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

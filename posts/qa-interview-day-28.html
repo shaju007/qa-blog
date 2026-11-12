@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Context: You test a SaaS e-commerce platform. Merchants sell through it, and each merchant is a Stripe Connect account. Until now, an order was marked paid when the shopper landed on the &quot;thank you&quot; page. The n">
+  <meta name="color-scheme" content="light">
+  <title>&quot;All 40 of our webhook tests are green. They fire events with stripe trigger at a local listener.&quot; The product owner asks, &quot;So payment confirmation is tested?&quot; What do you say? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 28</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-28">QA Interview Q&amp;A — Day 28</h1>
+<h2
+id="question-all-40-of-our-webhook-tests-are-green-they-fire-events-with-stripe-trigger-at-a-local-listener-the-product-owner-asks-so-payment-confirmation-is-tested-what-do-you-say">Question:
+"All 40 of our webhook tests are green. They fire events with
+<code>stripe trigger</code> at a local listener." The product owner
+asks, "So payment confirmation is tested?" What do you say?</h2>
+<p><strong>Context:</strong> You test a SaaS e-commerce platform.
+Merchants sell through it, and each merchant is a Stripe Connect
+account. Until now, an order was marked paid when the shopper landed on
+the "thank you" page. The new release moves that job to Stripe webhooks.
+When <code>checkout.session.completed</code> or
+<code>checkout.session.async_payment_succeeded</code> arrives, the
+platform reserves stock, sends the confirmation email and pushes the
+order to the merchant's ERP. The landing page also calls the same
+fulfilment function, so customers see their order straight away. Release
+is planned for next Thursday. In sprint review, the product owner (PO)
+turns to you.</p>
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version-id-say-in-the-room">The short version I'd say
+in the room</h3>
+<p>"The tests show that our handler can take one correctly signed,
+well-formed event, delivered once to a process on a developer's machine,
+and do the right thing with it. That's useful. But the hard part of
+webhooks is how they're delivered: duplicates, ordering, retries,
+timing, the network path, and which Stripe account the event comes from.
+The tests don't touch any of that, because <code>stripe trigger</code>
+hands over a fresh event once, in order, straight to localhost. I can't
+say confirmation is tested in the sense you mean yet. I can name the
+five gaps and give you evidence on most of them by Tuesday. Whether
+Thursday holds is your call. My job is to make sure you're deciding with
+a clear picture."</p>
+<p>That answer doesn't dismiss the 40 tests, doesn't say "no" as if QA
+owned the release, and doesn't hide behind "it depends." It says what
+the evidence covers, what it doesn't, and what would close the gap.</p>
+<h3 id="how-an-experienced-tester-reasons-through-it">How an experienced
+tester reasons through it</h3>
+<p><strong>1. Ask what the tests are actually observing.</strong> A
+green test shows that something matched under some conditions. So the
+first question is which conditions. With <code>stripe trigger</code>
+plus <code>stripe listen --forward-to localhost</code>:</p>
+<ul>
+<li><strong>Each event is delivered once, in a calm, predictable
+order.</strong> Stripe's docs say live delivery is different. Endpoints
+"might occasionally receive the same event more than once." Sometimes
+Stripe even sends "two separate Event objects" for the same change, and
+these must be matched by object ID plus event type, not by event ID
+alone. Stripe also "doesn't guarantee the delivery of events in the
+order that they're generated."</li>
+<li><strong>The timing isn't the same as production.</strong> If you
+have a real endpoint registered for
+<code>checkout.session.completed</code>, Checkout waits up to 10 seconds
+for your server's response before it redirects the customer. When you
+test through the Stripe CLI, it redirects straight away. So the race we
+care most about, between the landing page and the webhook calling the
+same fulfilment function, plays out differently on a laptop than in
+production.</li>
+<li><strong>The real network path is skipped.</strong> The CLI forwards
+straight to the app process. It never passes through our load balancer,
+WAF, API gateway, CSRF middleware or IP allowlist. Stripe signs the raw
+body, so any layer that re-serialises JSON breaks verification, and only
+for traffic that actually goes through that layer.</li>
+<li><strong>Events come from the wrong account.</strong> Our merchants
+are connected accounts. Their checkout events reach a Connect-scoped
+destination (<code>--forward-connect-to</code> locally), not the
+platform-account listener. If all 40 tests used
+<code>--forward-to</code>, none of them received an event the way a
+merchant's checkout produces one.</li>
+<li><strong>Retries behave differently in the sandbox.</strong> In live
+mode, Stripe retries failed deliveries for up to three days with
+exponential backoff. In a sandbox it retries three times over a few
+hours. A "we recovered from an outage" test in the sandbox doesn't model
+a weekend outage in production.</li>
+<li><strong>The test data is generic.</strong> Default trigger fixtures
+create their own objects. Unless the team overrode fields, those events
+don't carry the <code>metadata.order_id</code> and merchant mapping that
+real sessions carry. The tests may well have exercised the "unknown
+order, ignore" branch and passed.</li>
+</ul>
+<p><strong>2. Choose oracles before choosing tests.</strong> Michael
+Bolton's FEW HICCUPPS list is useful here. The <strong>Claims</strong>
+oracle is Stripe's own documentation: duplicates, no ordering guarantee,
+a 5-minute default signature tolerance, and fulfilment that must be
+"safe to run multiple times, even concurrently." The
+<strong>History</strong> oracle is the old landing-page flow, where you
+know which orders were confirmed. The <strong>Purpose</strong> oracle is
+that every paid order gets fulfilled exactly once and no unpaid order
+does. A behaviour is wrong if it breaks any of these. Bolton also
+stresses that oracles are fallible heuristics, so a mismatch is a reason
+to investigate, not an automatic bug.</p>
+<p><strong>3. Model this as a state problem, not a request/response
+problem.</strong> James Bach's Heuristic Test Strategy Model asks you to
+think through product factors, including interfaces, time and
+operations. Version 6.3 put extra weight on state-based testing. An
+order has states (created, awaiting payment, paid, fulfilled, failed),
+and events are transitions that can arrive late, twice, or out of order.
+Checking one event type at a time is the wrong shape for this risk. Ask
+which transitions are legal from each state, and what happens when an
+illegal one arrives.</p>
+<h3 id="what-id-test-before-thursday">What I'd test before Thursday</h3>
+<p>Run these in a deployed test environment, with a registered event
+destination that sits behind the real ingress, not on localhost:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Risk</th>
+<th>Test</th>
+<th>Pass looks like</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Duplicate delivery</td>
+<td>Re-send the same event with <code>stripe events resend</code>. Also
+inject a second, separately created event for the same session</td>
+<td>One stock reservation, one email, one ERP push. The duplicate is
+logged as a duplicate, not as an error</td>
+</tr>
+<tr class="even">
+<td>Landing page vs. webhook race</td>
+<td>Fire the landing-page request and the webhook for the same session
+concurrently, about 50 times</td>
+<td>Exactly one fulfilment each time. Ask how this is enforced: a DB
+unique constraint or a lock, not an "if not already fulfilled" check
+that two threads can both pass</td>
+</tr>
+<tr class="odd">
+<td>Out of order / missing</td>
+<td>Deliver <code>async_payment_succeeded</code> for a session whose
+<code>completed</code> event we never processed. Deliver a failure event
+after success</td>
+<td>The handler fetches the current session from the API instead of
+trusting arrival order. No unpaid order gets fulfilled</td>
+</tr>
+<tr class="even">
+<td>Delivery failure</td>
+<td>Make the endpoint return 500, then time out, then recover</td>
+<td>Stripe's delivery log shows the retries. Fulfilment still happens
+exactly once. Someone gets alerted while it's failing</td>
+</tr>
+<tr class="odd">
+<td>Signature via the real path</td>
+<td>Tampered body; replay of a captured request older than 5 minutes;
+wrong-mode secret; a rotated secret with both secrets active</td>
+<td>Rejected, rejected, rejected, accepted. No middleware alters the raw
+body</td>
+</tr>
+<tr class="even">
+<td>Connect scope</td>
+<td>Run a real checkout on a test connected account</td>
+<td>The event arrives at the right destination and maps to the right
+merchant's order</td>
+</tr>
+</tbody>
+</table>
+<p>I would not write 40 more trigger-based tests. They'd share the same
+blind spot.</p>
+<h3 id="evidence-id-ask-the-developers-for-it-costs-nothing">Evidence
+I'd ask the developers for (it costs nothing)</h3>
+<ul>
+<li>Where processed event IDs (or object ID plus type) are stored, and
+what enforces uniqueness.</li>
+<li>Whether the handler returns 2xx before the slow work (ERP push,
+email) and puts that work on a queue. Stripe treats a timeout as a
+failure and retries.</li>
+<li>Which event types each destination subscribes to, and in which scope
+(platform or Connect).</li>
+<li>What happens when an event fails processing after we've already
+returned 200. Stripe won't retry it, so it's now on us.</li>
+</ul>
+<h3 id="the-one-thing-testing-cant-give-us-a-production-oracle">The one
+thing testing can't give us: a production oracle</h3>
+<p>Even after all of this, I'd tell the PO: "Testing reduces the risk.
+It can't remove it, because the delivery conditions we worry about only
+fully exist in production." So I'd ask for two things, framed as release
+conditions for the PO to accept or reject, not as QA demands:</p>
+<ol type="1">
+<li><strong>A reconciliation job.</strong> Every hour, compare Checkout
+Sessions that Stripe reports as paid with orders we've marked paid, and
+alert on any difference in either direction.</li>
+<li><strong>A dashboard.</strong> Track signature failures, non-2xx
+responses, and the age of the oldest unprocessed queue item.</li>
+</ol>
+<p>Without these, a silent failure looks like a quiet day.</p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"Yes, 40 green tests."</strong> That reports how many tests
+ran, not which risks were covered.</li>
+<li><strong>"We need a test for every event type."</strong> That adds
+breadth along the one axis that wasn't the problem.</li>
+<li><strong>"Just mock Stripe completely."</strong> A mock built from
+our own assumptions can only confirm those assumptions. It throws away
+signatures, timing and Stripe's real behaviour.</li>
+<li><strong>"QA blocks the release until it's fixed."</strong> QA
+doesn't own the release. Describe the risk and its likelihood, and let
+the PO decide.</li>
+<li><strong>"Stripe should deliver exactly once."</strong> That isn't
+what Stripe promises. Asking for it shows the design premise wasn't
+understood.</li>
+<li><strong>Talking only about the handler.</strong> This ignores the
+landing-page path, which calls the same fulfilment function at the same
+moment.</li>
+</ul>
+<h2 id="follow-up-questions">Follow-up questions</h2>
+<ol type="1">
+<li><strong>"The developer says fulfilment is idempotent, so testing
+duplicates is a waste of time. How do you respond?"</strong> Look for:
+ask what "idempotent" means in this code (a uniqueness check, a lock, a
+constraint?), then test it concurrently, because idempotent one call at
+a time can still double-fulfil under parallel calls. Also check every
+side effect, not just the DB row. The email sender and the ERP client
+may not be idempotent even if the order table is.</li>
+<li><strong>"Three weeks after launch, a merchant says two orders from
+Saturday night never reached their ERP, but Stripe shows them paid.
+Where do you look first, and in what order?"</strong> Look for: Stripe's
+delivery log for that endpoint, then our 2xx-but-failed-later path
+(queue or dead-letter), then whether the reconciliation job ran and why
+it didn't alert. That last step is a failure of the oracle, not just a
+bug.</li>
+</ol>
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://docs.stripe.com/webhooks">Stripe Docs — Receive
+Stripe events in your webhook endpoint</a>: the main source for the
+delivery facts used here. Duplicates (including separate Event objects
+for the same change), no ordering guarantee, live vs. sandbox retry
+schedules, raw-body signature verification, the 5-minute default
+tolerance and replay protection, returning 2xx quickly, Connect-scoped
+destinations, and <code>stripe events resend</code>.</li>
+<li><a href="https://docs.stripe.com/checkout/fulfillment">Stripe Docs —
+Fulfill orders (Checkout)</a>: the source for the landing-page vs.
+webhook race. It says fulfilment may run "multiple times, possibly
+concurrently." It also covers delayed-notification events and the fact
+that Checkout waits up to 10 seconds for the webhook response with a
+real endpoint but redirects immediately with the CLI.</li>
+<li><a href="https://developsense.com/blog/2012/07/few-hiccupps">Michael
+Bolton, DevelopSense — FEW HICCUPPS</a>: the oracle heuristics (Claims,
+History, Purpose) used to decide what "correct" means before choosing
+tests, and the reminder that oracles are fallible and need
+judgment.</li>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">James
+Bach, Satisfice — Heuristic Test Strategy Model (v6.3)</a>: background
+for treating the integration as a state and timing problem across
+product factors. Version 6.3 added emphasis on state-based testing and
+boundaries.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-27.html" rel="prev"><span>Previous</span>&quot;Can you just change it from Critical to Major? The release gate only blocks on Criticals, and we&#39;ll fix it next sprint.&quot; Do you change the label?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
