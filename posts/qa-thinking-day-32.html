@@ -83,35 +83,35 @@ when?"</strong></p>
 delay before anyone sees it.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Failure mode</th>
 <th>Obvious signal?</th>
 <th>What would actually reveal it</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Collector for one region stops sending</td>
 <td>No errors, since nothing arrives to fail</td>
 <td>Expected-vs-received count per region per interval</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Firmware change shifts timestamps by one hour (DST or time
 zone)</td>
 <td>Reads arrive and pass schema checks</td>
 <td>Distribution of read timestamps vs. expected slot boundaries</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Estimation rate climbs from 2% to 18%</td>
 <td>Bills still generate</td>
 <td>Estimated-read ratio per segment, trended</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Duplicate reads after a retry storm</td>
 <td>Row count looks high, which is "good"</td>
 <td>Unique (meter, interval) vs. total rows</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>VEE rule silently disabled by config</td>
 <td>Nothing fails</td>
 <td>A canary meter with a known roll-over that must be flagged

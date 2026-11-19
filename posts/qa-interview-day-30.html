@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The scenario: The story in this sprint reads: &quot;Invoice charging sessions from the charger&#39;s meter readings: energy = meterStop − meterStart, multiplied by the tariff&#39;s price per kWh. Applies to app and ad hoc c">
+  <meta name="color-scheme" content="light">
+  <title>&quot;It&#39;s straight OCPP — if we follow the spec, the bill is correct.&quot; You&#39;ve just moved from e-commerce testing to a public EV-charging network in Germany. What do you test first? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 30</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-30">QA Interview Q&amp;A — Day 30</h1>
+<h2
+id="question-its-straight-ocpp--if-we-follow-the-spec-the-bill-is-correct-youve-just-moved-from-e-commerce-testing-to-a-public-ev-charging-network-in-germany-what-do-you-test-first">Question:
+"It's straight OCPP — if we follow the spec, the bill is correct."
+You've just moved from e-commerce testing to a public EV-charging
+network in Germany. What do you test first?</h2>
+<p><strong>The scenario:</strong> The story in this sprint reads:
+<em>"Invoice charging sessions from the charger's meter readings: energy
+= <code>meterStop − meterStart</code>, multiplied by the tariff's price
+per kWh. Applies to app and ad hoc card sessions."</em> Your fleet uses
+chargers from several manufacturers, all speaking OCPP 1.6J. The
+developer says: "It's straight OCPP 1.6. Our charger simulator tests are
+green. Follow the spec and we're done." You have never stood next to a
+charger. Refinement is on Tuesday.</p>
+<hr />
+<h2 id="answer">Answer</h2>
+<h3 id="what-the-interviewer-is-really-testing">What the interviewer is
+really testing</h3>
+<p>They don't expect you to know OCPP. They want to see three
+things:</p>
+<ol type="1">
+<li><strong>Can you learn a new domain quickly and in the right
+order?</strong> Start where money, law and physical hardware meet the
+software.</li>
+<li><strong>Do you know that a spec is one oracle among
+several?</strong> It isn't the definition of correct.</li>
+<li><strong>Can you raise regulatory and billing risk without pretending
+to be the compliance officer?</strong></li>
+</ol>
+<p>A strong answer starts like this: <em>"The developer is partly right.
+The OCPP spec tells us what messages a charger sends. It doesn't tell us
+whether the invoice is fair, whether it's lawful in Germany, or what
+real chargers in our fleet actually send. I'd use the spec as one input,
+and I'd spend my first week finding the others."</em></p>
+<h3 id="why-follow-the-spec-isnt-enough">Why "follow the spec" isn't
+enough</h3>
+<p>Michael Bolton describes an oracle as a way of recognising a problem.
+Oracles are fallible and depend on context. A spec can be ambiguous,
+incomplete or contradictory, and when the product and the spec disagree,
+the fault might be in either one (<a
+href="https://developsense.com/?p=1237">DevelopSense</a>). Here the spec
+is a weak oracle for the question that matters, which is whether the
+customer was billed correctly, for three reasons:</p>
+<ul>
+<li><strong>OCPP covers the protocol, not the business outcome.</strong>
+<code>StopTransaction</code> must carry <code>transactionId</code>,
+<code>timestamp</code> and <code>meterStop</code>. <code>idTag</code>,
+<code>reason</code> and <code>transactionData</code> are optional (<a
+href="https://ocpp.hexdocs.pm/ocpp/v1_6/message/stop_transaction.html">OCPP
+1.6 message reference</a>). Nothing in that message says which tariff
+applies or what goes on the invoice.</li>
+<li><strong>German calibration law (Eichrecht) adds an oracle the spec
+doesn't contain.</strong> Public charging is expected to bill from a
+calibrated meter. Drivers can check the digitally signed meter values
+against their invoice using transparency software maintained by the
+S.A.F.E. association, which uses the open OCMF data format (<a
+href="https://www.electrive.net/2019/05/12/eichrecht-initiative-s-a-f-e-organisiert-sich-als-verein/">electrive
+on S.A.F.E.</a>). If our formula uses one number and the signed record
+shows another, a customer can prove we're wrong.</li>
+<li><strong>The EU's charging regulation (AFIR) adds another
+one.</strong> For recharging points of 50 kW or more deployed from 13
+April 2024, the ad hoc price has to be based on price per kWh, and it
+has to be shown at the station (<a
+href="https://transport.ec.europa.eu/transport-themes/clean-transport/alternative-fuels-sustainable-mobility-europe/alternative-fuels-infrastructure/questions-and-answers-regulation-deployment-alternative-fuels-infrastructure-eu-20231804_en">European
+Commission AFIR Q&amp;A</a>). So "the price on the screen equals the
+price on the invoice" is a regulatory check, not just a UX nicety.</li>
+</ul>
+<p>The simulator being green tells you the backend handles messages that
+match the spec. It tells you nothing about real chargers, offline
+periods, retries or the law.</p>
+<h3 id="week-one-how-id-learn-the-domain">Week one: how I'd learn the
+domain</h3>
+<p>I'd use James Bach's Heuristic Test Strategy Model as a checklist so
+I don't only test what's easy to see. Its project-element and
+quality-criteria prompts push me to ask <em>who knows things</em> and
+<em>what counts as a problem here</em> (<a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">Satisfice
+HTSM</a>). In practice:</p>
+<ul>
+<li><strong>Charge a car myself</strong> on two different charger models
+with the app, then with a payment card. Compare what the display, the
+app, the receipt and the invoice say about kWh, price and time.</li>
+<li><strong>Read a day of real OCPP logs</strong> from production,
+anonymised, for the three most common charger models. Simulators follow
+the spec. Real firmware has quirks.</li>
+<li><strong>Ask support for the top 20 billing complaints</strong> from
+the past six months. Customers have already found the risks I'm about to
+guess at.</li>
+<li><strong>Find the compliance owner.</strong> Usually that's someone
+in operations or legal who owns Eichrecht conformity. Ask: "What exactly
+must match the signed value, and who has decided that?"</li>
+<li><strong>Talk to a field technician.</strong> Ask what happens when a
+charger loses mobile signal, reboots or gets a meter replaced.</li>
+</ul>
+<h3 id="what-carries-over-from-e-commerce-and-what-doesnt">What carries
+over from e-commerce, and what doesn't</h3>
+<p><strong>Carries over:</strong> idempotency, double charges, rounding,
+the price shown versus the price charged, refunds and disputes.</p>
+<p><strong>Doesn't carry over:</strong> in a shop the customer
+<em>chooses</em> what they buy. Here the quantity is <em>measured</em>
+by a device that may be offline. The session ends asynchronously and
+might be reported hours later. The measurement itself is regulated.</p>
+<h3 id="the-risks-id-put-in-front-of-the-team">The risks I'd put in
+front of the team</h3>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Why it's real</th>
+<th>How I'd test it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Duplicate invoice on retried
+<code>StopTransaction</code></strong></td>
+<td>If the backend doesn't reply with <code>StopTransaction.conf</code>,
+the charger sends the same message again (<a
+href="https://www.ampcontrol.io/ocpp-guide/how-to-stop-a-charging-session-with-stoptransaction">Ampcontrol
+OCPP guide</a>).</td>
+<td>Process the stop, then drop or delay the reply. Replay the message.
+Expect exactly one invoice.</td>
+</tr>
+<tr>
+<td><strong>Offline sessions arriving late</strong></td>
+<td>With <code>AllowOfflineTxForUnknownId</code> set to true, a charger
+can accept unknown or cached ID tags while disconnected (<a
+href="https://service-support-enelion.happyfox.com/kb/article/72-white-paper-charging-using-an-ocpp-connected-charger-while-disconnected-from-the-server">Enelion
+white paper</a>). Start and stop then arrive together after
+reconnection.</td>
+<td>Session reported 6 hours late. Tariff changed in between. Card
+blocked in between. Charger clock wrong. Which price and which customer
+is correct?</td>
+</tr>
+<tr>
+<td><strong>Session never closes</strong></td>
+<td>Power loss or a reboot can mean the stop arrives with
+<code>PowerLoss</code>/<code>Reboot</code> as the reason, or very late,
+or never.</td>
+<td>Does an open session keep building occupancy fees? Is there a
+timeout and a manual-review path?</td>
+</tr>
+<tr>
+<td><strong>Unit mix-ups</strong></td>
+<td><code>meterStart</code>/<code>meterStop</code> are in Wh. Sampled
+meter values carry their own unit, which can be kWh.</td>
+<td>Use a charger profile that reports kWh in <code>MeterValues</code>.
+Look for a 1,000× error, or a mismatch between the two numbers.</td>
+</tr>
+<tr>
+<td><strong>Meter reset or replacement</strong></td>
+<td>After a hardware swap, <code>meterStop</code> can be lower than
+<code>meterStart</code>.</td>
+<td>Expect the session to be flagged for review, not a negative invoice
+or a silent zero.</td>
+</tr>
+<tr>
+<td><strong>Invoice ≠ signed value</strong></td>
+<td>The customer can verify the signed record independently.</td>
+<td>For every charger model, the kWh on the invoice must equal the kWh
+in the signed OCMF record, with no rounding before comparison. Check
+that the signed data actually reaches the customer.</td>
+</tr>
+<tr>
+<td><strong>Displayed price ≠ billed price</strong></td>
+<td>AFIR requires the ad hoc price to be shown at the station.</td>
+<td>Ad hoc card session at a ≥50 kW charger. Change the price during the
+session. Compare the display, the receipt and the invoice.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="when-the-oracles-disagree">When the oracles disagree</h3>
+<p>This is where domain judgment shows. A vendor's Eichrecht guide says
+time-based fees aren't permitted (<a
+href="https://www.ampeco.com/de/blog/eichrecht-das-deutsche-kalibrierungsgesetz-dos-und-donts/">AMPECO</a>).
+The Commission's AFIR Q&amp;A says a per-minute occupancy fee
+<em>is</em> allowed to discourage long occupancy, as long as it's
+proportionate. It also notes that charging that fee from the start of
+the session looks problematic (<a
+href="https://transport.ec.europa.eu/transport-themes/clean-transport/alternative-fuels-sustainable-mobility-europe/alternative-fuels-infrastructure/questions-and-answers-regulation-deployment-alternative-fuels-infrastructure-eu-20231804_en">EC
+Q&amp;A</a>).</p>
+<p>Both can be true in some reading. A secondary source may simplify,
+and the details may depend on how time is measured and shown on the
+invoice. <strong>It isn't my job to settle that in a test case. It is my
+job to notice it and route it to the person who owns the
+decision.</strong> If our tariff model includes an idle fee, that
+question goes in the ticket and gets a named owner before release.</p>
+<h3 id="what-id-say-in-tuesdays-refinement">What I'd say in Tuesday's
+refinement</h3>
+<blockquote>
+<p>"I think the formula is right for the normal case, and the simulator
+tests are worth keeping. I see three gaps that aren't about the spec.
+First, retries and offline sessions: chargers resend stops and report
+late sessions, so I'd like a check that we never invoice one session
+twice, and a decision on which tariff applies to a session reported
+hours late. Second, Eichrecht: customers can check the signed meter
+value against our invoice, so I'd like confirmation from [compliance
+owner] about exactly what has to match, and a test against the signed
+data for each charger model. Third, the idle fee: I've found sources
+that seem to disagree about time-based fees. I'm not qualified to decide
+that, so can we get a ruling before we turn it on?</p>
+<p>Could someone give me a production log export for our three most
+common models? I'd like to check how often stops arrive more than an
+hour late before we size this."</p>
+</blockquote>
+<p>This doesn't block anything or overrule anyone. It names gaps, asks
+for evidence and puts decisions with the people who own them.</p>
+<h3 id="evidence-that-would-change-my-mind-in-either-direction">Evidence
+that would change my mind, in either direction</h3>
+<ul>
+<li>How often stops arrive more than an hour after their
+<code>timestamp</code>, and how often a transaction ID is seen
+twice.</li>
+<li>The fleet split by model and firmware. Five models on one firmware
+is a different risk from forty variants.</li>
+<li>Disputes and chargebacks tagged "charged twice" or "wrong kWh."</li>
+<li>Whether the backend stores the signed OCMF record and its unsigned
+<code>meterStop</code> separately, and whether they've ever
+differed.</li>
+</ul>
+<p>If late stops are rare, deduplication already exists and compliance
+has signed off the comparison rules, my plan shrinks to a few targeted
+checks. That's a good result, not a wasted week.</p>
+<h3 id="weak-answers-interviewers-hear">Weak answers interviewers
+hear</h3>
+<ul>
+<li><strong>"I'd read the OCPP spec end to end first."</strong> It's
+thorough, but slow and aimed at the wrong question. The spec won't tell
+you about German law or your fleet's firmware.</li>
+<li><strong>"I'd automate tests for all the message types."</strong>
+That's more coverage of the oracle you already have.</li>
+<li><strong>"I'd tell them it's not Eichrecht-compliant."</strong> You
+don't know that yet, and you don't have the authority to say it. Ask the
+owner.</li>
+<li><strong>"I'd need domain training before I can test."</strong>
+Learning <em>is</em> testing here. Your first questions are your first
+test results.</li>
+<li><strong>Treating the e-commerce checklist as complete.</strong>
+You'd test double charges but miss measurement, offline operation and
+regulation.</li>
+</ul>
+<hr />
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><strong>A customer disputes an invoice: the app shows 41.2 kWh, but
+the transparency software shows 40.9 kWh for the same session. Which
+number is right, and what do you do in the next hour?</strong> (Good
+answers: treat the signed value as the strong oracle. Find where the 0.3
+kWh came from, such as a different source field, rounding or a later
+meter value. Check whether other sessions from the same model are
+affected. Involve the compliance owner before support issues a
+correction.)</li>
+<li><strong>You have no lab full of chargers. How would you test offline
+and late-arriving sessions?</strong> (Good answers: a configurable
+simulator that replays real anonymised logs, including reordered and
+duplicated messages. One or two physical chargers whose network you can
+cut. A production query for late stops as an ongoing monitor rather than
+a one-off test.)</li>
+</ol>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://developsense.com/?p=1237">Michael Bolton, "In which
+the conversation about heuristics and oracles continues…"
+(DevelopSense)</a>: defines an oracle as a fallible, context-dependent
+way of recognising a problem, and notes that specs can be ambiguous,
+incomplete or contradictory. This is the basis for treating "follow the
+spec" as one oracle among several, and for flagging conflicts instead of
+settling them.</li>
+<li><a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">James
+Bach, Heuristic Test Strategy Model v6.3 (Satisfice)</a>: guideword
+heuristics across project elements, product factors, quality criteria
+and techniques. I used it here as the structure for learning a new
+domain quickly and covering more than the easy-to-see parts.</li>
+<li><a
+href="https://ocpp.hexdocs.pm/ocpp/v1_6/message/stop_transaction.html">OCPP
+1.6 StopTransaction message reference (hexdocs)</a>: required and
+optional fields of <code>StopTransaction</code>. Used to show what the
+protocol does and doesn't guarantee for billing.</li>
+<li><a
+href="https://www.ampcontrol.io/ocpp-guide/how-to-stop-a-charging-session-with-stoptransaction">Ampcontrol,
+"How to stop a charging session with stopTransaction"</a>: says
+<code>meterStop</code> is in Wh and that a missing
+<code>StopTransaction.conf</code> makes the charger resend. That's the
+basis for the duplicate-invoice risk.</li>
+<li><a
+href="https://service-support-enelion.happyfox.com/kb/article/72-white-paper-charging-using-an-ocpp-connected-charger-while-disconnected-from-the-server">Enelion
+white paper on charging while disconnected from the server</a>: explains
+<code>AllowOfflineTxForUnknownId</code> and the local authorisation
+cache. That's the basis for the offline and late-session risks.</li>
+<li><a
+href="https://transport.ec.europa.eu/transport-themes/clean-transport/alternative-fuels-sustainable-mobility-europe/alternative-fuels-infrastructure/questions-and-answers-regulation-deployment-alternative-fuels-infrastructure-eu-20231804_en">European
+Commission, AFIR (EU) 2023/1804 Questions and Answers</a>: per-kWh ad
+hoc pricing and price display at ≥50 kW points deployed from 13 April
+2024, and the conditions for occupancy fees. Primary regulatory
+guidance; full legal text at <a
+href="https://eur-lex.europa.eu/eli/reg/2023/1804">EUR-Lex</a>.</li>
+<li><a
+href="https://www.electrive.net/2019/05/12/eichrecht-initiative-s-a-f-e-organisiert-sich-als-verein/">electrive,
+"Eichrecht: Initiative S.A.F.E. organisiert sich als Verein"</a>:
+background on the S.A.F.E. transparency software and the OCMF format
+that let drivers check signed meter values against invoices.</li>
+<li><a
+href="https://www.ampeco.com/de/blog/eichrecht-das-deutsche-kalibrierungsgesetz-dos-und-donts/">AMPECO,
+"Eichrecht: dos and don'ts"</a>: a vendor's practitioner summary of
+Eichrecht obligations. It's used deliberately as the secondary source
+whose "no time-based fees" claim seems to conflict with the Commission's
+guidance. That shows why such questions go to a compliance owner, not
+into a test case.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-29.html" rel="prev"><span>Previous</span>&quot;Load test passed: 2,000 virtual users, p95 of 240 ms, 0.1% errors.&quot; The cup-final ticket sale opens in eight days. The product owner asks, &quot;So we&#39;re good?&quot; What do you say?</a><a href="/qa-blog/posts/qa-interview-day-31.html" rel="next"><span>Next</span>An AI agent wrote 412 end-to-end tests over the weekend, and every one passed on the first run. Your engineering manager says, &quot;Merge them and drop the two-day manual regression.&quot; Do you agree?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

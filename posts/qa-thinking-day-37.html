@@ -113,14 +113,14 @@ Time. Use them to generate questions about this feature, not as a
 checklist to tick. Here is how they apply:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Guideword</th>
 <th>Question it prompts here</th>
 <th>Concrete test idea</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Structure</strong></td>
 <td>Which component decides to request an exemption: our code, the PSP's
 engine, or both?</td>
@@ -128,7 +128,7 @@ engine, or both?</td>
 PSP's own optimisation or competes with it. Get the actual request
 payload for a €29 order.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Function</strong></td>
 <td>What happens after a soft decline?</td>
 <td>Simulate 1A/65. Expected: a 3DS challenge is shown in-session and
@@ -136,7 +136,7 @@ the order is created once. Check for a <em>second</em> authorization
 attempt without authentication data, a duplicate order, or a stuck
 "pending" state (see Day 7).</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Data</strong></td>
 <td>What amount is compared against the threshold?</td>
 <td>Basket €31 with a €2 voucher, so €29 charged. Also: totals with
@@ -144,7 +144,7 @@ shipping added after the decision, and a SEK basket near the converted
 limit. Is the check made on the <em>final authorized</em> amount in the
 <em>charge</em> currency?</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Interfaces</strong></td>
 <td>What does the customer see when the issuer steps up
 unexpectedly?</td>
@@ -152,14 +152,14 @@ unexpectedly?</td>
 assumption of no challenge. Check mobile webview redirects, popup
 blockers, and returning to the app after a bank-app approval.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Platform</strong></td>
 <td>Does sandbox behaviour match production?</td>
 <td>Sandbox issuers follow scripts: a magic card number always says
 "exempt OK". That checks our reaction to a verdict, not the verdict
 itself (see section 3).</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Operations</strong></td>
 <td>How do real customers use this?</td>
 <td>Five quick €8 top-ups in a gaming wallet, so the sixth is stepped
@@ -167,7 +167,7 @@ up. Or a customer who paid at three other shops this morning, so <em>our
 first</em> payment is stepped up. Both are normal behaviour, not edge
 cases.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Time</strong></td>
 <td>What expires?</td>
 <td>3DS sessions time out. Cart reservations (Day 15) may expire while

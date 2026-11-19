@@ -85,45 +85,45 @@ href="https://docs.sportradar.com/uof/data-and-features/messages">UOF
 message reference</a> lists messages with explicit priorities:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Message</th>
 <th>Priority</th>
 <th>Business meaning</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><code>odds_change</code></td>
 <td>High</td>
 <td>New prices, and can also signal a bet stop</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>bet_stop</code></td>
 <td>High</td>
 <td>Suspend a group of markets now (e.g. a dangerous attack or a
 penalty)</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>bet_cancel</code></td>
 <td>High</td>
 <td>Void a market because of an error</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>fixture_change</code></td>
 <td>High</td>
 <td>Kickoff time or other fixture details changed</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>bet_settlement</code></td>
 <td>Low</td>
 <td>Settle bets: winners get paid</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>rollback_bet_settlement</code></td>
 <td>Low</td>
 <td>Undo a settlement sent by mistake</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><code>alive</code></td>
 <td>Low</td>
 <td>Heartbeat. If it stops arriving, something is broken</td>
@@ -214,7 +214,7 @@ hypothesis</strong>, plus <strong>an experiment that tells them
 apart</strong>.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Symptom</th>
 <th>Check/environment hypothesis</th>
 <th>Product hypothesis</th>
@@ -222,7 +222,7 @@ apart</strong>.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Market still <code>ACTIVE</code> 500ms after
 <code>bet_stop</code></td>
 <td>Polling interval too coarse; slow CI runner</td>
@@ -232,7 +232,7 @@ apart</strong>.</p>
 burst of 5,000 settlements. If latency jumps only with the burst, it's
 the product.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Settlement check fails only when run after the recovery check</td>
 <td>Shared state leaks between tests (order dependency)</td>
 <td>Settlements are applied <strong>before</strong>
@@ -240,7 +240,7 @@ the product.</td>
 <td>Run in reverse and in random order. Then replay a recovery where a
 settlement arrives mid-snapshot.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Odds value differs from expected, rarely</td>
 <td>Test fixture timestamps collide</td>
 <td>Older recovery message overwrites newer live odds (the docs say this
@@ -248,7 +248,7 @@ can happen)</td>
 <td>Send a recovery <code>odds_change</code> with an older timestamp
 after a live update and assert that the newer one wins.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Wallet balance off by exactly one payout</td>
 <td>Test reads the balance before an async write finishes</td>
 <td>Rollback isn't idempotent when it arrives twice, or the settlement
@@ -256,7 +256,7 @@ is applied twice</td>
 <td>Send the same rollback twice. Reconcile the ledger entries, not just
 the balance.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>A dozen unrelated checks fail in the same run</td>
 <td>Broker container restarted; network hiccup</td>
 <td>Your reconnect logic doesn't suspend markets during the outage</td>

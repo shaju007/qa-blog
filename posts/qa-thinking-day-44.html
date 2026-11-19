@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your Hamburg SaaS platform has always processed payments through one PSP (payment service provider). This quarter the team adds a second one for failover and better local acceptance in Asia-Pacific. A routing l">
+  <meta name="color-scheme" content="light">
+  <title>An Amount Is Not a Number: Domain-Testing Multi-Currency Payments When Your Two Payment Providers Disagree About Decimals | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 44</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-44">QA Thinking — Day 44</h1>
+<h2
+id="an-amount-is-not-a-number-domain-testing-multi-currency-payments-when-your-two-payment-providers-disagree-about-decimals">An
+Amount Is Not a Number: Domain-Testing Multi-Currency Payments When Your
+Two Payment Providers Disagree About Decimals</h2>
+<h3 id="the-situation">The situation</h3>
+<p>Your Hamburg SaaS platform has always processed payments through one
+PSP (payment service provider). This quarter the team adds a second one
+for failover and better local acceptance in Asia-Pacific. A routing
+layer now decides, per payment, which PSP gets it. The developer says:
+"The amount logic didn't change. We already send amounts in minor units,
+so it's just a different HTTP client."</p>
+<p>That sentence describes a risk. Today's lesson is about seeing it,
+modelling it and testing it with <strong>domain testing</strong>, Cem
+Kaner's generalized form of equivalence-class and boundary analysis.
+You'll also learn to explain the risk to a product owner who hears
+"decimals" and assumes it was handled long ago.</p>
+<hr />
+<h3 id="domain-primer-what-minor-units-really-means">Domain primer: what
+"minor units" really means</h3>
+<p>Most payment APIs don't accept <code>10.99</code>. They want an
+integer in the currency's <strong>minor unit</strong>, so 10.99 EUR is
+sent as <code>1099</code>. Stripe's documentation states that all API
+requests expect <code>amount</code> in the currency's minor unit:
+<code>1000</code> charges 10 USD, and <code>10</code> charges 10 JPY,
+because JPY has no minor unit.</p>
+<p>To convert, you need each currency's <strong>exponent</strong>, the
+number of decimal places. <strong>ISO 4217</strong> is the standard most
+teams treat as the source. Its list is maintained by SIX on behalf of
+ISO and records each currency's minor-unit relationship. Most currencies
+are 1/100, and some, such as the Bahraini dinar, are 1/1000.</p>
+<p>The domain rule that catches teams out is this: <strong>ISO 4217 is
+not the oracle for what a PSP expects.</strong> Each PSP publishes its
+own table, and the tables disagree.</p>
+<ul>
+<li><strong>Adyen's currency-codes page</strong> says that for CLP, CVE,
+IDR and ISK "the ISO 4217 standard has a different number of decimals
+than shown in our currency codes table", and that "when submitting
+amounts in minor units, the decimals in the table on this page are
+leading." Adyen lists IDR at 0 decimals and ISK and CLP at 2.</li>
+<li><strong>Stripe</strong> treats IDR as two-decimal. Its non-card
+maximum is "9,999,999,999.99 IDR (<code>999999999999</code>)" and its
+minimum charge is 0.50 IDR. For ISK, Stripe says the króna "transitioned
+to a zero-decimal currency, but backward compatibility requires you to
+represent it as a two-decimal value, where the decimal amount is always
+<code>00</code>". UGX gets the same treatment, so 5 ISK or 5 UGX is sent
+as <code>500</code>, and fractions are rejected.</li>
+<li>Stripe also has currencies whose rules change by
+<strong>operation</strong>. HUF and TWD can be charged with two
+decimals, but Stripe treats them as zero-decimal <strong>for
+payouts</strong>, so manual payout amounts must be divisible by 100. A
+HUF 10.45 balance can't be paid out in full.</li>
+</ul>
+<p>Now take one business fact: <em>the customer owes 10,000
+IDR</em>.</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Exponent it expects</th>
+<th>Correct <code>amount</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Your catalog / ledger</td>
+<td>whatever you configured</td>
+<td><code>10000.00</code> or <code>10000</code>?</td>
+</tr>
+<tr>
+<td>Stripe</td>
+<td>2</td>
+<td><code>1000000</code></td>
+</tr>
+<tr>
+<td>Adyen</td>
+<td>0</td>
+<td><code>10000</code></td>
+</tr>
+</tbody>
+</table>
+<p>If the routing layer uses one shared <code>toMinorUnits()</code> with
+one exponent table, one of these PSPs gets the wrong number. Send
+<code>1000000</code> to Adyen and you <strong>charge the customer 100×
+too much</strong>. Send <code>10000</code> to Stripe and you charge 100
+IDR. That's a 100× undercharge, and it may fall below the minimum and be
+declined, which then shows up as a "payment failure spike in Indonesia"
+rather than as a currency bug.</p>
+<p>Neither PSP is wrong, and neither is your ISO table. The failure is
+in the mapping between them, which is the kind of thing a test suite
+designed around "the amount logic" won't see.</p>
+<hr />
+<h3 id="the-testing-idea-model-the-variable-you-cant-see">The testing
+idea: model the variable you can't see</h3>
+<p>Kaner, Padmanabhan and Hoffman's <em>Domain Testing Workbook</em>
+uses a term borrowed from financial analysis: the <strong>notional
+variable</strong>. In Kaner's description, it "reflects the tester's
+'notion' of what is in the code", and "the model won't be perfect. That
+exact variable is probably not in the code." Kaner also describes
+exploratory testing as a way of "refining the modeling of the notional
+variables."</p>
+<p>That fits here. The code has an <code>amount: Long</code> field, but
+your notional variable is richer:</p>
+<blockquote>
+<p><strong>ChargeableAmount</strong> = (value, currency, <em>exponent as
+understood by system X</em>, operation, rounding history)</p>
+</blockquote>
+<p>Once you model it that way, the important dimensions show up:
+<strong>which system's exponent</strong>, and <strong>which
+operation</strong> (charge, partial refund, payout, report). The integer
+field hides all of that.</p>
+<p>Kaner and Padmanabhan's earlier domain-testing papers define
+equivalence in a <strong>risk-based</strong> way: two tests are
+equivalent <em>relative to a potential error</em>. So don't partition
+currencies by geography or popularity. Partition them by the error
+you're hunting.</p>
+<p><strong>Risk: "the exponent used in conversion doesn't match what the
+receiving system expects"</strong></p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Examples</th>
+<th>Why it's a separate class</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ISO, Stripe and Adyen all agree on 2</td>
+<td>EUR, USD, GBP</td>
+<td>Baseline. One representative is enough for <em>this</em> risk.</td>
+</tr>
+<tr>
+<td>All agree on 0</td>
+<td>JPY</td>
+<td>Catches a hard-coded ×100</td>
+</tr>
+<tr>
+<td>All agree on 3</td>
+<td>KWD, BHD (verify per PSP)</td>
+<td>Catches ×100 assumptions and 3-decimal rounding</td>
+</tr>
+<tr>
+<td><strong>PSPs disagree with each other</strong></td>
+<td>IDR</td>
+<td>Catches a single shared table across PSPs</td>
+</tr>
+<tr>
+<td><strong>PSP disagrees with ISO</strong></td>
+<td>ISK, CLP, CVE (Adyen)</td>
+<td>Catches an "ISO is the truth" config</td>
+</tr>
+<tr>
+<td>Legacy representation (value must end in <code>00</code>)</td>
+<td>ISK, UGX at Stripe</td>
+<td>Catches correct-exponent-but-invalid-value cases</td>
+</tr>
+<tr>
+<td>Exponent changes by operation</td>
+<td>HUF, TWD payouts at Stripe</td>
+<td>Catches "charge works, payout fails"</td>
+</tr>
+</tbody>
+</table>
+<p>That's seven classes. A suite that tests EUR, USD and GBP has run
+three tests and covered <strong>one</strong> of them.</p>
+<p>Swap the risk and the partition changes. For "minimum charge after
+conversion", Stripe says charges converted into the settlement currency
+"must meet the equivalent minimum of the settlement currency". Then JPY
+and EUR may be in the same class, and what matters is how close the
+converted value sits to the settlement currency's minimum. Re-partition
+for each risk. Don't reuse one partition for every risk.</p>
+<hr />
+<h3 id="boundaries-worth-testing">Boundaries worth testing</h3>
+<p>Once you have classes, look for the edges each currency and PSP
+actually has:</p>
+<ol type="1">
+<li><strong>Minimum charge.</strong> Test at, just below and just above
+the minimum in the <em>settlement</em> currency after conversion, not
+only in the presentment currency. A 50 JPY charge settled in EUR is a
+different test from a 50 JPY charge settled in JPY.</li>
+<li><strong>Maximum digits.</strong> Stripe documents limits by digit
+count. Card payments go up to 12 digits, Cartes Bancaires to 10,
+American Express "in most currencies" to 9, and non-card methods to 8
+except IDR, COP and INR. With a two-decimal IDR representation, a large
+B2B invoice uses up digits quickly. Test a value that fits Adyen's
+0-decimal form but overflows once multiplied for Stripe.</li>
+<li><strong>Divisibility.</strong> ISK and UGX at Stripe must end in
+<code>00</code>. What does your system do with an ISK price after a 15%
+discount, a proration or tax? Stripe documents its own behaviour for UGX
+invoices: it rounds to the nearest amount divisible by 100 and credits
+or debits the difference to the customer balance. Does your
+<strong>own</strong> checkout do something equivalent, or does the
+request fail at payment time?</li>
+<li><strong>Partial refunds.</strong> Refund one of three items on a
+3-decimal KWD order that had an order-level discount. Do the item
+refunds add up to the captured amount? Can rounding leave a last refund
+of 1 fils more than remains capturable?</li>
+<li><strong>Payout remainders.</strong> HUF 10.45 can't be paid out in
+full manually. Where does the 0.45 go, and does the marketplace seller's
+balance screen say so?</li>
+</ol>
+<hr />
+<h3 id="follow-the-amount-not-the-request">Follow the amount, not the
+request</h3>
+<p>The conversion to minor units doesn't happen once. Every boundary
+between systems either applies an exponent or reverses one:</p>
+<p><strong>Price in catalog → cart &amp; tax → PSP request (×10ⁿ for PSP
+A or B) → PSP webhook (÷10ⁿ) → ledger → refund request (×10ⁿ again) →
+settlement report (÷10ⁿ) → payout → accounting export</strong></p>
+<p>The outbound request gets most of the testing attention, but the
+<strong>inbound</strong> direction is just as risky. If the IDR webhook
+from Adyen says <code>10000</code> and your handler divides by 100
+because "all webhooks are in cents", your ledger records 100 IDR as
+received. Nobody sees a decline. Reconciliation finds it three weeks
+later, if at all.</p>
+<p>A practical heuristic: <strong>for every currency class, push one
+order through the whole chain and assert the same business amount at
+every hop.</strong> Use one end-to-end trace per class, not hundreds of
+request-level checks.</p>
+<hr />
+<h3 id="what-to-automate-and-what-not-to">What to automate (and what not
+to)</h3>
+<ul>
+<li><strong>A table-drift check.</strong> Keep your per-PSP exponent
+configuration as data. Write a scheduled check that compares it to each
+PSP's published currency table (or its API, if one exists) and fails on
+any difference. This is cheap and catches the case where a PSP changes a
+currency.</li>
+<li><strong>Round-trip properties per PSP.</strong> For random values in
+each class: <code>fromMinor_PSP(toMinor_PSP(x)) == x</code>, plus "every
+request amount for ISK at Stripe is divisible by 100". Property-based
+tests suit this, because the invariant is clear and the input space is
+large.</li>
+<li><strong>Don't</strong> automate a hand-written list of 135
+currencies with expected values copied from a doc. That just copies the
+table, and when the doc changes your oracle silently goes out of
+date.</li>
+<li><strong>Keep for exploration:</strong> what customers see. The
+amount on the checkout page, on the 3-D Secure challenge screen, on the
+bank statement descriptor and on the invoice PDF should all describe the
+same money. Explore that with real sandbox payments in one zero-decimal
+and one disputed-exponent currency.</li>
+</ul>
+<hr />
+<h3 id="the-soft-skills-half-making-decimals-sound-like-money">The
+soft-skills half: making "decimals" sound like money</h3>
+<p>If you say "IDR exponents differ between PSPs" in refinement, you'll
+get nods and no action. You haven't described a consequence yet. Three
+moves help.</p>
+<p><strong>1. Ask a question that has an owner, not one that has an
+answer.</strong> Weak: "Did we handle zero-decimal currencies?" (Answer:
+"Yes.") Strong: "When Adyen's table and ISO disagree, which one does our
+routing layer use, and who gets told if Adyen changes it?" This puts the
+oracle problem on the table. It often shows that the answer is "a
+constant someone copied in 2021".</p>
+<p><strong>2. Bring a three-column table, not an opinion.</strong> Put
+the IDR row from above in the ticket: business amount, what PSP A needs,
+what PSP B needs, and what our shared helper produces. Developers argue
+with assertions but rarely with their own function's output next to the
+vendor's documentation. That's evidence-based feedback: you're showing a
+mismatch, not passing judgement on someone's code.</p>
+<p><strong>3. State the risk in business terms, with its
+direction.</strong> Overcharging and undercharging are different risks
+with different owners:</p>
+<blockquote>
+<p>"If IDR payments routed to Adyen use our current conversion,
+Indonesian customers are charged 100× the price. That means chargebacks,
+refunds and a possible scheme or regulator complaint. If they're routed
+to Stripe with Adyen's exponent, we collect 1% of the price, or get
+declined below the minimum. Finance owns the first. Growth will see the
+second as a conversion drop. Routing goes live to IDR on [date]. I'd
+like either per-PSP exponent tables or IDR excluded from the router
+until they exist."</p>
+</blockquote>
+<p>That paragraph gives a consequence, an owner, a deadline and a choice
+between two concrete options. The product owner can decide without
+knowing what an exponent is.</p>
+<hr />
+<h3 id="practical-challenge-4560-minutes">Practical challenge (45–60
+minutes)</h3>
+<p>Pick a money flow you test at work: checkout, subscription invoice,
+marketplace payout or refund. If you have none, use the two-PSP scenario
+above.</p>
+<ol type="1">
+<li><strong>Write the notional variable.</strong> List every dimension
+of "the amount" your system carries implicitly: currency, exponent per
+downstream system, operation, rounding steps applied so far, settlement
+currency.</li>
+<li><strong>Choose two risks</strong> (for example "exponent mismatch"
+and "rounding residue after partial refunds"). Build a separate
+partition table for each, with risk-based classes, one representative
+per class, and the boundary values.</li>
+<li><strong>Check your oracle.</strong> For three currencies in your
+system, look up the exponent in ISO 4217 and in <em>each</em> PSP's
+current documentation. Record every disagreement and where in your code
+that decision is made.</li>
+<li><strong>Trace one order</strong> in your riskiest class through
+every hop (request, webhook, ledger, refund, report). Note at which hop
+the amount could change without anyone noticing.</li>
+<li><strong>Write the five-sentence risk statement</strong> in the
+format above, as if routing goes live next week.</li>
+</ol>
+<p><strong>Stretch:</strong> Find out whether your team has
+<em>ever</em> been told about a PSP changing a currency's decimals or
+limits. If nobody knows how that information would reach you, that's a
+test finding about your observability and your vendor process.</p>
+<hr />
+<h3 id="key-takeaways">Key takeaways</h3>
+<ul>
+<li>An amount in minor units means nothing without knowing <strong>which
+system's exponent</strong> it uses. ISO 4217 is a reference. Each PSP's
+own table is the oracle for that PSP.</li>
+<li>Partition currencies <strong>by the error you're hunting</strong>,
+not by geography or traffic. Three popular currencies can cover only one
+risk class.</li>
+<li>Exponents are applied in both directions. <strong>Webhooks, refunds,
+payouts and reports</strong> carry the same risk as the charge request,
+and they fail silently.</li>
+<li>When you raise it, show the mismatch in a table, name the
+<strong>direction</strong> of the money error, and give the
+decision-maker two concrete options.</li>
+</ul>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>Cem Kaner, <a href="https://kaner.com/?p=363">"New Book: The Domain
+Testing Workbook"</a> on kaner.com: notional variables, the 18-step
+domain-analysis schema, and exploratory testing as refining the
+model.</li>
+<li>Cem Kaner &amp; Sowmya Padmanabhan, <a
+href="https://kaner.com/pdfs/kanerPadmanabhanDomainTesting.pdf">domain
+testing paper (PDF)</a> and <a
+href="https://kaner.com/pdfs/domain_testing_cseet.pdf">CSEET domain
+testing slides (PDF)</a>: risk-based equivalence and boundary
+tables.</li>
+<li>Stripe Docs, <a
+href="https://docs.stripe.com/currencies?locale=en-GB">"Supported
+currencies"</a>: minor units; ISK, UGX, HUF and TWD special cases;
+minimum and maximum charge amounts.</li>
+<li>Adyen Docs, <a
+href="https://docs.adyen.com/development-resources/currency-codes">"Currency
+codes"</a>: per-currency decimals and the note that Adyen's table is
+"leading" where it differs from ISO 4217 (CLP, CVE, IDR, ISK).</li>
+<li>ISO, <a
+href="https://committee.iso.org/iso-4217-currency-codes.html">"ISO 4217
+Currency codes"</a>: the standard and its maintenance by SIX.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-43.html" rel="prev"><span>Previous</span>Testing Marketplace Promotions for Abuse: The Attacker Follows Your Rules More Carefully Than Your Customers Do</a><a href="/qa-blog/posts/qa-thinking-day-45.html" rel="next"><span>Next</span>Testing Live Score Announcements: A Screen Reader User Can&#39;t Glance Away, So Every Update You Push Is an Interruption</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

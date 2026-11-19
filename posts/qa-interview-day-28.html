@@ -124,21 +124,21 @@ illegal one arrives.</p>
 destination that sits behind the real ingress, not on localhost:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Risk</th>
 <th>Test</th>
 <th>Pass looks like</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Duplicate delivery</td>
 <td>Re-send the same event with <code>stripe events resend</code>. Also
 inject a second, separately created event for the same session</td>
 <td>One stock reservation, one email, one ERP push. The duplicate is
 logged as a duplicate, not as an error</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Landing page vs. webhook race</td>
 <td>Fire the landing-page request and the webhook for the same session
 concurrently, about 50 times</td>
@@ -146,7 +146,7 @@ concurrently, about 50 times</td>
 unique constraint or a lock, not an "if not already fulfilled" check
 that two threads can both pass</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Out of order / missing</td>
 <td>Deliver <code>async_payment_succeeded</code> for a session whose
 <code>completed</code> event we never processed. Deliver a failure event
@@ -154,20 +154,20 @@ after success</td>
 <td>The handler fetches the current session from the API instead of
 trusting arrival order. No unpaid order gets fulfilled</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Delivery failure</td>
 <td>Make the endpoint return 500, then time out, then recover</td>
 <td>Stripe's delivery log shows the retries. Fulfilment still happens
 exactly once. Someone gets alerted while it's failing</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Signature via the real path</td>
 <td>Tampered body; replay of a captured request older than 5 minutes;
 wrong-mode secret; a rotated secret with both secrets active</td>
 <td>Rejected, rejected, rejected, accepted. No middleware alters the raw
 body</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Connect scope</td>
 <td>Run a real checkout on a test connected account</td>
 <td>The event arrives at the right destination and maps to the right
@@ -268,7 +268,7 @@ product factors. Version 6.3 added emphasis on state-based testing and
 boundaries.</li>
 </ul>
 </article>
-  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-27.html" rel="prev"><span>Previous</span>&quot;Can you just change it from Critical to Major? The release gate only blocks on Criticals, and we&#39;ll fix it next sprint.&quot; Do you change the label?</a></nav>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-27.html" rel="prev"><span>Previous</span>&quot;Can you just change it from Critical to Major? The release gate only blocks on Criticals, and we&#39;ll fix it next sprint.&quot; Do you change the label?</a><a href="/qa-blog/posts/qa-interview-day-29.html" rel="next"><span>Next</span>&quot;Load test passed: 2,000 virtual users, p95 of 240 ms, 0.1% errors.&quot; The cup-final ticket sale opens in eight days. The product owner asks, &quot;So we&#39;re good?&quot; What do you say?</a></nav>
   <a class="back-link" href="/qa-blog/">← Back to all writing</a>
 </main>
   <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>

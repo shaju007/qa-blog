@@ -100,64 +100,64 @@ two of these teams hand over to each other.</p>
 <p><strong>Vocabulary you need:</strong></p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Term</th>
 <th>What it means</th>
 <th>Why testers care</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>List / regular price</strong></td>
 <td>The normal selling price</td>
 <td>Often isn't stored as history, only as the current value</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Compare-at / strikethrough price</strong></td>
 <td>The crossed-out "was" price on the page</td>
 <td>Often a manually entered field with no validation</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Prior price (Article 6a)</strong></td>
 <td>The <em>lowest</em> price the trader charged in the ≥30 days before
 the reduction</td>
 <td>The legally relevant reference in the EU. It's calculated, not
 entered by hand</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Product / order / shipping discount</strong></td>
 <td>The level a discount applies to: line item, cart subtotal, or
 delivery</td>
 <td>The order they're applied in changes the result</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Combinability / exclusivity</strong></td>
 <td>Which discounts may stack</td>
 <td>Usually a setting on each discount, so combinations multiply
 fast</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Threshold</strong></td>
 <td>"Over €120" conditions</td>
 <td>Must be re-checked after returns</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Allocation (proration)</strong></td>
 <td>Splitting an order-level discount across the lines</td>
 <td>Determines refunds and the VAT split across tax rates</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Progressive reduction</strong></td>
 <td>A discount that deepens over the campaign</td>
 <td>Has its own reference-price rule (see below)</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Individual / personalised offer</strong></td>
 <td>A code meant for one customer</td>
 <td>Exempt from the German rule. Is it still individual once it leaks
 onto a voucher site?</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Gift card vs coupon</strong></td>
 <td>A gift card is a <em>payment method</em>. A coupon is a <em>price
 reduction</em></td>
@@ -232,32 +232,32 @@ disagree</h3>
 different levels. Split the problem into four layers:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Layer</th>
 <th>Question</th>
 <th>In this case</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Observation</strong></td>
 <td>What did we see?</td>
 <td>Nobody disputes it: €99.99 struck through, −40%, and €69.99 in the
 price log</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Rule</strong></td>
 <td>Which oracle applies?</td>
 <td>The developer uses the ticket. You're pointing at the law and the
 CJEU ruling. <em>Both are valid oracles, and they conflict.</em></td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Owner</strong></td>
 <td>Who has the authority to decide?</td>
 <td>Not the developer, and not the PO alone. Probably compliance/legal
 together with merchandising</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Consequence</strong></td>
 <td>What happens if we're wrong, and who pays?</td>
 <td>Consumer-association warning letters (in Germany,
@@ -364,37 +364,37 @@ minutes)</h3>
 (19%).</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Date</th>
 <th>Price</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>until 29 Oct</td>
 <td>€149</td>
 </tr>
-<tr class="even">
+<tr>
 <td>30 Oct – 2 Nov ("Autumn Weekend")</td>
 <td>€119</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>3 Nov – 22 Nov</td>
 <td>€149</td>
 </tr>
-<tr class="even">
+<tr>
 <td>23 Nov (Black Week starts)</td>
 <td>€99, shown as <del>€149</del> −34%</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>26 Nov</td>
 <td>€89</td>
 </tr>
-<tr class="even">
+<tr>
 <td>27 Nov</td>
 <td>€79</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>night of 25 Nov</td>
 <td>feed import sets €149 for 6 hours, then back to €99</td>
 </tr>

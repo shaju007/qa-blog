@@ -239,31 +239,31 @@ can't test the verdict, move the oracle</h2>
 correct:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Instead of…</th>
 <th>Check…</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>"Evidence wins"</td>
 <td>Evidence is <strong>complete for the reason code</strong> (fraud,
 product not received and credit not processed each need different
 evidence) and submitted <strong>before the internal
 deadline</strong></td>
 </tr>
-<tr class="even">
+<tr>
 <td>"Status updates"</td>
 <td><strong>Every</strong> status maps somewhere, including
 <code>prevented</code>, any value your code doesn't know yet, and
 <code>lost → won</code> (late win)</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>"Refund works"</td>
 <td>Customer refunds + dispute debits + reinstatements <strong>add
 up</strong> per payment, including FX and partial-dispute amounts</td>
 </tr>
-<tr class="even">
+<tr>
 <td>"Old purchases are safe"</td>
 <td><strong>Data retention ≥ dispute window measured from the event
 date.</strong> If scan logs are deleted 90 days after purchase, a

@@ -120,50 +120,50 @@ Time. Don't recite them. Use them to find the forms of access that a
 <p><strong>Structure: what can still let this person in?</strong></p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Credential / access path</th>
 <th>Lifetime</th>
 <th>Does <code>active=false</code> reach it?</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Browser session cookie</td>
 <td>until expiry or logout</td>
 <td>Only if every request re-checks status</td>
 </tr>
-<tr class="even">
+<tr>
 <td>OAuth refresh token (web, mobile app)</td>
 <td>days to months</td>
 <td>Only if revoked explicitly</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Access token / JWT already issued</td>
 <td>minutes to hours</td>
 <td>Usually <em>no</em>. Stateless tokens are valid until they
 expire</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Personal API token / PAT</td>
 <td>often "never expires"</td>
 <td>Only if tied to the user</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>OAuth grants to third-party apps (e.g. "Connect to Slack")</td>
 <td>long-lived</td>
 <td>Rarely considered</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Open WebSocket / live dashboard stream</td>
 <td>as long as the tab is open</td>
 <td>Almost never re-authorized</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Mobile offline cache / exported data links</td>
 <td>varies</td>
 <td>Signed download URLs outlive everything</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Scheduled jobs <em>owned</em> by the user (email reports,
 exports)</td>
 <td>indefinite</td>
@@ -271,7 +271,7 @@ security team has asked us for a number."</p>
 recommendation disguised as a question:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Credential</th>
 <th>Option A: revoke immediately</th>
 <th>Option B: revoke and notify the admin</th>
@@ -279,19 +279,19 @@ recommendation disguised as a question:</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Sessions</td>
 <td>Safe, small UX cost</td>
 <td>n/a</td>
 <td>Not defensible</td>
 </tr>
-<tr class="even">
+<tr>
 <td>PATs</td>
 <td>Breaks unknown integrations</td>
 <td>Breaks them, but the admin knows why</td>
 <td>Fails the customer's security question</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Scheduled reports</td>
 <td>Silent loss of reports for others</td>
 <td>Admin can reassign</td>

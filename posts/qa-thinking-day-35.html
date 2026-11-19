@@ -48,60 +48,60 @@ minutes</h3>
 station run by one company and pays through an app from another:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Role / term</th>
 <th>What it means</th>
 <th>Why a tester cares</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>CPO</strong> (Charge Point Operator)</td>
 <td>Owns and runs the stations and the backend they talk to</td>
 <td>Owns the meter data and creates the billing record</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>eMSP</strong> (e-Mobility Service Provider)</td>
 <td>The app or card the driver has a contract with</td>
 <td>Owns the customer relationship and sends the invoice</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Hub</strong></td>
 <td>A clearing platform between many CPOs and eMSPs</td>
 <td>One more hop that can be late, out of date, or duplicate a
 message</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>OCPP</strong></td>
 <td>Protocol between the <strong>station</strong> and the <strong>CPO
 backend</strong> (StartTransaction, MeterValues, StopTransaction)</td>
 <td>Stations go offline, queue messages, and send them late</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>OCPI</strong></td>
 <td>Protocol between <strong>CPO and eMSP</strong> (Locations, Tariffs,
 Tokens, Sessions, CDRs)</td>
 <td>This is where two companies have to agree about money</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Session</strong></td>
 <td>The live, changing view of a charge in progress</td>
 <td>Shows what's happening now. Not used for billing.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>CDR</strong> (Charge Detail Record)</td>
 <td>The final record of a completed session that billing is based
 on</td>
 <td><strong>Can't be changed once it has been sent.</strong> Corrections
 go out as a separate <em>credit CDR</em>.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Tariff</strong></td>
 <td>Pricing built from parts: energy (kWh), time, parking time, flat
 fee, with restrictions and step sizes</td>
 <td>Bugs hide in how these parts combine</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Eichrecht</strong></td>
 <td>German calibration law: measured energy has to be accurate and
 <strong>verifiable by the customer</strong></td>
@@ -161,7 +161,7 @@ risk list to show stakeholders (Part 4).</p>
 <strong>bold</strong> items are where the risks are.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Hop</th>
 <th>What happens</th>
 <th>Question that exposes risk</th>
@@ -169,7 +169,7 @@ risk list to show stakeholders (Part 4).</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Meter → station</td>
 <td>Calibrated meter signs start and end readings</td>
 <td><em>What can't be undone?</em> The signed values are fixed from this
@@ -177,7 +177,7 @@ point on.</td>
 <td>Check that every CDR's energy matches the difference between the
 signed start and end readings, with documented rounding</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Station → CPO (OCPP)</td>
 <td>StartTransaction, MeterValues, StopTransaction</td>
 <td><em>What if it arrives late?</em> <strong>The station was offline
@@ -187,7 +187,7 @@ been timed out</strong></td>
 charging, reconnect. Does the backend create a second "ghost" session,
 or close the timed-out one using the station's timestamp?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Station local auth</td>
 <td>Token checked against the local cache</td>
 <td><em>Who owns the truth?</em> <strong>The cache says the token is
@@ -195,7 +195,7 @@ valid, but the eMSP blocked it yesterday</strong></td>
 <td>Block a token in the eMSP, keep the station offline, charge. Who
 pays for that energy? Is that written down in the roaming contract?</td>
 </tr>
-<tr class="even">
+<tr>
 <td>CPO → eMSP (OCPI Sessions)</td>
 <td>Live session updates sent to the driver's app</td>
 <td><em>Who would notice?</em> The driver, if the app says "charging"
@@ -203,7 +203,7 @@ after they've unplugged</td>
 <td>Compare the session status the app shows with the station's state
 during and after an offline period</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>CPO → eMSP (Tariffs)</td>
 <td>Price parts sent</td>
 <td><em>What if it's stale?</em> <strong>The CPO changed its tariff at
@@ -212,7 +212,7 @@ during and after an offline period</td>
 one at start or split by time? Does the eMSP's invoice agree with the
 CDR's cost?</td>
 </tr>
-<tr class="even">
+<tr>
 <td>CPO → eMSP (CDR)</td>
 <td>Final billing record</td>
 <td><em>What if it arrives twice?</em> <em>What can't be
@@ -221,7 +221,7 @@ undone?</em></td>
 CDR: does the credit CDR reference the original, and does the customer
 see a clean net amount instead of two confusing lines?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>eMSP → driver</td>
 <td>Invoice plus verification note</td>
 <td><em>Who would notice?</em> <strong>The driver, using transparency

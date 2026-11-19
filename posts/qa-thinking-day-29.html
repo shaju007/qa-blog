@@ -68,39 +68,39 @@ data maintained by the IANA tz project and copied into many places, each
 updated on its own schedule:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Where tz rules live</th>
 <th>Who updates them</th>
 <th>How to see the version</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>OS / container base image</td>
 <td>Image rebuild, <code>tzdata</code> package</td>
 <td><code>zdump -v -c 2026,2027 America/Edmonton</code></td>
 </tr>
-<tr class="even">
+<tr>
 <td>JVM (ships its own tz data)</td>
 <td>JDK update or Oracle's TZUpdater</td>
 <td><code>ZoneRulesProvider.getVersions("America/Edmonton").lastKey()</code></td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Node.js (uses ICU's tz data)</td>
 <td>Node release</td>
 <td><code>process.versions.tz</code></td>
 </tr>
-<tr class="even">
+<tr>
 <td>Python <code>zoneinfo</code></td>
 <td>System tz data, or the <code>tzdata</code> PyPI package</td>
 <td><code>tzdata.IANA_VERSION</code></td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Database</td>
 <td>DB build and config (PostgreSQL may bundle its own)</td>
 <td>Compare <code>AT TIME ZONE</code> output with the app</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Browsers / mobile OS</td>
 <td>OS vendor's release cadence; users may not update</td>
 <td>Test on real devices</td>

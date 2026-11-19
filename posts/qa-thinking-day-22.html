@@ -47,47 +47,47 @@ Domain primer: what's actually going on in subscription billing</h2>
 <p>You need this vocabulary before you can test the domain:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Term</th>
 <th>What it means</th>
 <th>Why a tester cares</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Plan / price</strong></td>
 <td>What the customer pays for, and how often (e.g., €49/month
 Team)</td>
 <td>Price changes don't apply retroactively, so old and new customers
 can be on different terms</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Billing cycle anchor</strong></td>
 <td>The date each period renews</td>
 <td>Anchors on the 29th–31st cause trouble in short months</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Proration</strong></td>
 <td>Credit or charge for a mid-cycle plan change</td>
 <td>Finance reconciles every cent of this</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Trial</strong></td>
 <td>A free period before the first charge</td>
 <td>What happens at trial end with <em>no</em> payment method?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Dunning</strong></td>
 <td>Retrying failed payments and reminding the customer</td>
 <td>This is where involuntary churn happens, and also where people get
 free access</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Entitlement</strong></td>
 <td>What the customer is <em>allowed to use</em> right now</td>
 <td>Lives in <em>your</em> app, not in the payment provider</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Cancel at period end</strong></td>
 <td>Cancellation that takes effect at renewal</td>
 <td>Reactivating before the end is a classic edge case</td>
@@ -315,33 +315,33 @@ check</h2>
 <p>A simple test for each candidate:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Question</th>
 <th>If yes, lean toward…</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Is the rule written down and agreed (e.g., proration formula, "no
 access when <code>unpaid</code>")?</td>
 <td>Automated check</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Is the oracle deterministic (a number, a state, an entitlement
 flag)?</td>
 <td>Automated check</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Would a regression cost money or trust quietly, before anyone
 notices?</td>
 <td>Automated check, plus monitoring in production</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Is the right behavior still unclear, or a matter of taste or
 customer experience?</td>
 <td>Human exploration, then a conversation</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Does it depend on event ordering, bursts, or timing you don't fully
 understand yet?</td>
 <td><strong>Explore first.</strong> Encode each bug you find as a check
@@ -386,7 +386,7 @@ protecting check once the rule is decided.</li>
 <p>You're not arguing about whether it's a bug. You're making sure
 someone with authority is deciding, not guessing.</p>
 <hr />
-<h2 id="-todays-challenge">🧪 Today's challenge</h2>
+<h2 id="test_tube-todays-challenge">🧪 Today's challenge</h2>
 <p><strong>Scenario:</strong> A Hamburg-based B2B SaaS sells
 <strong>Team (€49/month)</strong> and <strong>Business
 (€99/month)</strong> plans, with a <strong>14-day trial</strong>, card

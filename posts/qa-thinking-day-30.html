@@ -111,46 +111,46 @@ must make, and for each one ask what evidence would change it. For
 metering:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Risk / question</th>
 <th>Cheapest honest evidence</th>
 <th>Automate?</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Does rating apply tiers correctly at boundaries (0, 1, N, N+1,
 huge)?</td>
 <td>Table-driven checks on the rating function with known inputs</td>
 <td><strong>Yes.</strong> Deterministic, fast and cheap to maintain. The
 oracle is arithmetic you can write down.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Is a retried event counted once?</td>
 <td>Check at the ingestion API: send the same idempotency key twice and
 assert the aggregate</td>
 <td><strong>Yes.</strong> Pin it at the lowest layer where it can
 fail.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Do late events land in the right period?</td>
 <td>Checks with injected clocks and fixed time zones around the
 cut-off</td>
 <td><strong>Yes, but</strong> time handling is a classic source of
 flakiness. Control the clock and don't rely on the wall clock.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Does the invoice PDF look right to a finance person?</td>
 <td>Human review of a few real-shaped invoices per release</td>
 <td><strong>Mostly no.</strong> A pixel diff tells you something
 changed, not whether it's wrong.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Does the dashboard match the invoice for real tenants?</td>
 <td><strong>Reconciliation job in production</strong> (see below)</td>
 <td>Yes, as monitoring and not as a pre-release check.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Is the pricing model itself sensible for a tenant with spiky
 usage?</td>
 <td>Exploratory session with weird tenants: downgrade mid-month,

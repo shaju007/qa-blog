@@ -69,22 +69,22 @@ to respect</h3>
 <p>From the Bundesnetzagentur's §14a pages:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Rule</th>
 <th>What it means for testing</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Dimming may go down to <strong>4.2 kW</strong>, not below</td>
 <td>The floor is a hard oracle. Under-delivery hurts the customer.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Heat pumps/AC <strong>&gt; 11 kW</strong>: minimum = connection
 power × <strong>0.4</strong> scaling factor</td>
 <td>A second formula, with a boundary at 11 kW</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>With an <strong>energy management system (EMS)</strong>, the
 operator sets <em>one aggregate limit</em> for all devices, scaled by a
 <strong>simultaneity factor</strong> that depends on how many devices
@@ -92,27 +92,27 @@ there are. The customer's EMS splits it between devices.</td>
 <td>Aggregation logic and how the split is distributed both need
 testing</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Power from the customer's own PV or battery <strong>does not count
 against the limit</strong></td>
 <td>Your oracle is <em>grid draw at the connection point</em>, not
 device consumption</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Normally, control must be based on a <strong>real-time network state
 assessment</strong> and must end as soon as the grid situation
 allows</td>
 <td>You have to test that dimming gets <em>lifted</em>, not just
 applied</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Interim "preventive" control: max <strong>2 hours/day</strong>, max
 <strong>24 months</strong> per grid area from first use, only until end
 of 2028</td>
 <td>Time-window and duration limits have to be enforced and
 recorded</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Since 1 March 2025, operators <strong>publish control
 actions</strong> in a standardised format</td>
 <td>Your execution records become evidence that outsiders will read</td>
@@ -232,30 +232,30 @@ Testers: <strong>2</strong>. Sessions per day (90 min each):
 <strong>3</strong>.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th></th>
 <th>Sessions</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Nominal: 2 × 10 × 3</td>
 <td>60</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Minus meetings, environment setup, protocol writing</td>
 <td>−18</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Available</strong></td>
 <td><strong>42</strong></td>
 </tr>
-<tr class="even">
+<tr>
 <td>Held back for investigation and fix verification (the "bug
 tax")</td>
 <td>−12</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Available for new coverage</strong></td>
 <td><strong>30</strong></td>
 </tr>
@@ -266,47 +266,47 @@ tax")</td>
 <p>Now set what the risks need against that capacity:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Risk area</th>
 <th>Sessions</th>
 <th>Needs real hardware?</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>A. Floor/limit calculation: single device, &gt;11 kW heat pump at
 0.4, EMS aggregate</td>
 <td>6</td>
 <td>No (simulator + API)</td>
 </tr>
-<tr class="even">
+<tr>
 <td>B. End-to-end: command → device → <em>measured grid draw</em>, PV
 on/off</td>
 <td>10</td>
 <td><strong>Yes</strong></td>
 </tr>
-<tr class="odd">
+<tr>
 <td>C. Lifting, comms loss, gateway reboot, overlapping commands, 2h/day
 preventive cap</td>
 <td>7</td>
 <td>Partly (4)</td>
 </tr>
-<tr class="even">
+<tr>
 <td>D. Execution documentation matches measured reality</td>
 <td>4</td>
 <td>Partly (2)</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>E. Network-fee module ↔︎ controllability status in billing</td>
 <td>6</td>
 <td>No</td>
 </tr>
-<tr class="even">
+<tr>
 <td>F. Customer app messaging during dimming</td>
 <td>2</td>
 <td>No</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Total</strong></td>
 <td><strong>35</strong></td>
 <td><strong>16 on hardware</strong></td>
@@ -449,7 +449,7 @@ zur massengeschäftstauglichen Umsetzung der netzorientierten
 Steuerung</a></li>
 </ul>
 </article>
-  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-41.html" rel="prev"><span>Previous</span>Switching Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a Historical Stats Migration</a></nav>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-41.html" rel="prev"><span>Previous</span>Switching Sports-Data Providers: A Diff Is a Question, Not a Bug. Testing a Historical Stats Migration</a><a href="/qa-blog/posts/qa-thinking-day-43.html" rel="next"><span>Next</span>Testing Marketplace Promotions for Abuse: The Attacker Follows Your Rules More Carefully Than Your Customers Do</a></nav>
   <a class="back-link" href="/qa-blog/">← Back to all writing</a>
 </main>
   <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>

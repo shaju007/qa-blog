@@ -49,62 +49,62 @@ id="1-domain-primer-the-vocabulary-you-need-before-you-can-test-anything">1.
 Domain primer: the vocabulary you need before you can test anything</h3>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Term</th>
 <th>What it means</th>
 <th>Why a tester cares</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Flight</strong></td>
 <td>Start and end dates of a campaign or line item</td>
 <td>Boundaries: first hour, last hour, time zone of "midnight"</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Daily vs. lifetime budget</strong></td>
 <td>A cap per day, or a total for the whole flight that the system
 spreads out</td>
 <td>Different oracles: the daily cap can be broken on purpose so the
 lifetime total comes out right</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Pacing</strong></td>
 <td>The rate at which the system tries to spend or deliver</td>
 <td>The thing you're actually testing. The total is just where it ends
 up</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Even / Frontloaded / ASAP</strong></td>
 <td>Pacing modes: spread evenly, run ahead early, or spend as fast as
 possible</td>
 <td>Each mode has its own documented tolerance</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Overdelivery / overspend</strong></td>
 <td>Delivering or spending beyond the goal</td>
 <td>In a guaranteed deal, the publisher gives inventory away. In
 self-serve, the advertiser may or may not be charged</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Underdelivery</strong></td>
 <td>Not reaching the goal</td>
 <td>On guaranteed deals this can trigger a <strong>makegood</strong>:
 free delivery later, credits, or other compensation</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Served cost vs. billed cost</strong></td>
 <td>What the system delivered vs. what the customer is actually
 charged</td>
 <td>The gap between them is a ledger you have to reconcile</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>CPM / CPC / CPA</strong></td>
 <td>Pricing per thousand impressions, per click, or per conversion</td>
 <td>With CPC and CPA, the charge can arrive minutes or days after the
 serving decision</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Fast finish / catch-up</strong></td>
 <td>Speeding up spend near the end of a period, or after falling
 behind</td>
@@ -210,35 +210,35 @@ pacing, it is close to a full test plan. Here is how each sub-idea
 becomes a concrete test idea:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>HTSM Time idea</th>
 <th>Pacing test idea</th>
 <th>Oracle / what "problem" looks like</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Input/output timing</strong></td>
 <td>Delay the event pipeline on purpose (hold click events 2, 10, 60
 minutes) while the bidder keeps running</td>
 <td>How many decisions were made after the true spend crossed the cap?
 Is the overshoot within the stated tolerance?</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Input/output timing</strong></td>
 <td>CPC campaign with a click lookback that crosses midnight and the
 flight end</td>
 <td>Which day's budget and which invoice does a late click count
 against? Does it match what the advertiser UI says?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Fast / slow</strong></td>
 <td>Tiny budget (€1–€5) on high-traffic inventory, and a huge budget on
 thin inventory</td>
 <td>Small budgets: percentage overshoot. Thin inventory: does catch-up
 turn into frantic ASAP buying of poor-quality inventory?</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Changing rates</strong></td>
 <td>Traffic spike at a predictable moment (match kickoff, a TV ad, Black
 Friday 00:00)</td>
@@ -246,21 +246,21 @@ Friday 00:00)</td>
 overshoot? Does it spend the rest of the day's budget in 20
 minutes?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Changing rates</strong></td>
 <td>Pipeline stops for 30 minutes, then delivers the backlog at
 once</td>
 <td>After the backlog lands, does pacing "see" a big overspend and pause
 the campaign too hard? (The over-correction failure.)</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Concurrency</strong></td>
 <td>Same campaign served from two regions or data centres; budget change
 during active bidding</td>
 <td>Does each region try to spend the full budget? Xandr explicitly
 warns about this for multi-geo campaigns</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Concurrency</strong></td>
 <td>Advertiser lowers the budget from €1,000 to €200 after €400 has
 already been spent today</td>
@@ -407,7 +407,7 @@ item</strong>: 600,000 impressions, Monday–Saturday,
 CPM is €12. The ad ops dashboard refreshes from an aggregation job.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Day</th>
 <th>Final delivered</th>
 <th>What the dashboard showed</th>
@@ -415,38 +415,38 @@ CPM is €12. The ad ops dashboard refreshes from an aggregation job.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Mon</td>
 <td>101,800</td>
 <td>—</td>
 <td></td>
 </tr>
-<tr class="even">
+<tr>
 <td>Tue</td>
 <td>104,600</td>
 <td>—</td>
 <td></td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Wed</td>
 <td>71,000</td>
 <td>—</td>
 <td>Ad server deploy 14:00–18:00; a targeting key was missing for 4
 hours</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Thu</td>
 <td>129,500</td>
 <td>—</td>
 <td>"Catch-up day"</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Fri</td>
 <td>98,000</td>
 <td>—</td>
 <td></td>
 </tr>
-<tr class="even">
+<tr>
 <td>Sat</td>
 <td>127,300</td>
 <td>96,000 at 22:00</td>

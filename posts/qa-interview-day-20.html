@@ -69,14 +69,14 @@ mean the same thing in the report as in the cap.</p>
 hypotheses, and the evidence that separates them</h3>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Hypothesis</th>
 <th>What it would mean</th>
 <th>Evidence that confirms or kills it</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>The report's "day" is a different window from the cap's
 "day"</strong></td>
 <td>The cap resets at 00:00 UTC, but the advertiser's report runs on New
@@ -88,7 +88,7 @@ report-day is consistent with the code.</td>
 Per-user counts recomputed in the <em>cap's</em> window come out at ≤3
 (or close).</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>The report's "user" is a different identity from the cap's
 "user"</strong></td>
 <td>The cap is keyed on cookie or device ID. The report deduplicates to
@@ -98,7 +98,7 @@ within its cap, but each person goes over it.</td>
 frequency. Check whether over-cap "users" have more than one device
 ID.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Unique users is an estimate, not a count</strong></td>
 <td>If the report estimates reach with a HyperLogLog sketch, uniques can
 be undercounted and frequency overstated.</td>
@@ -106,7 +106,7 @@ be undercounted and frequency overstated.</td>
 its HLL. That can't explain a gap this size, so this one is quickly
 <strong>ruled out</strong> unless the implementation is unusual.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Race on parallel requests</strong></td>
 <td>The search results page loads a carousel of six sponsored slots,
 plus lazy-loaded slots as the shopper scrolls. All the requests check
@@ -115,14 +115,14 @@ the counter before any impression gets written back.</td>
 under a second, and the same page-view ID shows up on several
 impressions.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Stale counters across regions</strong></td>
 <td>A user's requests land in two data centres, and the counter
 replicates asynchronously.</td>
 <td>Over-cap impressions are minutes apart and served from different
 regions. Overshoot rises with traffic or replication lag.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Counting at different points</strong></td>
 <td>The cap counter goes up when an ad is served or the auction is won.
 Reporting counts on begin-to-render (the IAB/MRC standard), or the
@@ -131,7 +131,7 @@ though the user saw nothing extra.</td>
 <td>Compare served IDs with rendered-beacon IDs. Duplicate beacons show
 up as identical impression IDs.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Configuration and scope</strong></td>
 <td>The cap was applied per line item, not per campaign (three line
 items × 3 = 9), or someone edited the cap mid-flight and the change

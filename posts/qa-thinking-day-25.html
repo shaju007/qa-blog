@@ -90,14 +90,14 @@ business consequence, not just a cosmetic bug.</p>
 checks rarely reach):</strong></p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Failure mode</th>
 <th>Why it happens</th>
 <th>Business consequence</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Missing last gasps in big events</strong></td>
 <td>Many meters transmit at once; messages collide on the mesh before
 the meter's stored energy runs out. A 2008 industry article reported
@@ -105,32 +105,32 @@ collisions can block a large share of last gasps in a large system,
 while noting prediction can still work with partial reporting.</td>
 <td>Under-predicted outage scope. Wrong device suspected.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>False outages</strong></td>
 <td>Meter removed or exchanged, tampering, planned disconnects, a single
 customer's main breaker</td>
 <td>Crews dispatched for nothing. Noisy operator queues.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Nested outages</strong></td>
 <td>Feeder restored, but one transformer or service is still out
 underneath it</td>
 <td>Crew leaves. Event closed. Customers still dark and told power is
 back.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Momentary misclassification</strong></td>
 <td>Restoration messages arrive late or out of order. The system uses
 <em>received</em> time instead of <em>event</em> time.</td>
 <td>Wrong SAIDI/SAIFI vs MAIFI. Spurious customer notifications.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Connectivity model errors</strong></td>
 <td>Meter mapped to the wrong transformer in GIS</td>
 <td>Prediction rolls up to the wrong device. Crew sent to the wrong
 location.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Event storms</strong></td>
 <td>Thousands of events per minute during a storm</td>
 <td>OMS backlog. Operators see stale state at the moment it matters
@@ -319,7 +319,7 @@ upward: aggregate sessions, not hours</h2>
 coverage-by-risk view built from session sheets:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Risk area</th>
 <th>Sessions</th>
 <th>Key findings</th>
@@ -328,14 +328,14 @@ coverage-by-risk view built from session sheets:</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Momentary/sustained classification</td>
 <td>2</td>
 <td>OMS-2231 (receipt-time duration)</td>
 <td>Low until fixed</td>
 <td>Per-meter clock skew untestable</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Nested outage restoration</td>
 <td>2</td>
 <td>Parent closes correctly; child "restored" SMS sent wrongly
@@ -343,14 +343,14 @@ coverage-by-risk view built from session sheets:</p>
 <td>Medium</td>
 <td>Only 1 topology tested</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Partial last-gasp reporting</td>
 <td>1</td>
 <td>Prediction holds down to ~10% delivery in our fixture</td>
 <td>Medium</td>
 <td>No realistic storm rate in test env</td>
 </tr>
-<tr class="even">
+<tr>
 <td>False positives (meter states)</td>
 <td>1</td>
 <td>Remote-disconnect meters create outages (OMS-2240)</td>

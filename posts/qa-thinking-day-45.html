@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="It&#39;s Saturday, 15:30. Your sports platform&#39;s &quot;Live Conference&quot; view shows nine matches at once. Sighted users look at the page whenever something catches their eye. A screen reader user can&#39;t do that. They hear">
+  <meta name="color-scheme" content="light">
+  <title>Testing Live Score Announcements: A Screen Reader User Can&#39;t Glance Away, So Every Update You Push Is an Interruption | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 45</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-45">QA Thinking — Day 45</h1>
+<h2
+id="testing-live-score-announcements-a-screen-reader-user-cant-glance-away-so-every-update-you-push-is-an-interruption">Testing
+Live Score Announcements: A Screen Reader User Can't Glance Away, So
+Every Update You Push Is an Interruption</h2>
+<p>It's Saturday, 15:30. Your sports platform's "Live Conference" view
+shows nine matches at once. Sighted users look at the page whenever
+something catches their eye. A screen reader user can't do that. They
+hear whatever the page announces, in whatever order, at whatever rate it
+decides.</p>
+<p>The team says the feature is accessible. Score cells have
+<code>aria-live</code>, axe reports no violations, and a developer heard
+VoiceOver say "2" when they triggered a goal locally.</p>
+<p>All of that can be true and the feature can still fail its users. A
+screen reader user following nine matches might hear the possession
+figure for match 4 while a goal in match 7 sits in the queue behind it.
+Or they might hear "2" with no team, match or minute attached. Or a VAR
+overturn might never be announced, so they believe a score that no
+longer exists.</p>
+<p>Today's lesson is about testing announcement behaviour as a product
+decision about <strong>where the user's attention goes</strong>, not as
+an ARIA attribute to tick off. It also covers how to turn your
+discomfort while listening to a feature into evidence a team will act
+on.</p>
+<hr />
+<h3 id="1-domain-primer-what-actually-changes-on-a-live-match-page">1.
+Domain primer: what actually changes on a live match page</h3>
+<p>To design announcements you first need to know which updates the page
+receives. A typical live match centre gets a normalized event stream.
+Upstream it comes from a data provider, whose data collectors log events
+in the stadium. The platform pushes it to clients over WebSocket or SSE.
+The updates fall into classes with very different urgency:</p>
+<table>
+<thead>
+<tr>
+<th>Update class</th>
+<th>Examples</th>
+<th>Frequency</th>
+<th>Does the user need to hear it now?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Clock ticks</strong></td>
+<td>Match minute, stoppage time</td>
+<td>Every second</td>
+<td>Almost never. They can ask for it.</td>
+</tr>
+<tr>
+<td><strong>Running stats</strong></td>
+<td>Possession %, shots, xG</td>
+<td>Every few seconds</td>
+<td>No. Pull on demand.</td>
+</tr>
+<tr>
+<td><strong>Key events</strong></td>
+<td>Goal, red card, penalty awarded</td>
+<td>A few per match</td>
+<td>Yes, for the matches the user follows</td>
+</tr>
+<tr>
+<td><strong>Minor events</strong></td>
+<td>Yellow card, substitution, corner</td>
+<td>Dozens per match</td>
+<td>Usually in a log the user can read</td>
+</tr>
+<tr>
+<td><strong>Corrections</strong></td>
+<td>VAR overturns a goal, goal reattributed to another scorer, event
+deleted</td>
+<td>Rare but critical</td>
+<td>Yes. Otherwise the user's mental model is wrong.</td>
+</tr>
+<tr>
+<td><strong>State transitions</strong></td>
+<td>Kick-off, HT, FT, suspended, abandoned</td>
+<td>A few per match</td>
+<td>Yes, often</td>
+</tr>
+<tr>
+<td><strong>Odds/markets</strong> (betting products)</td>
+<td>Price changes, market suspended</td>
+<td>Constant</td>
+<td>The price change, no. The suspension, possibly.</td>
+</tr>
+</tbody>
+</table>
+<p>Domain failure modes you should already be thinking about:</p>
+<ul>
+<li><strong>Bursts.</strong> Goal, VAR check, VAR decision, yellow card
+and a double substitution can all arrive within about 90 seconds.</li>
+<li><strong>Concurrency.</strong> On a Saturday afternoon, matches in
+parallel kick off at the same time, so their key events cluster.</li>
+<li><strong>Reconnect catch-up.</strong> The socket drops for 40
+seconds, the client resyncs, and twelve stored events arrive at
+once.</li>
+<li><strong>Corrections arrive as diffs.</strong> The score goes from
+2–1 to 1–1, and a naive implementation announces "1", which tells the
+user nothing.</li>
+</ul>
+<hr />
+<h3
+id="2-the-oracles-two-wcag-criteria-help-but-they-dont-decide-this-for-you">2.
+The oracles: two WCAG criteria help, but they don't decide this for
+you</h3>
+<p>Two WCAG 2.2 criteria are your <strong>reference oracles</strong>.
+You can point a team at them, but each one only goes so far.</p>
+<p><strong>SC 4.1.3 Status Messages (AA).</strong> Status messages that
+don't take focus must be programmatically determinable, so assistive
+tech can announce them without moving focus. The W3C Understanding
+document covers several points that matter here:</p>
+<ul>
+<li>It explicitly warns that live regions can make an application
+"chatty".</li>
+<li>It lists <code>role="alert"</code> /
+<code>aria-live="assertive"</code> on content that isn't important and
+time-sensitive as a failure.</li>
+<li>It recommends marking up the <strong>whole</strong> string ("3
+items"), not only the number that changed.</li>
+<li>It names <code>role="log"</code> (ARIA23) for sequential updates,
+which is close to what a live ticker is.</li>
+</ul>
+<p><strong>SC 2.2.2 Pause, Stop, Hide (A).</strong> Some auto-updating
+information starts automatically and is presented in parallel with other
+content. For that content the user needs a way to pause, stop or hide
+it, <strong>or control the frequency of updates</strong>, unless the
+updating is essential. The W3C's stock-ticker example is useful here.
+Pausing holds the current state. Resuming shows that the data is
+delayed. A separate control jumps to the latest value. That maps closely
+onto a live score ticker.</p>
+<p>Expect someone to say: "Real-time is essential to live scores, so
+2.2.2 doesn't apply." Ask a question back instead of arguing. The W3C
+defines "essential" as something that can't be removed without changing
+the information <em>and</em> that can't be achieved in a conforming way.
+A frequency control or a "key events only" mode is clearly achievable,
+so the exemption looks weak. That's a judgement for your accessibility
+specialist or legal team, not a ruling from you. Your job is to make
+sure someone actually decides it.</p>
+<p>Even full conformance doesn't answer the important question:
+<strong>can a screen reader user follow three matches during a busy ten
+minutes?</strong> To answer that you need to test with assistive
+technology.</p>
+<hr />
+<h3 id="3-why-aria-liveassertive-is-a-request-not-a-guarantee">3. Why
+<code>aria-live="assertive"</code> is a request, not a guarantee</h3>
+<p>Developers often fix "the goal wasn't announced quickly enough" by
+switching the region to <code>assertive</code>. Adrian Roselli's <a
+href="https://adrianroselli.com/2026/01/live-region-support.html">Live
+Region Support</a> results show why that fix proves little. In his
+testing with recent versions:</p>
+<ul>
+<li><strong>JAWS + Chrome, Narrator + Edge and Orca + Firefox</strong>
+treated all regions as polite.</li>
+<li><strong>NVDA 2024.1 and later</strong> treated both polite and
+assertive regions as polite. Only <code>role="alert"</code> behaved
+assertively, interrupting and then re-reading the interrupted
+content.</li>
+<li><strong>VoiceOver on macOS</strong> let assertive regions interrupt
+and <em>stop</em> reading.</li>
+<li><strong>No hidden live region announced in any combination
+tested</strong>, whether hidden with <code>hidden</code>,
+<code>aria-hidden</code> or <code>display:none</code>.</li>
+<li>Some results changed between minor browser versions. A pattern that
+JAWS announced with Chrome 143 failed with Chrome 144.</li>
+</ul>
+<p>What this means for your test design:</p>
+<ol type="1">
+<li><strong>"Assertive" can't be your only mechanism for
+urgency.</strong> On several common pairings it behaves the same as
+polite. Urgency has to come from <strong>reducing competing
+noise</strong>: don't announce clock ticks and possession at all.
+Wording and ordering matter more than the politeness level.</li>
+<li><strong>Hidden tab panels are a real risk in this domain.</strong>
+If match 7 is in a collapsed accordion or an inactive tab, its live
+region may never announce. Ask whether the product intends that. Should
+a user who follows match 7 hear its goal even when its panel is
+collapsed? That's a requirements question, so take it to
+refinement.</li>
+<li><strong>Your AT/browser matrix is part of the test plan,</strong>
+and it needs retesting when browsers update. Pick pairings from your own
+analytics or user research, not from habit.</li>
+</ol>
+<hr />
+<h3 id="4-from-this-feels-awful-to-a-bug-report-a-team-will-act-on">4.
+From "this feels awful" to a bug report a team will act on</h3>
+<p>Michael Bolton's <a
+href="https://developsense.com/blog/2015/09/oracles-from-the-inside-out-part-4-from-experience-to-inference">Oracles
+from the Inside Out, Part 4</a> describes recognising a problem as a
+progression:</p>
+<p><strong>experience</strong> (a private, tacit feeling) →
+<strong>inference</strong> (an explicit inconsistency you can state) →
+<strong>reference</strong> (a shared artifact others can point to) →
+<strong>conference</strong> (getting the problem understood by the
+people who decide)</p>
+<p>Listening to a live ticker with a screen reader is a strong source of
+experience-level oracles. You'll feel overwhelmed, lost or confused.
+Bolton's point is that the feeling isn't the bug report. It's the signal
+to do more work. Here's what that work looks like in this feature:</p>
+<p><strong>Experience:</strong> "I couldn't keep up. I'm not even sure
+what the score is in the Hamburg match."</p>
+<p><strong>Inference:</strong> Name the inconsistency, using a heuristic
+from Bolton's <a
+href="https://developsense.com/blog/2012/07/few-hiccupps">FEW
+HICCUPPS</a> list:</p>
+<ul>
+<li><em>Inconsistent with purpose:</em> the view exists so users can
+follow key events across matches, and key events were drowned out by
+stats updates.</li>
+<li><em>Inconsistent with the product itself:</em> the visual UI shows
+"1–1 (goal disallowed, VAR)", but the only announcement was "1".</li>
+<li><em>Inconsistent with comparable products:</em> a radio Konferenz
+broadcast cuts to a goal and states the score and the minute.</li>
+</ul>
+<p><strong>Reference:</strong> Attach things others can inspect:</p>
+<ul>
+<li>A screen recording with audio of NVDA + Firefox while you replay a
+recorded feed of minutes 66–70.</li>
+<li>An announcement count: "During this 4-minute window: 38
+announcements, 31 of them possession or shot counters. The disallowed
+goal was announced as '1' with no context."</li>
+<li>The relevant 4.1.3 passages on chattiness and whole-string
+markup.</li>
+</ul>
+<p><strong>Conference:</strong> Write for the decision-maker, not for
+the person who wrote the ARIA:</p>
+<blockquote>
+<p><strong>Risk:</strong> A screen reader user following the conference
+view can believe a score that has been overturned. In a replay of
+Saturday's 66–70' window, the VAR overturn was announced as "1" with no
+match or team, after 31 stat-counter announcements in the same window.
+On the betting product this means a user may make decisions on a stale
+score. <strong>Evidence:</strong> recording, announcement log, feed
+replay file attached. <strong>Decision needed:</strong> which update
+classes are announced at all, and what a correction must say. Proposed
+policy attached.</p>
+</blockquote>
+<p>Notice what this report leaves out. It doesn't say "fails WCAG". It
+doesn't say "use assertive". And it doesn't hand over a solution as the
+only option. You're bringing the team a risk and a decision, consistent
+with bug advocacy (Day 2) and influence without authority (Day 17).</p>
+<hr />
+<h3 id="5-test-design-charters-for-an-announcement-system">5. Test
+design: charters for an announcement system</h3>
+<p>Run these as exploratory sessions with a screen reader. Don't run
+them only in DevTools.</p>
+<p>First you need testability. Ask for two things:</p>
+<ol type="1">
+<li><strong>Feed replay.</strong> A recorded event stream (anonymised
+production data or a synthetic busy window) that you can replay at 1× or
+compressed speed.</li>
+<li><strong>An announcer service with a log.</strong> If every
+announcement goes through one client-side function that writes to the
+live region and also emits
+<code>{timestamp, matchId, class, text}</code> to a debug log, you can
+measure what the page <em>tried</em> to say. What the AT actually spoke
+is a separate question, and you answer that by listening.</li>
+</ol>
+<p><strong>Charter ideas:</strong></p>
+<ul>
+<li><strong>Burst:</strong> Replay goal → VAR check → VAR overturn →
+yellow → two subs within 90s. Does the user end with the correct score
+in their head? Is the correction announced as a correction ("Goal
+disallowed after VAR review. Hamburg 1, St. Pauli 1, 69th minute") or as
+a bare number?</li>
+<li><strong>Concurrency:</strong> Two goals in different matches within
+3 seconds. Are both announced? Does each one identify its match? Does
+the second interrupt the first on VoiceOver?</li>
+<li><strong>Reconnect flood:</strong> Kill the socket for 60s mid-burst,
+then reconnect. Does the client replay twelve stale announcements, or
+summarise ("While you were disconnected: 2 goals, Hamburg 2–1 …")? Stale
+announcements presented as new are a correctness bug, not only a
+usability one.</li>
+<li><strong>Interaction collision:</strong> Tab through a bet slip or
+settings form while events arrive. Does an announcement interrupt a form
+field label? Does the user lose their place?</li>
+<li><strong>Pause / frequency control (2.2.2):</strong> Pause, let three
+events happen, then resume. Is the user told that the data is delayed?
+Is there a "jump to latest" option? Does resume replay everything or
+summarise?</li>
+<li><strong>Collapsed and hidden panels:</strong> Follow a match whose
+panel is collapsed. Compare what the product <em>intends</em> with what
+the live region does. Roselli's results predict silence.</li>
+<li><strong>State edges:</strong> Match suspended (weather), abandoned,
+result later corrected after FT, postponed before kick-off. Each of
+these needs words, not only a CSS class.</li>
+<li><strong>Language and formatting:</strong> Does "2:1" get read as a
+time ("two one" or "two colon one")? Does "67'" get read as "67
+apostrophe"? Do screen readers on a German-language page pronounce
+English team names sensibly?</li>
+</ul>
+<p><strong>What to automate and what not to:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Automate (cheap, stable, catches regressions)</th>
+<th>Keep human (no oracle without a listener)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Live region containers exist in the DOM at page load, before any
+update</td>
+<td>Whether the speech is understandable during a burst</td>
+</tr>
+<tr>
+<td>Announcement log: counts per class per minute stay within policy
+(e.g. 0 clock/stats announcements by default)</td>
+<td>Interruption and queue behaviour per AT/browser pairing</td>
+</tr>
+<tr>
+<td>Announcement text for corrections matches a template that includes
+match, teams, score and minute</td>
+<td>Whether the user's mental model of the score is right at the
+end</td>
+</tr>
+<tr>
+<td>No <code>role="alert"</code>/assertive on non-urgent classes, as a
+lint/unit rule</td>
+<td>Whether the policy itself is the right product decision</td>
+</tr>
+</tbody>
+</table>
+<p>The automated checks guard the <strong>policy</strong>. Human
+sessions test whether the <strong>policy works for people</strong>.</p>
+<hr />
+<h3 id="6-the-conversation-that-makes-this-stick">6. The conversation
+that makes this stick</h3>
+<p>The deliverable that matters most isn't a bug. It's an
+<strong>announcement policy</strong> agreed in refinement, written as
+acceptance criteria. You'll probably facilitate it, because nobody else
+is looking at the whole picture:</p>
+<ul>
+<li><strong>Product owner:</strong> Which update classes matter to which
+users? Does a user following one match want different behaviour from a
+user on the nine-match view?</li>
+<li><strong>Developers:</strong> Is there a single announcer service?
+Can we log and throttle there?</li>
+<li><strong>Data/feed team:</strong> How do corrections arrive: as new
+events, as deletions, or as silent replacements? A correction you can't
+detect, you can't announce.</li>
+<li><strong>Accessibility specialist and, ideally, screen reader
+users:</strong> Real users will show you things your own listening
+won't. A tester using a screen reader for a day is not the same as
+someone who uses one every day. Say this plainly in your report, and
+push for real-user sessions on high-traffic features.</li>
+</ul>
+<p>Asking questions works better than accusing. "What should a user who
+follows match 7 hear when its panel is collapsed?" gets a design
+discussion. "Your live regions are broken" gets defensiveness.</p>
+<hr />
+<h3 id="practical-challenge-4560-minutes">Practical challenge (45–60
+minutes)</h3>
+<p>Here's a four-minute feed excerpt from the conference view. Assume a
+stats update every 5 seconds per match.</p>
+<pre><code>67:12  M1  GOAL         Hamburg 2–1 St. Pauli (Scorer: #9)
+67:40  M1  VAR_CHECK    possible offside
+68:02  M4  GOAL         Bremen 1–0 Freiburg
+68:55  M1  VAR_DECISION goal disallowed → 1–1
+69:10  M1  YELLOW       St. Pauli #5
+69:30  M4  SUB x2       Bremen
+70:05  M1  EVENT_EDIT   67:12 goal event deleted (provider correction)</code></pre>
+<ol type="1">
+<li><strong>Count.</strong> Suppose every update, stats included,
+announces for the two matches shown. How many announcements happen in
+this window? Write the number down. It's your opening line of
+evidence.</li>
+<li><strong>Write the policy.</strong> For each update class, decide:
+announce now, log only, or on demand. Write the exact announcement text
+for the 68:55 overturn and the 70:05 edit. Should 70:05 be announced at
+all? Justify it in one sentence from the user's point of view.</li>
+<li><strong>Write three charters</strong> from section 5 for this
+excerpt, each with a target AT/browser pairing and a specific way the
+feature could fail.</li>
+<li><strong>Write the conference-level report</strong> in under 120
+words, using Bolton's progression. Include one inconsistency you can
+name, one reference artifact, and the decision you need from the
+PO.</li>
+<li><strong>Stretch:</strong> Turn on NVDA (free) or VoiceOver on any
+live-score site you can reach. Listen for five minutes during a live
+match. Note one moment where you felt lost, then write down the
+inference: which inconsistency caused it?</li>
+</ol>
+<hr />
+<h3 id="sources">Sources</h3>
+<ul>
+<li>W3C, <a
+href="https://www.w3.org/WAI/WCAG22/Understanding/status-messages">Understanding
+SC 4.1.3: Status Messages (WCAG 2.2)</a>: definitions, the "chatty"
+warning, whole-string guidance, the <code>role="log"</code>/ARIA23
+technique.</li>
+<li>W3C, <a
+href="https://www.w3.org/WAI/WCAG22/Understanding/pause-stop-hide">Understanding
+SC 2.2.2: Pause, Stop, Hide (WCAG 2.2)</a>: auto-updating content,
+frequency control, the stock-ticker example, the "essential"
+exception.</li>
+<li>Adrian Roselli, <a
+href="https://adrianroselli.com/2026/01/live-region-support.html">Live
+Region Support</a> (January 2026, with later updates): live region
+behaviour across screen reader and browser pairings.</li>
+<li>Michael Bolton (DevelopSense), <a
+href="https://developsense.com/blog/2015/09/oracles-from-the-inside-out-part-4-from-experience-to-inference">Oracles
+from the Inside Out, Part 4: From Experience to Inference</a>: moving
+from a tacit feeling to a shared, explicit problem statement.</li>
+<li>Michael Bolton (DevelopSense), <a
+href="https://developsense.com/blog/2012/07/few-hiccupps">FEW
+HICCUPPS</a>: consistency heuristics for naming the inconsistency.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-44.html" rel="prev"><span>Previous</span>An Amount Is Not a Number: Domain-Testing Multi-Currency Payments When Your Two Payment Providers Disagree About Decimals</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

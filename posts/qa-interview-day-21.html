@@ -93,7 +93,7 @@ in the abstract, I'd take a handful of real tickets. These are
 illustrative examples:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Bug</th>
 <th>Test that "would have caught it"</th>
 <th>Better prevention</th>
@@ -101,7 +101,7 @@ illustrative examples:</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>Free-shipping threshold uses the pre-voucher total</td>
 <td>UI test: €55 basket, voucher, check shipping</td>
 <td>Table-driven service test of the rule "shipping is based on the
@@ -109,7 +109,7 @@ post-discount merchandise total" for every discount type (voucher,
 bundle, staff, gift card)</td>
 <td>Yes, but covering the rule, not the single incident</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Austrian VAT rate wrong after a config edit</td>
 <td>A test asserting "AT = 20%"</td>
 <td>Validate the tax config against its source during deploy, and get a
@@ -117,7 +117,7 @@ second pair of eyes on config changes</td>
 <td>The hard-coded assertion just repeats the config. Validate the
 pipeline instead</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Double order when a customer taps "Buy" twice on a slow
 connection</td>
 <td>UI test with simulated network latency</td>
@@ -126,7 +126,7 @@ key creates one order, plus a database uniqueness constraint</td>
 <td>Yes, at the API layer. A timing-dependent UI test would be
 flaky</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Payment provider changed the casing of its webhook signature
 header</td>
 <td>A test against our own mock, which would never fail</td>
@@ -135,7 +135,7 @@ case-insensitively, and review provider changelogs</td>
 <td>Mostly a production monitor. Our own test can't see a change made by
 the provider</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>"Buy now" button hidden behind the cookie banner on small iPhones in
 German</td>
 <td>Screenshot test on every device</td>
@@ -143,7 +143,7 @@ German</td>
 possibly one visual check for the narrowest supported viewport</td>
 <td>Maybe one check. Not one per device</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Typo in a transactional email</td>
 <td>Assert on the email text</td>
 <td>Fix it</td>

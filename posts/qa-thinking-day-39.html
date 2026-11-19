@@ -63,19 +63,19 @@ uptime.</li>
 <p><strong>The on-sale lifecycle and its vocabulary:</strong></p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Stage</th>
 <th>What happens</th>
 <th>Typical business rules</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Pre-queue</strong></td>
 <td>Early arrivals wait on a countdown page</td>
 <td>Arrival before start shouldn't give an advantage</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Queue randomization</strong></td>
 <td>At start time, everyone in the pre-queue gets a random position.
 Queue-it, for example, <a
@@ -84,37 +84,37 @@ waiting room</a> as randomizing on-time visitors and then serving
 latecomers first-in, first-out</td>
 <td>Boundary at T₀: who counts as "on time"?</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Admission</strong></td>
 <td>Users are let through at a controlled <em>inflow rate</em> and get a
 token that grants access to the protected site</td>
 <td>One token per visitor; tokens expire; tokens shouldn't be
 shareable</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Selection</strong></td>
 <td>Seat map or "best available" within a <em>price level</em></td>
 <td>Some seats are held back by the venue or promoter and never go on
 sale; presale codes unlock some allocations</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Hold</strong></td>
 <td>Selected seats are reserved for a limited time</td>
 <td>Unpaid holds go back to the pool when they expire; per-account
 ticket limits apply</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Payment</strong></td>
 <td>Authorize and capture</td>
 <td>A hold expiring during payment is the classic race condition</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Fulfilment</strong></td>
 <td>Mobile ticket, often with a rotating barcode</td>
 <td>Only issue a ticket for a captured payment, and issue it exactly
 once</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Afterlife</strong></td>
 <td>Transfer, resale, cancellation/refund</td>
 <td>Resale price caps, refund rules for fees, name changes</td>
@@ -210,33 +210,33 @@ ledger</h4>
 claims into four bins:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Bin</th>
 <th>Wording</th>
 <th>Example from tomorrow's on-sale</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Observed</strong></td>
 <td>"I saw…"</td>
 <td>"I saw the total price, fees included, on the event page, seat-map
 tooltip and checkout for US events on web, desktop and mobile
 Chrome."</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Inferred</strong></td>
 <td>"I infer… because…"</td>
 <td>"I infer the iOS app shows the same totals because it calls the same
 pricing endpoint. I haven't looked at the app."</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Assumed</strong></td>
 <td>"We're assuming…"</td>
 <td>"We're assuming the hold-release job keeps up at peak. Load testing
 ran at 40% of expected admissions/minute."</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Not covered</strong></td>
 <td>"I haven't checked…, and here's why it matters…"</td>
 <td>"I haven't checked the 'sort by price' filter, the confirmation

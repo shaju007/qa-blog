@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Most of the defects you report show the product breaking a rule. The incidents that cost a marketplace the most money often look different: the product follows every rule and still ends up paying someone it nev">
+  <meta name="color-scheme" content="light">
+  <title>Testing Marketplace Promotions for Abuse: The Attacker Follows Your Rules More Carefully Than Your Customers Do | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 43</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-43">QA Thinking — Day 43</h1>
+<h2
+id="testing-marketplace-promotions-for-abuse-the-attacker-follows-your-rules-more-carefully-than-your-customers-do">Testing
+Marketplace Promotions for Abuse: The Attacker Follows Your Rules More
+Carefully Than Your Customers Do</h2>
+<p>Most of the defects you report show the product <strong>breaking a
+rule</strong>. The incidents that cost a marketplace the most money
+often look different: the product <strong>follows every rule</strong>
+and still ends up paying someone it never meant to pay.</p>
+<p>The OWASP Top 10 for Business Logic Abuse (first published in 2025)
+says business logic abuse "thrives when systems function exactly as
+intended, but not as expected." Keep that sentence in mind for today's
+lesson. A promotion can pass every acceptance criterion and still turn
+into a cash machine for anyone patient enough to read the rules
+closely.</p>
+<p>Today's subject is promotion and incentive abuse on a two-sided
+marketplace. You'll practise three things:</p>
+<ol type="1">
+<li><strong>Technical judgment:</strong> turning "think like an
+attacker" into concrete, repeatable test ideas.</li>
+<li><strong>Domain knowledge:</strong> who actually pays for a discount,
+and why that decides how dangerous the discount is.</li>
+<li><strong>Soft skills:</strong> raising abuse risk without sounding
+paranoid, and without hearing "that's the fraud team's problem" or
+"works as designed" in reply.</li>
+</ol>
+<hr />
+<h2 id="1-start-with-users-you-dont-want">1. Start with users you don't
+want</h2>
+<p>Michael Bolton wrote about this in his column <a
+href="https://www.developsense.com/articles/2007-08-UsersWeDontLike.pdf">"Users
+We Don't Like"</a>. Testers usually model the users the product is built
+for. You learn a lot more when you also model <strong>disfavored
+users</strong>: people whose goals you deliberately want to frustrate,
+such as fraudsters, data thieves and people who exploit policy
+loopholes. He also covers a second group: users we say we care about but
+whose needs we quietly ignore.</p>
+<p>Most teams talk about disfavored users only during security reviews,
+and then only about hackers. On a marketplace, the dangerous disfavored
+users are mostly <strong>ordinary account holders with spare time and a
+spreadsheet</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Disfavored user</th>
+<th>What they want</th>
+<th>Feature they love</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The self-dealing seller</td>
+<td>Turn platform money into their own payout</td>
+<td>New-buyer voucher, platform-funded promos</td>
+</tr>
+<tr>
+<td>The referral farmer</td>
+<td>Mint credit from fake accounts</td>
+<td>"Give €10, get €10"</td>
+</tr>
+<tr>
+<td>The threshold gamer</td>
+<td>Get the discount, then undo the purchase that qualified for it</td>
+<td>"€10 off orders over €60", free-shipping thresholds</td>
+</tr>
+<tr>
+<td>The scalper</td>
+<td>Buy limited stock faster than humans</td>
+<td>Limited drops, launch-day promos</td>
+</tr>
+<tr>
+<td>The code harvester</td>
+<td>Find valid codes without being given one</td>
+<td>Voucher validation endpoint</td>
+</tr>
+</tbody>
+</table>
+<p><strong>How to apply it at work:</strong> in refinement for any
+feature involving money, credit, scarcity or reputation, ask one
+question: <em>"Who would love this feature for the wrong reasons?"</em>
+Write down the answers as personas. You can test against a persona. You
+can't test against "security".</p>
+<hr />
+<h2 id="2-domain-knowledge-who-funds-the-discount">2. Domain knowledge:
+who funds the discount?</h2>
+<p>A marketplace isn't a shop. The platform sits between buyers and
+sellers, takes a fee (commission, a payment fee or both) and pays
+sellers later. Before you test any promotion, find out who funds it,
+because that decides who loses money when it's abused.</p>
+<ul>
+<li><strong>Seller-funded discount:</strong> the seller chooses to sell
+for less. Abuse mostly hurts the seller, who opted in.</li>
+<li><strong>Platform-funded discount (subsidy):</strong> the buyer pays
+less, and the <strong>seller still receives the full price minus
+fees</strong>. The platform pays the difference out of its marketing
+budget.</li>
+<li><strong>Co-funded:</strong> split by a rule, such as 50/50 or
+"platform covers up to €5".</li>
+</ul>
+<p>The key point: <strong>on a platform-funded promotion, a seller who
+buys from themselves turns the subsidy into a payout.</strong> Here's
+how it works:</p>
+<ol type="1">
+<li>A seller lists an item at €40.</li>
+<li>They create a "new buyer" account and apply the platform's €15
+first-order voucher.</li>
+<li>They pay €25, and the platform's checkout covers the other €15.</li>
+<li>The seller ships nothing or an empty envelope. Or the "buyer" just
+confirms receipt, because both accounts belong to the same person.</li>
+<li>The payout is €40 minus commission. The seller has turned €25 into
+roughly €35. Repeat with the next email address.</li>
+</ol>
+<p>No code was broken. Every step matched the spec. That's why this risk
+lives <em>between</em> teams: growth owns the voucher, payments owns the
+payout, trust &amp; safety owns account linking, and nobody owns the gap
+between them.</p>
+<p>Other domain terms worth knowing before you talk to stakeholders:</p>
+<ul>
+<li><strong>Payout hold / delay:</strong> how long seller funds stay
+with the platform after delivery. This is your biggest lever against
+cash-out abuse.</li>
+<li><strong>Promo budget / burn:</strong> marketing tracks how fast the
+voucher budget is spent. A sudden burn spike is often the first visible
+sign of abuse.</li>
+<li><strong>Clawback:</strong> taking back credit or subsidy after a
+refund or cancellation. It only works if the system remembers who funded
+what.</li>
+<li><strong>Velocity:</strong> how many events happen per account,
+device, card or payout account in a time window.</li>
+</ul>
+<hr />
+<h2 id="3-turn-abuse-into-test-ideas-using-a-taxonomy">3. Turn abuse
+into test ideas, using a taxonomy</h2>
+<p>"Try to abuse it" is too vague to plan with. Use the OWASP <a
+href="https://owasp.org/www-project-top-10-for-business-logic-abuse/?tab=top10">Top
+10 for Business Logic Abuse</a> as a checklist of failure
+<em>shapes</em>, then translate each one into your domain. Here are the
+categories that matter most for promotions:</p>
+<p><strong>BLA1: Action Limit Overrun (single-use isn't single-use under
+concurrency).</strong> A voucher check usually runs <em>check the code
+is unused → apply → mark used</em>. PortSwigger's <a
+href="https://portswigger.net/web-security/race-conditions">race
+conditions guide</a> calls the gap between check and update the "race
+window". It describes how sending many requests at the same moment, for
+example with HTTP/2's single-packet technique, lets several of them pass
+the "unused" check before any of them writes "used". <em>Test idea:</em>
+in staging, send 20 identical "apply voucher and place order" requests
+in parallel from two sessions on the same account. <strong>Your oracle
+isn't the HTTP response. It's the ledger:</strong> count redemptions for
+that voucher ID, and count the platform subsidy actually booked.</p>
+<p><strong>BLA6: Missing Transition Validation (eligibility checked
+once, never again).</strong> PortSwigger's <a
+href="https://portswigger.net/web-security/logic-flaws/examples">logic-flaw
+examples</a> describe "discount stacking": add items to cross a
+threshold, get the discount, then remove items and keep it. Marketplaces
+have a harder version: a <strong>multi-seller cart</strong>. <em>Test
+idea:</em> the cart holds items from three sellers, totals €62 and
+qualifies for "€10 off over €60". Seller B cancels their €25 item after
+checkout because it's out of stock. Answer three questions: Is the buyer
+still entitled to €10? Who absorbs the refund difference? Was the €10
+split across sellers, and how? Then try the same thing as a
+<em>buyer-initiated</em> partial return 3 days later.</p>
+<p><strong>BLA5: Artifact Lifetime Exploitation (a voucher that comes
+back to life).</strong> Order cancelled → voucher reinstated, which is
+reasonable. Now combine that with a payout that has already happened, or
+with a dispute the buyer wins later. <em>Test idea:</em> redeem, cancel,
+check the voucher is reinstated, redeem again, then raise a chargeback
+on the first order. Count how many times the subsidy was paid out in
+total.</p>
+<p><strong>BLA8: Internal State Disclosure (the validation endpoint as
+an oracle for attackers).</strong> If
+<code>POST /vouchers/validate</code> returns "expired" for real codes
+and "invalid" for made-up ones, anyone can enumerate the code space.
+<em>Test idea:</em> compare the response body, status code, <strong>and
+response time</strong> for a nonexistent code, an expired code, a code
+already used by someone else and a valid code. Any difference you can
+tell apart is information you're handing out.</p>
+<p><strong>API6:2023, Unrestricted Access to Sensitive Business
+Flows.</strong> The <a
+href="https://api-security.owasp.org/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows">OWASP
+API Security Top 10 entry</a> lists three scenarios: automated scalping,
+mass-booking and then cancelling to force a price drop, and
+<strong>scripted registrations to farm referral credit</strong>. Note
+what it says about prevention: it starts at the <em>business</em> layer
+by identifying which flows would hurt if used at machine speed, and only
+then moves to engineering controls. <em>Test idea:</em> script the
+referral flow end to end in staging, then answer: <em>what, if anything,
+stops the 50th account linked to the same device, delivery address or
+payout IBAN?</em></p>
+<h3 id="oracles-that-actually-catch-abuse">Oracles that actually catch
+abuse</h3>
+<p>When you test abuse, the UI and status codes will usually say
+"success", because from the system's point of view it <em>was</em> a
+success. Use <strong>invariants</strong> instead:</p>
+<ul>
+<li>Platform subsidy booked per single-use voucher ≤ face value,
+always.</li>
+<li>For every order: buyer paid + platform subsidy = seller payout +
+platform fee + refunds (+ subsidy clawed back).</li>
+<li>No payout account receives seller funds from orders whose buyer
+funding came mainly from subsidies granted to accounts linked to that
+payout account. That's harder to check, but it's the actual risk.</li>
+<li>Promo burn rate per hour stays within an expected band. If it
+doesn't, someone gets alerted. <em>Find out who.</em></li>
+</ul>
+<p>The last one tests observability, not code. Asking "if this were
+happening in production right now, who would notice, and when?" is often
+your most valuable finding.</p>
+<hr />
+<h2 id="4-the-hard-part-getting-anyone-to-care">4. The hard part:
+getting anyone to care</h2>
+<p>Testers often find abuse paths and then lose the conversation. Here
+are the three objections you'll hear, and what to do about each.</p>
+<h3 id="works-as-designed">"Works as designed."</h3>
+<p>Agree with them, because it's true, and then reframe. Bolton's
+definition of a bug is anything that threatens the value of the product
+to someone who matters. The design is the problem, and the person who
+matters is whoever owns the promo budget or the P&amp;L.</p>
+<blockquote>
+<p>"Yes, every step is behaving as specified. The question I'm raising
+is whether the spec intends a seller to be able to fund their own sales
+with the new-buyer budget. If it does, fine. Let's write that down. If
+it doesn't, the spec has a gap."</p>
+</blockquote>
+<p>Saying it this way removes the blame (nobody coded it wrong) and
+turns the finding into a <strong>product decision</strong>, which is
+where it belongs.</p>
+<h3 id="thats-fraudtrust--safetys-job">"That's fraud/trust &amp;
+safety's job."</h3>
+<p>Partly true. They own detection and response. But fraud teams usually
+see the abuse <strong>after</strong> the money has left. You're in the
+room <strong>before</strong> launch, when a payout delay or a redemption
+cap costs nothing to add. Don't hand the finding over and walk away.
+Bring the fraud analyst into the conversation with a concrete scenario
+and ask them: "Would your current rules catch this? How quickly?" Their
+answer <em>is</em> evidence.</p>
+<h3 id="youre-being-paranoid-real-users-dont-do-this">"You're being
+paranoid. Real users don't do this."</h3>
+<p>Don't argue about likelihood in general. Make the economics of the
+attack visible. For each abuse case, report:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Self-dealing example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Actor &amp; motive</strong></td>
+<td>Seller; wants cash from platform subsidy</td>
+</tr>
+<tr>
+<td><strong>Cost to attacker per attempt</strong></td>
+<td>One email address, ~5 minutes, one cheap listing</td>
+</tr>
+<tr>
+<td><strong>Gain per attempt</strong></td>
+<td>~€10–13 net after commission</td>
+</tr>
+<tr>
+<td><strong>Scales by</strong></td>
+<td>Accounts, so it's limited only by account-creation friction</td>
+</tr>
+<tr>
+<td><strong>Who pays</strong></td>
+<td>Platform marketing budget (not the seller, not the buyer)</td>
+</tr>
+<tr>
+<td><strong>Would we notice?</strong></td>
+<td>Not before payout. No alert on voucher burn per payout account
+(<em>verified with X on date</em>)</td>
+</tr>
+<tr>
+<td><strong>Cheapest mitigations, by friction</strong></td>
+<td>1) Exclude orders where buyer and seller share device/address/IBAN
+signals from subsidy; 2) hold payout on subsidised first orders until N
+days after delivery; 3) cap subsidised orders per seller per day; 4)
+heavier identity checks (high friction, last resort)</td>
+</tr>
+<tr>
+<td><strong>What I did NOT test</strong></td>
+<td>Production fraud rules, device-fingerprint quality, collusion
+between genuinely different people</td>
+</tr>
+</tbody>
+</table>
+<p>This puts you in the <strong>negotiation</strong> with a menu, not an
+ultimatum. Growth wants zero friction for new buyers. Finance wants zero
+leakage. Neither can have all of what they want. The tester's job is to
+make the trade-off <strong>visible and priced</strong> so the people who
+own it can choose consciously. If they accept the risk, that's a
+legitimate outcome. Get it in writing, with a monitoring trigger that
+reopens the decision ("if subsidy burn per payout account goes above X,
+we revisit").</p>
+<h3 id="facilitation-a-25-minute-abuse-case-session">Facilitation: a
+25-minute abuse-case session</h3>
+<p>Run this in refinement for any incentive feature:</p>
+<ol type="1">
+<li><strong>(5 min) Money map.</strong> On a whiteboard: who pays, who
+receives, and when money moves. Mark every place where value is
+<em>created</em> (voucher issued, credit granted).</li>
+<li><strong>(10 min) Disfavored personas.</strong> Each person writes
+one "user we don't like" and their best play. Silent writing first, so
+the most senior voice doesn't anchor the room.</li>
+<li><strong>(5 min) Rank</strong> by gain per attempt × how easily it
+scales × how late we'd detect it.</li>
+<li><strong>(5 min) Decide</strong> for the top 2: test it, mitigate it,
+monitor it, or accept it (and name who accepts it).</li>
+</ol>
+<p>If you need permission to hold the session, ask the product owner
+like this: "I'd like 25 minutes to check that the voucher budget goes to
+new buyers and not to whoever reads the T&amp;Cs most carefully." It's
+hard to say no to.</p>
+<hr />
+<h2 id="5-guardrails-be-an-ethical-attacker">5. Guardrails: be an
+ethical attacker</h2>
+<ul>
+<li>Do this in <strong>test or staging environments</strong>, with test
+payment instruments, and with your security team aware of it when you
+use concurrency tools. Don't fire race-condition traffic or mass account
+creation at production. Don't create fake accounts on live systems "to
+see what happens".</li>
+<li>Treat working abuse recipes as <strong>sensitive
+information</strong>. Put them in a restricted ticket, not the public
+channel or the release notes.</li>
+<li>If a finding touches real customer money or data, escalate through
+the security process rather than ordinary bug triage.</li>
+</ul>
+<hr />
+<h2
+id="todays-challenge-carry-the-skill-into-a-different-domain">Today's
+challenge: carry the skill into a different domain</h2>
+<p>A German energy supplier is launching a <strong>new-customer
+bonus</strong>: €120 credited to the customer's account, paid out after
+the customer has been supplied for 12 months. There's also a
+<strong>"recommend a friend" credit</strong> of €50 for both parties,
+granted when the friend's supply starts.</p>
+<p>Spend 45 minutes on this:</p>
+<ol type="1">
+<li><strong>Money map (10 min).</strong> Who funds each incentive? When
+is the value <em>granted</em>, when is it <em>paid</em>, and when could
+it be <em>clawed back</em>? Pay attention to moving house, changing
+supplier before 12 months, a contract being taken over by another
+household member, and final bills.</li>
+<li><strong>Three disfavored personas (10 min).</strong> For example: a
+household that switches back and forth between suppliers to collect
+bonuses, someone who "refers" their own second meter point or a relative
+at the same address, or a reseller managing many small commercial
+meters. For each persona, write down their play and the gain per
+attempt.</li>
+<li><strong>Map to the taxonomy (10 min).</strong> Match each play to a
+BLA category (limit overrun, missing transition validation, artifact
+lifetime…). Find at least one that is about <strong>time</strong>, not
+concurrency.</li>
+<li><strong>Write two invariants (5 min)</strong> that would catch the
+abuse in the billing data even if every API call returns success.</li>
+<li><strong>Write the one-paragraph risk note (10 min)</strong> you'd
+send the product owner, using the "actor / cost / gain / scales by / who
+pays / would we notice / mitigations / not tested" structure. Keep it
+under 150 words. Don't use the words "hacker" or "obviously".</li>
+</ol>
+<p><strong>Stretch:</strong> find a real incentive in your own product
+(trial, credit, voucher, free tier, loyalty points) and run step 1 on it
+this week. If you can't answer "who pays, and when?" in under 5 minutes,
+that gap is your first finding.</p>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li>Michael Bolton, <a
+href="https://www.developsense.com/articles/2007-08-UsersWeDontLike.pdf">"Users
+We Don't Like"</a>, <em>Better Software</em> column (DevelopSense):
+disfavored users as a testing heuristic.</li>
+<li>OWASP, <a
+href="https://owasp.org/www-project-top-10-for-business-logic-abuse/?tab=top10">Top
+10 for Business Logic Abuse (2025)</a>: taxonomy used in section 3; <a
+href="https://owasp.org/www-project-top-10-for-business-logic-abuse/">project
+overview</a>.</li>
+<li>OWASP API Security Top 10, <a
+href="https://api-security.owasp.org/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows">API6:2023
+Unrestricted Access to Sensitive Business Flows</a>: scalping,
+mass-booking and referral-farming scenarios, and the
+business-layer-first approach to prevention.</li>
+<li>PortSwigger Web Security Academy, <a
+href="https://portswigger.net/web-security/race-conditions">Race
+conditions</a>: limit-overrun, race windows, the single-packet attack,
+and atomic fixes.</li>
+<li>PortSwigger Web Security Academy, <a
+href="https://portswigger.net/web-security/logic-flaws/examples">Examples
+of business logic vulnerabilities</a>: discount stacking and flawed
+assumptions about user behaviour.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-42.html" rel="prev"><span>Previous</span>&quot;How Long Will Testing Take?&quot; Is a Negotiation: Estimating a §14a Grid-Dimming Release Without Making a Promise You Can&#39;t Keep</a><a href="/qa-blog/posts/qa-thinking-day-44.html" rel="next"><span>Next</span>An Amount Is Not a Number: Domain-Testing Multi-Currency Payments When Your Two Payment Providers Disagree About Decimals</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

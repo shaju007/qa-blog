@@ -139,33 +139,33 @@ Design the tests as a decision table, not a list of examples</h3>
 <p>Model the rule explicitly. These are the conditions:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Condition</th>
 <th>Values worth testing</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><code>Created</code> day</td>
 <td>before 2026-03-01 / 2026-03-01 / after / future-dated</td>
 </tr>
-<tr class="even">
+<tr>
 <td><code>disclosedVendors</code> segment</td>
 <td>absent / present / present but malformed</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>Our bit in <code>disclosedVendors</code></td>
 <td>1 / 0 / our ID beyond the encoded range</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Our basis for purpose X in the encoded GVL</td>
 <td>consent / LI / not declared</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>User signal for purpose X</td>
 <td>consent=1 / consent=0 / LI objection</td>
 </tr>
-<tr class="even">
+<tr>
 <td>Special purposes declared by us</td>
 <td>yes / no</td>
 </tr>

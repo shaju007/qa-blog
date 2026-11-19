@@ -73,13 +73,13 @@ id="step-2-reconstruct-the-failure-from-evidence-not-from-guesses">Step
 timeline after reading the logs:</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Time</th>
 <th>What happened</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td>15:42:10</td>
 <td>Provider sends <code>goal</code> event <code>G-881</code>. Our
 webhook handler is slow under kickoff load and responds after the
@@ -87,19 +87,19 @@ provider's timeout. The provider records the delivery as failed and
 schedules a retry. Our handler still finishes the work: score 1–0, push
 sent.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>15:43:30</td>
 <td>VAR disallows the goal. Provider sends <code>goal_cancelled</code>
 referencing <code>G-881</code>. Our handler <strong>deletes</strong> the
 goal record. Score 0–0.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td>15:44:05</td>
 <td>The provider retries <code>G-881</code>. Our deduplication looks up
 the goal record, finds nothing because it was deleted, and treats the
 event as new. Score 1–0 again, second push sent.</td>
 </tr>
-<tr class="even">
+<tr>
 <td>15:51:00</td>
 <td>Our 10-minute reconciliation poll fetches the provider's match
 snapshot and corrects the score to 0–0.</td>

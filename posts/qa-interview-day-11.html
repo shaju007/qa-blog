@@ -121,14 +121,14 @@ test, the environment, or the product?</li>
 comes with a reason you can defend.</p>
 <table>
 <thead>
-<tr class="header">
+<tr>
 <th>Group</th>
 <th>Typical members</th>
 <th>Action</th>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
+<tr>
 <td><strong>Gate: keep end-to-end on every PR</strong> (~60–100
 tests)</td>
 <td>Create and launch a campaign. <strong>Pause a campaign</strong> (if
@@ -137,7 +137,7 @@ and approval. Login and roles.</td>
 <td>Make them fast and isolated, with seeded per-run accounts and no
 shared budgets.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Push down a level</strong></td>
 <td>Hundreds of form-validation tests going through the UI. Targeting
 combinations (geo × device × audience) run as UI permutations.</td>
@@ -146,7 +146,7 @@ combinations. Pacing and frequency-cap logic gets service-level tests
 with a controlled clock, so you're not waiting on wall time in a
 browser.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Move off the PR path</strong></td>
 <td>Long reporting reconciliations, cross-browser runs, integrations
 with third-party exchanges and ad-verification vendors.</td>
@@ -154,7 +154,7 @@ with third-party exchanges and ad-verification vendors.</td>
 reads the results. Replace live third-party calls in the gate with test
 doubles plus contract checks, as Fowler suggests.</td>
 </tr>
-<tr class="even">
+<tr>
 <td><strong>Quarantine with a deadline</strong></td>
 <td>Tests that are truly non-deterministic and cover a risk that
 matters.</td>
@@ -162,7 +162,7 @@ matters.</td>
 no more than a week. When the limit is hit, the test is either fixed or
 explicitly deleted.</td>
 </tr>
-<tr class="odd">
+<tr>
 <td><strong>Delete</strong></td>
 <td>Tests for retired features. Exact duplicates of lower-level checks.
 Checks of things nobody would act on if they failed (pixel-exact copy
