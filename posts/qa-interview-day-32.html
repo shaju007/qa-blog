@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scenario: a self-serve retail-media platform where advertisers run sponsored-product campaigns on a marketplace. The product details below are made up for this exercise. The only real platform rule quoted here">
+  <meta name="color-scheme" content="light">
+  <title>&quot;Advertisers can change their daily budget at any time, effective immediately.&quot; The product owner says it&#39;s a two-pointer: &quot;It&#39;s one field.&quot; The team wants to estimate in five minutes. What do you ask before anyone votes, and what do you write down? | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Interview Q&A</span><span aria-hidden="true">/</span><span>Day 32</span></nav>
+  <article class="article-body"><h1 id="qa-interview-qa--day-32">QA Interview Q&amp;A — Day 32</h1>
+<h2
+id="question-advertisers-can-change-their-daily-budget-at-any-time-effective-immediately-the-product-owner-says-its-a-two-pointer-its-one-field-the-team-wants-to-estimate-in-five-minutes-what-do-you-ask-before-anyone-votes-and-what-do-you-write-down">Question:
+"Advertisers can change their daily budget at any time, effective
+immediately." The product owner says it's a two-pointer: "It's one
+field." The team wants to estimate in five minutes. What do you ask
+before anyone votes, and what do you write down?</h2>
+<p><em>Scenario: a self-serve retail-media platform where advertisers
+run sponsored-product campaigns on a marketplace. The product details
+below are made up for this exercise. The only real platform rule quoted
+here is Google Ads' documented budget behaviour, and it appears only as
+a contrast.</em></p>
+<hr />
+<h2 id="answer">Answer</h2>
+<h3 id="the-short-version">The short version</h3>
+<p>I wouldn't argue with the estimate. The estimate is a symptom. A
+daily budget isn't really a field. It's a rule about <strong>money over
+time</strong>, enforced by a distributed ad server and later shown in
+reports and invoices. Two phrases in the story decide most of the cost
+and most of the risk: <strong>"at any time"</strong> and
+<strong>"effective immediately."</strong> The story doesn't say what
+either one means yet. If we vote now, developers estimate whichever
+version they picture. Two weeks later we find out we built a different
+feature from the one the PO had in mind.</p>
+<p>So in the next ten minutes, my job is to:</p>
+<ol type="1">
+<li>find the few decisions the product owner hasn't made yet,</li>
+<li>turn the decisions that are made into concrete examples with
+numbers, and</li>
+<li>offer a thinner slice in case the full version isn't ready.</li>
+</ol>
+<p>The PO decides what the rule is and how much of it to build now. I'm
+not claiming any authority over that. I'm making sure the decision gets
+made on purpose and is written down.</p>
+<h3 id="how-id-reason-before-speaking">How I'd reason before
+speaking</h3>
+<p>Michael Bolton points out that requirements exist even when the
+documents are thin. Some are explicit, some are tacit, and all of them
+are "to some degree ambiguous or incomplete." A one-line story isn't
+missing requirements. It hides them. The advertiser expects
+<em>something</em> to happen when they lower a budget at 14:00, and
+finance expects <em>something</em> on the invoice. My job is to bring
+those expectations into the open while they're still cheap to
+change.</p>
+<p>To avoid missing whole areas, I quickly run through the
+product-factor guidewords in James Bach's Heuristic Test Strategy Model
+(structure, function, data, interfaces, platform, operations, time). For
+this story, <strong>Time</strong>, <strong>Data</strong> and
+<strong>Interfaces</strong> stand out right away:</p>
+<ul>
+<li><strong>Time:</strong> which "day" the budget applies to, and how
+long a change takes to reach the ad servers</li>
+<li><strong>Data:</strong> what has already been spent, and the budget
+history</li>
+<li><strong>Interfaces:</strong> the UI, the public API, bulk edits, and
+the ad server's cached budget</li>
+</ul>
+<h3 id="the-questions-in-priority-order">The questions, in priority
+order</h3>
+<p>I don't fire off forty questions. I ask the ones that change the
+estimate or the risk, roughly in this order:</p>
+<p><strong>1. "What does 'daily budget' mean on our platform: a hard
+cap, or an average we're allowed to overshoot?"</strong> This one
+decision shapes everything else. Platforms really do differ. Google Ads,
+for example, documents that on the day you edit a budget, the daily
+limit is based on the <em>highest</em> budget set that day, and a day
+can spend up to twice that. For the rest of the month, spend is capped
+at the amount already spent plus the new budget times the remaining
+days. That's a legitimate design, but it's a <em>chosen</em> rule. If
+our sales team tells advertisers "your budget is a hard cap," we've
+chosen a different rule, and it's far harder to enforce in a distributed
+system.</p>
+<p><strong>2. "If I lower the budget below what I've already spent
+today, what happens?"</strong> A concrete case: the budget is €200, €150
+is spent by 14:00, and the advertiser lowers it to €100.</p>
+<ul>
+<li>Does delivery stop?</li>
+<li>Is the €150 billed in full, or is the €50 over the new budget
+credited?</li>
+<li>What does the UI say, so the advertiser doesn't open a support
+ticket?</li>
+</ul>
+<p><strong>3. "Up, then down, on the same day: which value
+counts?"</strong> Lowest, highest, latest, or time-weighted? Each answer
+leads to a different calculation and a different test oracle (the source
+we use to decide whether a result is correct).</p>
+<p><strong>4. "What does 'immediately' mean in seconds, and how much
+overspend is acceptable while the change propagates?"</strong> Ad
+servers usually cache budget state and make bid decisions in
+milliseconds. I'd ask the developers, not the PO: "How long until every
+ad server sees the new value? Can auctions already in progress still
+bill?" If nobody knows, that's a red card and maybe a spike. Then I'd
+ask the PO to name a tolerance, for example "within 60 seconds;
+overspend after a decrease of no more than X% of the new budget."
+Without a number, "immediately" can't be tested. It just becomes
+something people argue about after release.</p>
+<p><strong>5. "Whose day is it?"</strong> Is it the advertiser's account
+time zone or the platform's UTC day? What happens if someone changes the
+account time zone partway through a flight? Do we handle the 23- and
+25-hour days around a DST change?</p>
+<p><strong>6. "Who is allowed to change it, and through which
+channels?"</strong></p>
+<ul>
+<li>Can agency users with campaign-edit rights raise a budget, or only
+the account owner?</li>
+<li>Do increases above a threshold need approval?</li>
+<li>Do the UI, the API and bulk CSV upload all follow the same
+rules?</li>
+<li>Is every change recorded with who made it, when, the old value and
+the new value?</li>
+</ul>
+<p>When an advertiser disputes an invoice, that audit trail is the
+evidence support will ask for.</p>
+<p><strong>7. "What happens with concurrent edits?"</strong> Say the
+agency's API integration sets €500 at 10:00:01 and a brand manager sets
+€50 in the UI at 10:00:02. Is it last write wins, or does the later
+request get rejected because the value changed underneath it? If last
+write wins, the brand manager may believe their cap is in place when it
+isn't, or the other way round.</p>
+<p><strong>8. "Which limit wins when several apply?"</strong> A daily
+budget sits next to the campaign's lifetime budget, the insertion-order
+cap, and the account's prepaid balance or credit limit. If an advertiser
+raises the daily budget past their remaining prepaid balance, which
+limit applies, and what message do they see?</p>
+<p><strong>9. "Where does the advertiser see the
+consequences?"</strong></p>
+<ul>
+<li>Does the pacing chart show the change?</li>
+<li>Does the daily report show the budget that applied, or only today's
+value? A report that applies today's budget to last week makes old days
+look overspent.</li>
+<li>Does the invoice line match the rule from question 2?</li>
+</ul>
+<p><strong>10. "What problem are we solving?"</strong> Is it support
+tickets like "I paused/lowered and still got charged"? Or advertisers
+who want to push spend into a flash sale? The answer changes which half
+of the story matters. If tickets are the driver, decreases need to be
+fast and visible. If flash sales are the driver, increases do. It also
+gives us an outcome to check after release, such as fewer budget-related
+tickets, rather than just "the field saves."</p>
+<h3 id="what-id-say-in-the-room">What I'd say in the room</h3>
+<blockquote>
+<p>"Before we vote: I think there are two or three decisions hiding in
+'any time' and 'immediately,' and depending on how they go this is
+either a two or an eight. Can we spend fifteen minutes mapping it? If we
+hit questions nobody here can answer, we park them and either slice or
+bring it back next refinement."</p>
+</blockquote>
+<p>If the PO pushes back with "just do what Google does," that's a
+perfectly good answer. My reply is:</p>
+<blockquote>
+<p>"Great, that's a decision. Let's write it down with numbers,
+including that an advertiser can spend up to 2× on a given day. Do sales
+and support describe our budget that way today? And can billing handle
+it?"</p>
+</blockquote>
+<p>That way I'm not blocking anything. I'm making sure the consequences
+of the choice are visible before we commit to it.</p>
+<h3 id="running-it-as-example-mapping">Running it as example
+mapping</h3>
+<p>I'd use Matt Wynne's example mapping, timeboxed to about 25
+minutes:</p>
+<ul>
+<li><strong>Blue cards:</strong> rules</li>
+<li><strong>Green cards:</strong> concrete examples under each rule</li>
+<li><strong>Red cards:</strong> questions nobody in the room can answer,
+recorded instead of debated</li>
+</ul>
+<p>Wynne's own reading of the result is the readiness signal I'd use.
+Lots of red cards means the story isn't understood yet. Lots of blue
+cards means it's too big and should be sliced.</p>
+<p><strong>A slice worth offering:</strong> "Budget changes take effect
+from 00:00 tomorrow in the advertiser's time zone." That one decision
+removes questions 2, 3 and 4. It's simple to explain and to test, and it
+may solve the actual problem. The PO decides whether intraday changes
+are worth the extra cost now or later.</p>
+<h3 id="the-artifact-a-decision-table-with-numbers">The artifact: a
+decision table with numbers</h3>
+<p>These are <strong>proposed examples for the PO to confirm, not
+verified system behaviour.</strong> The "?" cells are open decisions,
+and each has an owner.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Budget at 00:00</th>
+<th>Spent before change</th>
+<th>Change (time)</th>
+<th>Expected max spend today</th>
+<th>Expected UI / report / invoice</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>€200</td>
+<td>€40</td>
+<td>→ €300 (11:00)</td>
+<td>€300 (hard cap) <em>or</em> ? (overdelivery rule)</td>
+<td>Pacing chart shows step at 11:00</td>
+<td><strong>PO to decide</strong> cap model</td>
+</tr>
+<tr>
+<td>2</td>
+<td>€200</td>
+<td>€150</td>
+<td>→ €100 (14:00)</td>
+<td>€150; no further delivery after propagation window</td>
+<td>"You've already spent €150 today; ads paused until tomorrow."
+Invoice: €150 or €100?</td>
+<td><strong>PO + finance</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>€200</td>
+<td>€60</td>
+<td>→ €400 (10:00), → €80 (15:00)</td>
+<td>? (highest / latest / weighted)</td>
+<td>Report shows both changes in budget history</td>
+<td><strong>PO</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>€200</td>
+<td>—</td>
+<td>UI sets €50, API sets €500, 1 s apart</td>
+<td>Second write rejected (409) and user told to reload, <em>or</em>
+last write wins + both logged</td>
+<td>Audit log shows both actors</td>
+<td><strong>Dev lead</strong> to propose</td>
+</tr>
+<tr>
+<td>5</td>
+<td>€200, prepaid balance €120</td>
+<td>€0</td>
+<td>→ €500</td>
+<td>€120</td>
+<td>Warning at save time</td>
+<td><strong>PO</strong></td>
+</tr>
+<tr>
+<td>6</td>
+<td>—</td>
+<td>—</td>
+<td>Change at 23:59:30 advertiser time</td>
+<td>Applies to which day?</td>
+<td>—</td>
+<td><strong>Dev</strong> to confirm with time zone source</td>
+</tr>
+</tbody>
+</table>
+<p>Next to the table I'd note who owns each "?" and the propagation
+tolerance once someone names it. When the story comes back, the
+confirmed rows become automated checks at the API or service level. The
+unconfirmed areas (latency under load, concurrent edits, reporting
+history) become exploratory charters, for example: <em>"Explore budget
+decreases during peak auction traffic to discover how much spend leaks
+past the new cap and how the advertiser learns about it."</em></p>
+<h3 id="common-weak-answers">Common weak answers</h3>
+<ul>
+<li><strong>"I'd write test cases once the dev is done."</strong> By
+then the rule has been decided by whoever wrote the code.</li>
+<li><strong>"I'd ask every edge case I can think of."</strong> Forty
+questions in refinement wear the team out and bury the three that
+matter. Rank them by how much they change cost and risk.</li>
+<li><strong>"QA should block the estimate until the story is
+complete."</strong> QA doesn't own readiness. The team decides, and the
+PO owns scope. Offer a slice and a list of open questions, not a
+veto.</li>
+<li><strong>"Budget is just a number with min/max validation."</strong>
+That treats a time-based, money-handling, distributed rule like a form
+field.</li>
+<li><strong>Treating another platform's rule as ours.</strong> Google's
+documented behaviour is a useful reference point, not our requirement,
+until our PO adopts it.</li>
+</ul>
+<hr />
+<h3 id="follow-up-questions">Follow-up questions</h3>
+<ol type="1">
+<li><strong>The PO answers "hard cap, effective within one second."
+Developers say the ad servers only refresh budgets every 30 seconds.
+Nobody wants to own the gap. How do you frame the tradeoff (overspend
+risk, infrastructure cost, what we promise advertisers) so the PO can
+decide, without you deciding it for them?</strong></li>
+<li><strong>Three sprints after release, support tickets about budgets
+haven't dropped. What evidence would you gather to tell apart "the
+feature doesn't work," "advertisers don't understand it," and "we solved
+the wrong problem," and who would you take each finding
+to?</strong></li>
+</ol>
+<hr />
+<h2 id="sources">Sources</h2>
+<ul>
+<li><strong>Google Ads Help, <a
+href="https://support.google.com/google-ads/answer/10487143?hl=en-GB">"About
+average daily budgets"</a></strong>: Official documentation of one real
+platform's mid-day budget rule: the daily limit is based on the highest
+budget set that day, up to 2× that per day, and the monthly cap is the
+amount spent plus the new budget times the remaining days. Used only to
+show that "daily budget" needs a chosen definition, not as our
+platform's behaviour.</li>
+<li><strong>Google Ads Help, <a
+href="https://support.google.com/google-ads/answer/16913225">"Changes to
+Google Ads budget pacing for Ad Scheduling"</a></strong>: Confirms the
+same monthly-limit formula for a related pacing case. It shows how much
+behaviour a single budget field can carry.</li>
+<li><strong>Matt Wynne, Cucumber blog, <a
+href="https://cucumber.io/blog/bdd/example-mapping-introduction/">"Introducing
+Example Mapping"</a></strong>: The source of the
+story/rule/example/question card structure, the roughly 25-minute
+timebox, and reading many red or blue cards as a sign that a story isn't
+understood or should be sliced.</li>
+<li><strong>Michael Bolton, DevelopSense, <a
+href="https://developsense.com/blog/2024/05/missing-requirements">"Missing
+Requirements"</a></strong>: Supports the framing that requirements
+always exist, may be tacit or emergent, and that people and shared work
+products are sources of them. That's why the one-line story is treated
+as hiding requirements rather than lacking them.</li>
+<li><strong>Michael Bolton, DevelopSense, <a
+href="https://developsense.com/blog/2016/12/very-short-blog-posts-31-ambiguous-or-incomplete-requirements">"Very
+Short Blog Posts (31): Ambiguous or Incomplete
+Requirements"</a></strong>: All requirements are partly ambiguous and
+incomplete, and testing helps refine them. This justifies questioning
+the story before code exists.</li>
+<li><strong>James Bach, Satisfice, <a
+href="https://www.satisfice.com/download/heuristic-test-strategy-model">"Heuristic
+Test Strategy Model" (v6.3)</a></strong>: Its product-factor guidewords
+(especially Time, Data and Interfaces) are the quick check used to find
+the questions about time zones, propagation, budget history and API vs.
+UI parity.</li>
+</ul>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-interview-day-31.html" rel="prev"><span>Previous</span>An AI agent wrote 412 end-to-end tests over the weekend, and every one passed on the first run. Your engineering manager says, &quot;Merge them and drop the two-day manual regression.&quot; Do you agree?</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
