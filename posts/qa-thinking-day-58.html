@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Someone shares a competitor screenshot and says, “They have a reward-status page. We need one too.” That screenshot provides a research lead. It does not establish whether users understand the page, whether it">
+  <meta name="color-scheme" content="light">
+  <title>Competitor Research for QA and Future Product Owners: Compare User Tasks Before Copying Features | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 58</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-58">QA Thinking — Day 58</h1>
+<h2
+id="competitor-research-for-qa-and-future-product-owners-compare-user-tasks-before-copying-features">Competitor
+Research for QA and Future Product Owners: Compare User Tasks Before
+Copying Features</h2>
+<p>Someone shares a competitor screenshot and says, “They have a
+reward-status page. We need one too.” That screenshot provides a
+research lead. It does not establish whether users understand the page,
+whether it solves your users' problem, or whether an equivalent
+capability already exists in your product.</p>
+<p>This lesson uses rewarded advertising to teach a method that also
+applies to checkout, billing, reporting, and other products. The
+comparison worksheet and experiment below are proposed activities, not
+results from completed competitor testing.</p>
+<h3 id="1-choose-the-task-and-the-comparable-product">1. Choose the task
+and the comparable product</h3>
+<p>A company can offer several products with different audiences and
+integration models. Compare a particular journey, such as “find out why
+a reward is pending,” rather than declaring one company better
+overall.</p>
+<p>Two official sources provide useful research leads:</p>
+<ul>
+<li>Mistplay describes LoyaltyPlay within third-party partner
+ecosystems. That makes the embedded rewarded-gaming journey a relevant
+comparison to investigate. <a
+href="https://business.mistplay.com/resources/announcing-mistplay-audience-network">Mistplay
+Audience Network announcement</a></li>
+<li>Unity Rewards documents reward-status access and support for its web
+offerwall. That provides a documented reference for pending-reward
+explanations and help entry points. <a
+href="https://tapjoy.helpshift.com/hc/en/5-unity-rewards/faq/74-terms-of-service/?han=1&amp;hpn=1">Unity
+Rewards support terms</a></li>
+</ul>
+<p>These sources establish described capabilities. They do not establish
+comparative speed, satisfaction, reliability, or applicability to every
+region and platform.</p>
+<h3 id="2-separate-documentation-observations-and-interpretations">2.
+Separate documentation, observations, and interpretations</h3>
+<p>Use an evidence table:</p>
+<table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>Evidence type</th>
+<th>What it establishes</th>
+<th>What remains unknown</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A reward-status view is documented</td>
+<td>Official support page</td>
+<td>The provider describes that capability</td>
+<td>Actual availability and usability in the target journey</td>
+</tr>
+<tr>
+<td>A participant found the pending status</td>
+<td>Observed task session</td>
+<td>Success for this participant under recorded conditions</td>
+<td>General success rate</td>
+</tr>
+<tr>
+<td>Clearer wording may reduce repeat contacts</td>
+<td>Product hypothesis</td>
+<td>An idea worth testing</td>
+<td>Whether wording causes the problem or changes outcomes</td>
+</tr>
+</tbody>
+</table>
+<p>Record the date, product, operating system, region, eligibility, and
+source. Write “not observed” rather than “does not exist” when your
+access or sample is limited.</p>
+<h3 id="3-compare-equivalent-tasks">3. Compare equivalent tasks</h3>
+<p>Prepare tasks with clear completion criteria:</p>
+<pre class="text"><code>Task A: Explain the actions required to earn an offer&#39;s reward.
+Task B: Find the current status of an accepted offer.
+Task C: Choose the correct next step for a delayed reward.</code></pre>
+<p>Run a small usability investigation with target users using
+authorized access and suitable test scenarios. Avoid purchases or
+activity that creates real financial obligations merely to collect
+screenshots.</p>
+<p>Observe task success, time, misunderstandings, unnecessary steps, and
+confidence. Counterbalance the order where possible so learning the
+first product does not systematically favor the second. Include
+equivalent tasks on your own product.</p>
+<h3 id="4-convert-a-difference-into-competing-explanations">4. Convert a
+difference into competing explanations</h3>
+<p>Suppose users understand one product's pending message more
+accurately. The cause might be wording, placement, familiarity, a
+simpler policy, or a different task. Identify which explanation the
+evidence supports before choosing a feature.</p>
+<p>Test a small prototype with an improved explanation. Also consider
+whether better processing, eligibility information, or existing support
+tooling would address the problem more directly.</p>
+<p>Evaluate value, usability, feasibility, and business viability rather
+than treating feature parity as the goal. <a
+href="https://www.svpg.com/four-big-risks/">SVPG: The Four Big
+Risks</a></p>
+<p>Bolton's requirements discussion supports investigating user needs
+beyond the written ticket. Here that means asking what users need to
+decide, not merely whether another product exposes a screen. <a
+href="https://developsense.com/blog/2024/05/missing-requirements">Missing
+Requirements</a></p>
+<h3 id="5-write-a-recommendation-with-honest-limits">5. Write a
+recommendation with honest limits</h3>
+<p>A useful recommendation says:</p>
+<blockquote>
+<p>A documented competitor capability suggested a task to investigate.
+In our small study, participants struggled to distinguish delayed
+processing from rejection in our prototype. We propose testing clearer
+explanations before adding a new page. This study does not establish
+market-wide superiority or a revenue effect.</p>
+</blockquote>
+<p>As QA, contribute reproducible tasks and careful evidence. To
+practice product ownership, help choose the problem, compare options,
+and define what would justify investment.</p>
+<h3 id="practical-challenge">Practical challenge</h3>
+<p>Choose one user task and two official product references. Build the
+evidence table, marking what you can and cannot verify. Propose one
+improvement to your own product, one alternative explanation for the
+apparent gap, and one cheap experiment that could show your idea is
+unnecessary.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-57.html" rel="prev"><span>Previous</span>From a Missing-Reward Report to a Product Decision: A QA Investigation That Goes Beyond the Bug</a><a href="/qa-blog/posts/qa-thinking-day-59.html" rel="next"><span>Next</span>A Revenue Increase Can Still Be a Bad Product Change: Design the Experiment Before Celebrating</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

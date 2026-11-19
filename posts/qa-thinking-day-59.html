@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A hypothetical advertising platform changes its offer discovery screen. Revenue per eligible user rises by 10%. Product wants to roll it out. Finance sees higher variable costs. Advertisers report weaker acquir">
+  <meta name="color-scheme" content="light">
+  <title>A Revenue Increase Can Still Be a Bad Product Change: Design the Experiment Before Celebrating | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 59</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-59">QA Thinking — Day 59</h1>
+<h2
+id="a-revenue-increase-can-still-be-a-bad-product-change-design-the-experiment-before-celebrating">A
+Revenue Increase Can Still Be a Bad Product Change: Design the
+Experiment Before Celebrating</h2>
+<p>A hypothetical advertising platform changes its offer discovery
+screen. Revenue per eligible user rises by 10%. Product wants to roll it
+out. Finance sees higher variable costs. Advertisers report weaker
+acquired-user value. QA discovers that a retry event was counted twice
+in the experiment dashboard.</p>
+<p>The question is no longer simply whether revenue rose. The team needs
+to know whether the measurement is trustworthy and whether the change
+creates sustainable value.</p>
+<h3 id="1-state-the-mechanism-you-believe-will-help">1. State the
+mechanism you believe will help</h3>
+<p>Write a falsifiable hypothesis:</p>
+<blockquote>
+<p>Clearer offer requirements will help eligible users choose suitable
+offers, increasing valid participation and platform revenue per eligible
+user without worsening advertiser outcomes, reward errors, or support
+burden.</p>
+</blockquote>
+<p>This is an invented hypothesis, not a claim about an existing
+product. Check whether unclear requirements are a real problem before
+building the experiment.</p>
+<p>Define the chain of expected observations: improved comprehension,
+suitable selection, valid completion, and a measurable commercial
+outcome. A change in the final number without the expected intermediate
+evidence deserves investigation.</p>
+<h3 id="2-define-the-metric-before-assignment">2. Define the metric
+before assignment</h3>
+<p>Agree the accounting definition of platform revenue with the business
+owner. Separate advertiser spend, publisher earnings, player rewards,
+platform revenue, and contribution margin. Their relationship depends on
+contracts and accounting treatment.</p>
+<p>For this example, define a seven-day revenue measure over a fixed
+cohort of eligible users. Keep assigned users in the analysis according
+to the agreed experimental design, including those who never engage.
+Conditioning only on people who clicked can select different populations
+after treatment.</p>
+<table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Revenue per eligible user</td>
+<td>Primary commercial outcome</td>
+</tr>
+<tr>
+<td>Offer comprehension and valid participation</td>
+<td>Check the proposed mechanism</td>
+</tr>
+<tr>
+<td>Contribution per eligible user</td>
+<td>Detect costs that offset the revenue gain</td>
+</tr>
+<tr>
+<td>Advertiser cohort outcomes</td>
+<td>Protect acquisition value over an appropriate window</td>
+</tr>
+<tr>
+<td>Reward correctness, retention, fraud, and support contacts</td>
+<td>Guardrails for harms or hidden costs</td>
+</tr>
+</tbody>
+</table>
+<p>If using ROAS for advertiser outcomes, define attributed revenue,
+spend, and the maturity window. ROAS compares revenue with advertising
+spend; it is not the platform's revenue measure. <a
+href="https://www.appsflyer.com/glossary/roas/">AppsFlyer: ROAS</a></p>
+<h3 id="3-check-the-experiment-as-a-system">3. Check the experiment as a
+system</h3>
+<p>Before interpreting results, verify assignment, persistent variant
+identity, eligibility, exposure events, and metric pipelines. Watch for
+missing events, retries, inconsistent currency conversion, and different
+data freshness between groups.</p>
+<p>Decide whether randomization belongs at user, publisher, campaign, or
+another level with the experiment owner. Shared budgets or resources can
+create interference between groups. Choose a design appropriate to the
+product instead of assuming user-level assignment always works.</p>
+<p>Set sample-size, duration, uncertainty reporting, and decision rules
+with an analyst before examining the outcome. A large percentage
+difference from a small or incomplete sample can be misleading.</p>
+<h3 id="4-calculate-the-business-tradeoff-explicitly">4. Calculate the
+business tradeoff explicitly</h3>
+<p>Consider these fictional completed cohorts, each with 10,000 eligible
+users:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Control</th>
+<th>Variant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Platform revenue</td>
+<td>€500</td>
+<td>€550</td>
+</tr>
+<tr>
+<td>Agreed included variable costs</td>
+<td>€300</td>
+<td>€370</td>
+</tr>
+<tr>
+<td>Contribution under this definition</td>
+<td>€200</td>
+<td>€180</td>
+</tr>
+<tr>
+<td>Revenue per eligible user</td>
+<td>€0.050</td>
+<td>€0.055</td>
+</tr>
+<tr>
+<td>Contribution per eligible user</td>
+<td>€0.020</td>
+<td>€0.018</td>
+</tr>
+</tbody>
+</table>
+<p>Revenue increased 10%; contribution decreased 10%. These arithmetic
+results describe the example, not statistical certainty. The team may
+have reasons to accept a short-term cost, but that tradeoff should be
+explicit.</p>
+<p>Business viability belongs beside user value, usability, and
+feasibility in product discovery. <a
+href="https://www.svpg.com/four-big-risks/">SVPG: The Four Big
+Risks</a></p>
+<h3 id="5-give-qa-and-product-different-connected-responsibilities">5.
+Give QA and product different, connected responsibilities</h3>
+<p>QA can investigate assignment correctness, metric integrity, adverse
+paths, and whether guardrail events are observable. Product can bring
+the customer problem, strategic tradeoffs, and decision criteria
+together with engineering, finance, and analytics.</p>
+<p>Automated arithmetic checks support the decision; they do not decide
+whether the business tradeoff is acceptable. This applies Bolton's
+guidance on selecting useful automated observations within broader
+testing. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Automation
+guidance</a></p>
+<h3 id="practical-challenge">Practical challenge</h3>
+<p>Using the table, write one metric-integrity check and a rollout
+recommendation of fewer than 120 words. Explain the revenue/contribution
+tradeoff, one unresolved advertiser-outcome question, and the evidence
+needed before deciding. Then describe how duplicated completion events
+could create an apparent win without any real improvement.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-58.html" rel="prev"><span>Previous</span>Competitor Research for QA and Future Product Owners: Compare User Tasks Before Copying Features</a><a href="/qa-blog/posts/qa-thinking-day-60.html" rel="next"><span>Next</span>Agentic API and UI Testing for a Reward Journey: Preserve the Business Oracle Through Every Layer</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

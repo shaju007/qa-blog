@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An architect draws an API, queue, worker, database, and cache. QA is asked to automate the flow. A browser test that waits for “Report ready” would cover one outcome, but it would say little about duplicate pro">
+  <meta name="color-scheme" content="light">
+  <title>System Design for QA and SDETs: Build a Test Architecture Around One Report Pipeline | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 54</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-54">QA Thinking — Day 54</h1>
+<h2
+id="system-design-for-qa-and-sdets-build-a-test-architecture-around-one-report-pipeline">System
+Design for QA and SDETs: Build a Test Architecture Around One Report
+Pipeline</h2>
+<p>An architect draws an API, queue, worker, database, and cache. QA is
+asked to automate the flow. A browser test that waits for “Report ready”
+would cover one outcome, but it would say little about duplicate
+processing, stale reads, lost jobs, or recovery.</p>
+<p>System design learning becomes useful when you can explain where work
+and data move, what can fail between components, and which evidence
+would reveal the failure. This lesson proposes a test architecture for
+an invented reporting product. It is a design exercise, not a running
+implementation.</p>
+<h3 id="1-define-the-promise-before-choosing-components">1. Define the
+promise before choosing components</h3>
+<p>Suppose the team agrees:</p>
+<ul>
+<li>A request creates one logical report job for an advertiser and
+reporting window.</li>
+<li>Retrying the same idempotent request returns the same logical job
+within the documented key lifetime.</li>
+<li>Reports contain only that advertiser's data.</li>
+<li>The job survives a worker restart.</li>
+<li>The UI distinguishes pending, complete, and failed work.</li>
+</ul>
+<p>An <strong>idempotency key</strong> lets the service recognize
+requests representing the same operation according to its contract. A
+<strong>queue</strong> separates accepting work from processing it.
+<strong>Eventual consistency</strong> means readers may temporarily
+observe older state; it still needs an explicit product expectation
+about when and how that state catches up.</p>
+<p>Choose load and completion targets with product and operations.
+Google's SRE guidance distinguishes a service-level indicator, a
+measurement, from a service-level objective, its target. Define the
+population and measurement window before calling a latency number an
+SLO. <a
+href="https://sre.google/sre-book/service-level-objectives/">Service
+Level Objectives</a></p>
+<h3 id="2-trace-an-interruption-not-only-the-happy-path">2. Trace an
+interruption, not only the happy path</h3>
+<pre class="text"><code>1. API stores job J as pending
+2. API arranges publication of J to the queue
+3. Worker processes J
+4. Worker stores report output
+5. Worker marks J complete and acknowledges the message</code></pre>
+<p>What if the API stops between steps 1 and 2? What if the worker stops
+after storing output but before acknowledging the message? A retried
+operation may repeat work.</p>
+<p>Discuss the actual transaction boundaries with engineering. One
+design may use a transactional outbox for publication; another may use a
+different recovery mechanism. The testable promise is that accepted work
+can be accounted for and retries do not create incorrect user-visible
+results.</p>
+<h3 id="3-assign-risks-to-useful-test-boundaries">3. Assign risks to
+useful test boundaries</h3>
+<table>
+<thead>
+<tr>
+<th>Check layer</th>
+<th>Main question</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unit</td>
+<td>Is isolated transformation logic correct?</td>
+<td>Aggregate a tiny known event dataset and verify its amount</td>
+</tr>
+<tr>
+<td>Service integration</td>
+<td>Do real components cooperate across a boundary?</td>
+<td>Restart the worker and redeliver a queued job</td>
+</tr>
+<tr>
+<td>Contract</td>
+<td>Can a caller interpret the interface?</td>
+<td>Check the supported job-status response and documented failures</td>
+</tr>
+<tr>
+<td>Deployed API</td>
+<td>Are the deployed service and access rules usable?</td>
+<td>Submit, poll, retrieve, and reject cross-tenant access</td>
+</tr>
+<tr>
+<td>Browser</td>
+<td>Can the user complete and understand the journey?</td>
+<td>Show pending, then ready, then download the correct report</td>
+</tr>
+<tr>
+<td>Operational experiment</td>
+<td>Can the system detect and recover from trouble?</td>
+<td>Stop test workers and observe backlog alerts and recovery</td>
+</tr>
+</tbody>
+</table>
+<p>The layers overlap intentionally where risks justify it. Avoid
+selecting percentages first. Choose checks based on the failures they
+can detect and the cost of understanding their failures.</p>
+<p>Bolton's automation discussion helps frame this as choosing useful
+tool-supported observations within testing. A test architect should
+explain both the evidence gained and the gaps that remain. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Which
+Test Cases Should I Automate?</a></p>
+<h3 id="4-design-seams-that-make-evidence-possible">4. Design seams that
+make evidence possible</h3>
+<p>A <strong>test seam</strong> is a place where the system lets a test
+supply a controlled input or observe a result. Useful seams here include
+a job-status endpoint, a controlled clock for reporting windows,
+deterministic small datasets, and correlation IDs linking accepted work
+to output.</p>
+<p>An SDET can implement reusable fixtures, clients, dataset builders,
+and assertions around those seams. Keep helpers focused: creating a
+report should not secretly alter unrelated permissions or hide retries
+from the test author. Preserve request IDs and useful response evidence
+when setup fails.</p>
+<p>Use a real deployed integration for a small number of critical
+journeys. Playwright's API facilities can set up data and inspect server
+state around browser checks; that capability does not make mocked UI
+checks evidence of backend persistence. <a
+href="https://playwright.dev/docs/api-testing">Playwright API
+testing</a></p>
+<h3 id="5-architecture-includes-ownership-and-feedback">5. Architecture
+includes ownership and feedback</h3>
+<p>Write down who maintains each suite, where it runs, how it provisions
+data, how failures are diagnosed, and what unresolved failures mean for
+release decisions. Include runtime and environment constraints. A
+framework diagram alone cannot answer those operational questions.</p>
+<p>Review one historical defect against the proposed portfolio. Which
+check would detect it? If the answer is none, add a justified check or
+explicitly record the remaining risk.</p>
+<h3
+id="practical-challenge-make-one-design-decision-reviewable">Practical
+challenge: make one design decision reviewable</h3>
+<p>Draw a five-component system you know. Mark the durable writes and
+two interruption points. Create a six-row check portfolio like the one
+above. For one row, write fixture inputs, expected evidence, cleanup,
+owner, and one failure it cannot detect. Ask a developer to challenge
+your transaction assumptions before implementing the check.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-53.html" rel="prev"><span>Previous</span>Cloud Testing: Check Identity, Network Boundaries, Recovery, and Cost Alongside the API</a><a href="/qa-blog/posts/qa-thinking-day-55.html" rel="next"><span>Next</span>From QA Toward DevOps and Cloud Engineering: Test a Deployment&#39;s Failure and Recovery</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

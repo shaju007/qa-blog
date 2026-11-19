@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="In a hypothetical rewarded-game platform, a player says: “I completed the task, but my points never arrived.” Support proposes a clearer status screen. Engineering suspects delayed events. Product wants to redu">
+  <meta name="color-scheme" content="light">
+  <title>From a Missing-Reward Report to a Product Decision: A QA Investigation That Goes Beyond the Bug | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 57</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-57">QA Thinking — Day 57</h1>
+<h2
+id="from-a-missing-reward-report-to-a-product-decision-a-qa-investigation-that-goes-beyond-the-bug">From
+a Missing-Reward Report to a Product Decision: A QA Investigation That
+Goes Beyond the Bug</h2>
+<p>In a hypothetical rewarded-game platform, a player says: “I completed
+the task, but my points never arrived.” Support proposes a clearer
+status screen. Engineering suspects delayed events. Product wants to
+reduce repeat contacts. These are related concerns, but the report has
+not established the cause.</p>
+<p>Your first contribution is to make the uncertainty inspectable. Your
+next is to help the team decide whether the right response is a defect
+fix, clearer requirements, better explanations, or further
+investigation.</p>
+<h3 id="1-follow-the-evidence-through-the-journey">1. Follow the
+evidence through the journey</h3>
+<p>Use an invented state model as a discussion aid:</p>
+<pre class="text"><code>offer accepted -&gt; progress observed -&gt; completion validated
+               -&gt; reward recorded -&gt; host-app balance updated</code></pre>
+<p>This is not a universal architecture. Ask which states exist in the
+actual product and which team owns each transition. Some apparent steps
+may happen in one transaction; others may cross organizations.</p>
+<p>Create a timeline with the offer and user identifiers permitted for
+investigation, the version of the offer rules, relevant event IDs, event
+times, processing times, and the balance observation. Keep sensitive
+data out of broadly shared reports.</p>
+<h3 id="2-compare-explanations-instead-of-assuming-one">2. Compare
+explanations instead of assuming one</h3>
+<table>
+<thead>
+<tr>
+<th>Possible explanation</th>
+<th>Evidence that would help distinguish it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The completion event never arrived</td>
+<td>Source-side evidence and ingestion records</td>
+</tr>
+<tr>
+<td>The event arrived but validation failed</td>
+<td>Applied rule version and explicit validation outcome</td>
+</tr>
+<tr>
+<td>Processing is delayed</td>
+<td>Queue age and timestamps for the same event</td>
+</tr>
+<tr>
+<td>Reward was recorded but delivery failed</td>
+<td>Ledger entry and host-app delivery evidence</td>
+</tr>
+<tr>
+<td>Balance changed but the UI is stale</td>
+<td>Independent balance read and UI/network observations</td>
+</tr>
+<tr>
+<td>Eligibility was misunderstood</td>
+<td>Offer wording shown to that user and the agreed rules</td>
+</tr>
+</tbody>
+</table>
+<p>Absence from one log is not proof that an event never existed. Check
+instrumentation coverage and retention before drawing that
+conclusion.</p>
+<h3 id="3-take-the-ambiguity-into-refinement">3. Take the ambiguity into
+refinement</h3>
+<p>Bring product, development, support, and relevant integration owners
+together. Ask what counts as completion, how long processing may take,
+what happens on retries, and which explanation a user should see.</p>
+<p>Capture rules, concrete examples, and unanswered questions
+separately. Example Mapping provides that structure. <a
+href="https://cucumber.io/docs/bdd/example-mapping/">Cucumber: Example
+Mapping</a></p>
+<p>Suppose the team chooses these fictional rules:</p>
+<ul>
+<li>The same validated completion contributes one reward even if
+delivered repeatedly.</li>
+<li>A delayed completion displays pending until the stated processing
+deadline.</li>
+<li>An unconfirmed outcome is not presented as a permanent
+rejection.</li>
+<li>Support can distinguish a rule rejection from a delivery
+failure.</li>
+</ul>
+<p>Now create examples for delayed, duplicate, out-of-order, invalid,
+and interrupted deliveries. Written requirements may omit real needs;
+investigation can expose them. <a
+href="https://developsense.com/blog/2024/05/missing-requirements">Michael
+Bolton: Missing Requirements</a></p>
+<h3 id="4-turn-the-finding-into-an-opportunity">4. Turn the finding into
+an opportunity</h3>
+<p>Write the smallest problem statement the evidence supports:</p>
+<blockquote>
+<p>In the investigated cases, users cannot distinguish pending
+processing from a rejected completion. We need to establish how
+frequently this misunderstanding causes repeat contact and whether
+clearer status information helps.</p>
+</blockquote>
+<p>Do not generalize a few cases into a platform-wide failure rate.
+Review a suitable sample of tickets, include successful journeys, and
+interview users about recent experiences.</p>
+<p>Possible responses include fixing delivery, clarifying eligibility,
+improving status wording, or adding diagnostic evidence. Compare them by
+affected population, impact, confidence, effort, and dependencies.</p>
+<h3 id="5-measure-the-result-without-hiding-the-problem">5. Measure the
+result without hiding the problem</h3>
+<p>For a status explanation experiment, measure whether users choose the
+correct next action. Also monitor reward correctness, processing delay,
+repeat contacts, and return visits. Fewer tickets alone could mean the
+support path became harder to find.</p>
+<p>As QA, own the quality of the investigation and test evidence. To
+practice product skills, facilitate the refinement discussion or write
+the opportunity proposal with your PO. Follow the outcome after
+release.</p>
+<h3 id="practical-challenge">Practical challenge</h3>
+<p>Draft a timeline where a completion is delivered twice, a reward is
+recorded once, and the balance display updates late. Write one
+integration check, one UI check, and one question that requires product
+judgment. Finish with a 100-word opportunity note separating
+observation, hypothesis, and the next decision.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-56.html" rel="prev"><span>Previous</span>CPI, eCPM, ROAS, and ARPDAU: Test the Meaning Behind an Advertising Dashboard</a><a href="/qa-blog/posts/qa-thinking-day-58.html" rel="next"><span>Next</span>Competitor Research for QA and Future Product Owners: Compare User Tasks Before Copying Features</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

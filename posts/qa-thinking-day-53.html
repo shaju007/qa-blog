@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your API tests pass on a developer&#39;s machine. In a cloud environment, the API cannot publish events because its workload identity lacks permission. A public storage setting exposes reports. A queue backlog grow">
+  <meta name="color-scheme" content="light">
+  <title>Cloud Testing: Check Identity, Network Boundaries, Recovery, and Cost Alongside the API | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 53</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-53">QA Thinking — Day 53</h1>
+<h2
+id="cloud-testing-check-identity-network-boundaries-recovery-and-cost-alongside-the-api">Cloud
+Testing: Check Identity, Network Boundaries, Recovery, and Cost
+Alongside the API</h2>
+<p>Your API tests pass on a developer's machine. In a cloud environment,
+the API cannot publish events because its workload identity lacks
+permission. A public storage setting exposes reports. A queue backlog
+grows unnoticed. None of those problems requires a change to the
+endpoint's business logic.</p>
+<p>Cloud testing includes the application and the infrastructure that
+lets it operate. This lesson uses an invented API that queues
+report-generation jobs. The exercises describe experiments to perform in
+an owned test environment; they are not results from an executed cloud
+deployment.</p>
+<h3 id="1-draw-the-resources-and-trust-boundaries">1. Draw the resources
+and trust boundaries</h3>
+<pre class="text"><code>Browser -&gt; HTTPS endpoint -&gt; Report API -&gt; Job queue -&gt; Worker
+                                  |                     |
+                             Metadata DB           Report storage</code></pre>
+<p><strong>Identity</strong> answers who is acting.
+<strong>Permissions</strong> describe what that identity may do. A
+<strong>network boundary</strong> controls which connections can reach a
+resource. Successful connectivity does not establish authorization, and
+correct identity permissions do not establish private networking.</p>
+<p>Name the application's cloud identity, the worker's identity, the
+test runner's identity, and the account or project owning the resources.
+Then write the allowed actions: the API can enqueue jobs; the worker can
+read jobs and store reports; users can retrieve only their own
+reports.</p>
+<h3 id="2-turn-architecture-concerns-into-experiments">2. Turn
+architecture concerns into experiments</h3>
+<p>AWS Well-Architected provides questions about operating cloud systems
+across reliability, security, performance, cost, and other concerns. The
+following test matrix is an original application of that lens, not a
+provider certification checklist. <a
+href="https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html">AWS
+Well-Architected</a></p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Controlled experiment</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identity and permissions</td>
+<td>Run the API with its intended identity, then an identity missing
+queue access</td>
+<td>Useful error, no false success, and an observable authorization
+failure</td>
+</tr>
+<tr>
+<td>Tenant isolation</td>
+<td>Request advertiser A's report as advertiser B</td>
+<td>Denied retrieval, including the stored object's download path</td>
+</tr>
+<tr>
+<td>Network access</td>
+<td>Connect from an allowed location and an intentionally excluded
+location</td>
+<td>Expected connectivity without exposing private resources
+publicly</td>
+</tr>
+<tr>
+<td>Worker failure</td>
+<td>Stop one test worker after a job starts</td>
+<td>Job recovery with no duplicate user-visible report under the agreed
+policy</td>
+</tr>
+<tr>
+<td>Data recovery</td>
+<td>Restore a known backup into a separate environment</td>
+<td>Expected records, readable reports, and measured recovery time</td>
+</tr>
+<tr>
+<td>Cost and cleanup</td>
+<td>Run a bounded workload and destroy its resources</td>
+<td>Resource inventory, usage estimate, and teardown evidence</td>
+</tr>
+</tbody>
+</table>
+<p>Actual queue delivery, acknowledgement, retry, and retention behavior
+depends on the chosen service and configuration. Read that service's
+documentation before assigning expected outcomes.</p>
+<h3 id="3-observe-more-than-an-http-response">3. Observe more than an
+HTTP response</h3>
+<p>For our example, <code>202 Accepted</code> means the job was accepted
+under the API contract. It does not mean the report was generated. Track
+a job ID through acceptance, queueing, processing, storage, and
+authorized retrieval.</p>
+<p>A <strong>metric</strong> can show the age of the oldest queued job.
+A <strong>trace</strong> can connect work across instrumented services.
+A <strong>log</strong> can describe a particular failure. OpenTelemetry
+documents these distinct signal types; you still need to choose useful
+instrumentation and correlation for your product. <a
+href="https://opentelemetry.io/docs/concepts/signals/">OpenTelemetry
+signals</a></p>
+<p>Ask whether a user would learn that a report failed even if they
+never read the operational dashboard. Test the user-facing failure and
+the operational signal separately.</p>
+<h3 id="4-distinguish-local-evidence-from-cloud-evidence">4. Distinguish
+local evidence from cloud evidence</h3>
+<p>A local container setup can demonstrate application behavior under a
+stopped worker. An emulator can provide convenient feedback on requests.
+Neither establishes that your real cloud identity, network routes,
+storage policy, or managed-service configuration is correct.</p>
+<p>Keep a small set of checks against a dedicated cloud environment.
+Record the region, service configuration, deployment version, resource
+IDs, and test data. Include cleanup for failed runs and a resource
+inventory afterward; a successful API deletion alone may leave storage
+versions or other billable resources.</p>
+<p>Measure costs with the provider's current pricing and observed usage
+rather than copying a fixed price into the test plan. Set a bounded
+workload and a cleanup deadline before running it.</p>
+<h3 id="5-ask-recovery-questions-before-a-failure">5. Ask recovery
+questions before a failure</h3>
+<p>Agree how much data loss is acceptable and how quickly service must
+return. Those are product and operational decisions. Then test the
+restore procedure against a known dataset and check that access policies
+also survive recovery.</p>
+<p>Bolton's automation guidance is useful here: automate repeatable
+checks such as owned-resource inventories, while investigating whether
+your recovery evidence represents the actual user risk. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Automation
+guidance</a></p>
+<h3 id="practical-challenge-one-resource-failure">Practical challenge:
+one resource failure</h3>
+<p>Choose queue permissions, report storage access, or worker
+interruption. Write the normal flow, inject one controlled fault in an
+isolated environment, predict user-visible and operational outcomes, and
+list the evidence needed to distinguish an application bug from
+infrastructure configuration. If you cannot run it yet, label the result
+as an experiment plan and record the missing access or setup.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-52.html" rel="prev"><span>Previous</span>Growing From QA: Learning Paths Toward Product Ownership, SDET, Test Architecture, DevOps, and Cloud Engineering</a><a href="/qa-blog/posts/qa-thinking-day-54.html" rel="next"><span>Next</span>System Design for QA and SDETs: Build a Test Architecture Around One Report Pipeline</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

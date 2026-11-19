@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="During testing, you notice advertisers repeatedly export campaign reports, join them in spreadsheets, and ask support why spend differs. You could file a usability issue. You could also bring product a better q">
+  <meta name="color-scheme" content="light">
+  <title>Think Like a Product Owner: Turn Adtech Testing Observations Into Product Experiments | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 51</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-51">QA Thinking — Day 51</h1>
+<h2
+id="think-like-a-product-owner-turn-adtech-testing-observations-into-product-experiments">Think
+Like a Product Owner: Turn Adtech Testing Observations Into Product
+Experiments</h2>
+<p>During testing, you notice advertisers repeatedly export campaign
+reports, join them in spreadsheets, and ask support why spend differs.
+You could file a usability issue. You could also bring product a better
+question: what decision are those advertisers trying to make, and what
+evidence would help them make it?</p>
+<p>This lesson uses a hypothetical advertising platform. Its examples
+illustrate discovery and testing methods rather than the implementation
+or shortcomings of a particular company.</p>
+<p>QA can contribute to discovery because testing exposes workarounds,
+confusing states, and costly uncertainty. Product thinking means
+connecting those observations to a user problem, a measurable outcome,
+and a cheap experiment. The product owner or product manager remains
+accountable for prioritization with the team.</p>
+<p>This helps in two ways. In your current QA work, understanding users,
+business goals, and tradeoffs helps you question requirements and
+prioritize meaningful risks. If you later want to move into product
+ownership, the same practice gives you a foundation in discovery,
+prioritization, stakeholder communication, and outcome measurement.
+Build experience by participating in those decisions and following their
+results; reading about the role alone cannot establish that
+experience.</p>
+<p>In Scrum specifically, the Product Owner is accountable for
+maximizing product value and effective Product Backlog management. A
+useful next step is to partner with your PO on a small discovery or
+backlog-ordering exercise and explain the tradeoffs behind the decision.
+<a href="https://scrumguides.org/scrum-guide.html#product-owner">Scrum
+Guide: Product Owner</a></p>
+<h3 id="1-capture-evidence-before-naming-a-feature">1. Capture evidence
+before naming a feature</h3>
+<p>Start with a short problem note:</p>
+<pre class="text"><code>User: agency campaign manager reconciling a client&#39;s weekly spend
+Observed task: compare platform reports with a partner&#39;s invoice
+Evidence to collect: recent examples, time spent, support conversations,
+                    report filters, data freshness, and mismatch categories
+Decision blocked: approve the invoice or investigate the discrepancy
+Unknown: how frequent and costly this problem is across customers</code></pre>
+<p>Avoid treating one tester's frustration as proof of market demand.
+Ask users to walk through a recent reconciliation, showing the actual
+steps where possible. Look for existing reports or settings that already
+solve it before proposing something new.</p>
+<p>Marty Cagan's discovery guidance emphasizes adjusting direction based
+on what you learn. Apply it here: be willing to discover that clearer
+documentation, a filter default, or a bug fix solves the problem. <a
+href="https://www.svpg.com/product-discovery/">Product Discovery</a></p>
+<h3 id="2-generate-competing-ideas-from-the-same-problem">2. Generate
+competing ideas from the same problem</h3>
+<p>These are original product hypotheses for an invented platform, not
+claims of novel features or competitive advantage.</p>
+<table>
+<thead>
+<tr>
+<th>Idea</th>
+<th>User problem</th>
+<th>Small first experiment</th>
+<th>Outcome to measure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spend reconciliation explainer</td>
+<td>“Why does your total differ from the partner?”</td>
+<td>Annotated report distinguishing late events, duplicates, currency,
+and billing basis</td>
+<td>Time to correctly explain a sampled discrepancy</td>
+</tr>
+<tr>
+<td>Campaign launch preflight</td>
+<td>“I launched, but delivery never started”</td>
+<td>Read-only checklist for a narrow set of known configuration
+problems</td>
+<td>Preventable launch failures and false warnings</td>
+</tr>
+<tr>
+<td>Conversion-data freshness panel</td>
+<td>“Is performance poor, or is data late?”</td>
+<td>Show processing watermark and incomplete reporting windows</td>
+<td>Correct decisions on delayed-data examples</td>
+</tr>
+<tr>
+<td>Budget-change impact preview</td>
+<td>“Will this change disrupt delivery?”</td>
+<td>Preview with documented assumptions and ranges</td>
+<td>User understanding and harmful budget edits</td>
+</tr>
+<tr>
+<td>Creative rejection action guide</td>
+<td>“What exactly must I change?”</td>
+<td>Map a few verified rejection reasons to actionable examples</td>
+<td>Time to a valid resubmission and repeat rejection rate</td>
+</tr>
+</tbody>
+</table>
+<p>For adtech, keep metric definitions explicit. An auction win and a
+billable impression are different observations; changing a label cannot
+reconcile them. OpenRTB's notification semantics illustrate why a
+trustworthy explainer needs partner-specific meaning. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md#423---object-bid">OpenRTB
+Bid object</a></p>
+<h3 id="3-evaluate-the-risks-before-ranking-the-ideas">3. Evaluate the
+risks before ranking the ideas</h3>
+<p>SVPG describes four product risks: value, usability, feasibility, and
+business viability. Use them to challenge one idea rather than score
+five ideas with invented precision. <a
+href="https://www.svpg.com/four-big-risks/">The Four Big Risks</a></p>
+<p>For the reconciliation explainer:</p>
+<ul>
+<li><strong>Value:</strong> do campaign managers need an explanation
+here, or only a correct export for their finance tool?</li>
+<li><strong>Usability:</strong> can they distinguish a temporary
+mismatch from an unresolved accounting issue?</li>
+<li><strong>Feasibility:</strong> do event lineage and partner
+identifiers exist to explain the difference reliably?</li>
+<li><strong>Viability:</strong> can the platform provide the explanation
+within partner agreements, support costs, and access controls?</li>
+</ul>
+<p>Add the strongest contrary evidence. If users rarely reconcile
+manually, or if most differences come from one known export bug, the
+case for a new feature weakens.</p>
+<h3 id="4-design-an-experiment-before-a-delivery-backlog">4. Design an
+experiment before a delivery backlog</h3>
+<p>For this hypothetical example, start with a read-only report on
+synthetic or appropriately authorized data. Include three known
+discrepancies and one case where the explanation is genuinely
+unknown.</p>
+<p>Run exploratory sessions with a small group of target users. Ask each
+person to explain the discrepancy and choose a next action before and
+after seeing the report. Measure correct explanations, time taken, and
+confident wrong answers. Ask what they would otherwise use.</p>
+<p>Agree a decision rule before looking at the results. For example:
+proceed to a limited pilot only if the report improves explanation
+accuracy without encouraging mistaken invoice approval. Define the
+actual threshold with product and research based on risk; a small
+usability study cannot establish revenue uplift.</p>
+<p>If the prototype works, compare pilot outcomes against a suitable
+baseline and account for changes in customers, campaign mix, and data
+quality. A lower support-ticket count alone could mean users gave
+up.</p>
+<h3 id="5-let-qa-shape-acceptance-criteria-and-measurement">5. Let QA
+shape acceptance criteria and measurement</h3>
+<p>Once the team chooses to build, derive criteria from the intended
+outcome:</p>
+<ul>
+<li>Every explanation identifies the reporting window, time zone,
+currency, and freshness.</li>
+<li>A known cause links to supporting evidence the user is authorized to
+see.</li>
+<li>An unclassified discrepancy is shown as unexplained, with a next
+action.</li>
+<li>Changes in late-arriving events update the explanation without
+hiding the earlier snapshot.</li>
+<li>Another advertiser's identifiers and event details remain
+inaccessible.</li>
+</ul>
+<p>If AI summarizes the explanation, calculate financial differences
+through a deterministic path and supply the model with those verified
+facts. Test unsupported claims, missing data, and cross-tenant
+retrieval. Measure whether users reach correct decisions; polished
+wording alone is insufficient.</p>
+<p>This also applies Bolton's distinction between useful automated
+observations and broader testing work: checks can verify amounts and
+access, while observation and conversation investigate whether the
+explanation actually helps. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Automation
+guidance</a></p>
+<h3 id="6-apply-the-discovery-approach-to-rewarded-advertising">6. Apply
+the discovery approach to rewarded advertising</h3>
+<p>For a rewarded-gaming exercise, follow the player's reward journey as
+well as advertiser and publisher outcomes. Candidate investigations
+include:</p>
+<ul>
+<li><strong>Reward-status explanations:</strong> can a player understand
+whether progress is pending, credited, or needs support? First verify
+the actual product's states and existing support tools.</li>
+<li><strong>Publisher integration diagnostics:</strong> can an
+integration team distinguish SDK initialization, configuration,
+event-delivery, and reward-crediting problems using permitted diagnostic
+evidence?</li>
+<li><strong>Advertiser reporting freshness:</strong> can campaign
+managers distinguish incomplete data from poor performance before
+changing a campaign?</li>
+</ul>
+<p>These are hypotheses to investigate, not claims that a particular
+platform lacks these capabilities. Interview the relevant users, inspect
+current documentation, and compare existing solutions before proposing a
+feature. Keep player rewards, publisher revenue, advertiser spend, and
+advertiser outcomes as separate quantities with explicit
+definitions.</p>
+<p>Use bidding and auction examples when studying the applicable product
+or integration. Do not assume every rewarded flow is an OpenRTB auction
+or that a generic CPM example describes its commercial model.</p>
+<h3 id="7-make-this-a-recurring-qa-to-product-practice">7. Make this a
+recurring QA-to-product practice</h3>
+<p>Use the same investigation to strengthen both kinds of judgment. As
+QA, trace the journey, reproduce the behavior, examine failure modes,
+and separate observations from possible causes. As a future Product
+Owner, ask whose goal is affected, how widespread the problem is, which
+improvement deserves priority, and how the team will know it helped.</p>
+<p>Keep an opportunity log with the user, goal, evidence, frequency,
+impact, alternative explanations, current workaround, and smallest next
+investigation. Compare opportunities by reach, severity, confidence, and
+effort. Bring the evidence to product and engineering before committing
+to a solution.</p>
+<p>Rotate your practice across reward reliability, offer clarity,
+publisher integration, advertiser reporting, performance, access, and
+operational efficiency. For each opportunity, propose one measurable
+outcome and the guardrails that protect other users and partners. A
+revenue experiment should identify platform revenue separately from
+advertiser spend, publisher earnings, player rewards, and contribution
+margin.</p>
+<p>Build experience by taking one small responsibility with your PO:
+participate in a user conversation, facilitate refinement, propose
+backlog ordering, or review an experiment's outcome. Keep the resulting
+artifact and seek feedback on your reasoning. These practical
+investigations can be repeated as a learning series while the wider blog
+continues its technical topics.</p>
+<h3 id="practical-challenge-bring-one-idea-to-product">Practical
+challenge: bring one idea to product</h3>
+<p>Choose an adtech pain point you have observed. Write a one-page pitch
+with the user, recent evidence, current workaround, proposed outcome,
+two possible solutions, biggest uncertainty, cheapest experiment,
+success measure, and one reason to stop.</p>
+<p>Open the conversation with: “I noticed this recurring problem while
+testing. Here is the evidence we have and what we still need to learn.
+Could we try this small experiment?”</p>
+<p>That contribution connects QA's investigative skills to product
+decisions, from discovering a need through defining requirements to
+checking whether the delivered feature improves the user's work.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-50.html" rel="prev"><span>Previous</span>An Agentic API and UI Testing Workflow: From Agreed Requirements to Reviewed Evidence</a><a href="/qa-blog/posts/qa-thinking-day-52.html" rel="next"><span>Next</span>Growing From QA: Learning Paths Toward Product Ownership, SDET, Test Architecture, DevOps, and Cloud Engineering</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

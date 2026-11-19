@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The pipeline is green and the new container is running. Customers still receive errors because the process accepts traffic before initialization finishes. The deployment completed technically, but the product d">
+  <meta name="color-scheme" content="light">
+  <title>From QA Toward DevOps and Cloud Engineering: Test a Deployment&#39;s Failure and Recovery | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 55</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-55">QA Thinking — Day 55</h1>
+<h2
+id="from-qa-toward-devops-and-cloud-engineering-test-a-deployments-failure-and-recovery">From
+QA Toward DevOps and Cloud Engineering: Test a Deployment's Failure and
+Recovery</h2>
+<p>The pipeline is green and the new container is running. Customers
+still receive errors because the process accepts traffic before
+initialization finishes. The deployment completed technically, but the
+product did not remain usable.</p>
+<p>This is a useful entry into DevOps and cloud engineering: extend your
+investigation from application behavior to how software is built,
+deployed, observed, and recovered. The following is a proposed practice
+lab for a small service, not a report of a deployment executed here.</p>
+<h3 id="1-understand-the-delivery-path">1. Understand the delivery
+path</h3>
+<pre class="text"><code>Commit -&gt; checks -&gt; build artifact -&gt; deploy -&gt; verify behavior -&gt; observe
+                                                   |
+                                            recover if needed</code></pre>
+<p>An <strong>artifact</strong> is the deployable output, such as a
+container image. Identify its version or digest so the deployed build
+can be connected to the code and checks that produced it.
+<strong>Infrastructure as code</strong> records resource configuration
+in versioned files so changes can be reviewed and applied
+repeatably.</p>
+<p>For a practice service, make the pipeline show the tested revision,
+deployed artifact, target environment, and verification results. When a
+stage fails, retain enough evidence to identify whether the problem came
+from application code, packaging, infrastructure, credentials, or test
+setup.</p>
+<h3 id="2-learn-the-health-checks-by-breaking-their-assumptions">2.
+Learn the health checks by breaking their assumptions</h3>
+<p>Kubernetes distinguishes three probe purposes: startup checks
+initialization, readiness controls whether a Pod should receive service
+traffic, and liveness can trigger a container restart. A configured
+startup probe gates the other probes until startup succeeds. <a
+href="https://kubernetes.io/docs/concepts/workloads/pods/probes/">Kubernetes
+probe documentation</a></p>
+<table>
+<thead>
+<tr>
+<th>Experiment in an isolated lab</th>
+<th>What to investigate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Slow initialization</td>
+<td>Does the service stay out of traffic until ready?</td>
+</tr>
+<tr>
+<td>A process that is running but cannot serve requests</td>
+<td>Can readiness reflect the meaningful service condition?</td>
+</tr>
+<tr>
+<td>A deadlocked process</td>
+<td>Does the liveness policy recover it within the intended bounds?</td>
+</tr>
+<tr>
+<td>A shared dependency outage</td>
+<td>Does the configuration avoid turning one outage into repeated
+restart storms?</td>
+</tr>
+<tr>
+<td>A new version with broken behavior</td>
+<td>Does deployment verification detect the user-facing failure?</td>
+</tr>
+</tbody>
+</table>
+<p>Choose dependencies in probes carefully with engineering. A database
+outage does not necessarily mean restarting every application instance
+is helpful. Readiness also needs thought: excluding every instance may
+remove all service capacity.</p>
+<h3 id="3-verify-the-product-after-deployment">3. Verify the product
+after deployment</h3>
+<p>A small post-deployment check might create an isolated report
+request, observe completion within the agreed deadline, retrieve the
+result, and clean it up. Check access as well as availability. Keep the
+workload bounded so verification does not distort the service it
+measures.</p>
+<p>Define user-facing indicators alongside infrastructure health. For
+this service, request success rate, request latency, and
+report-completion delay may describe different risks. Agree objectives
+and measurement windows rather than treating a single passing smoke
+check as an availability claim. <a
+href="https://sre.google/sre-book/service-level-objectives/">Google SRE:
+Service Level Objectives</a></p>
+<h3 id="4-rehearse-recovery-with-data-compatibility-in-view">4. Rehearse
+recovery with data compatibility in view</h3>
+<p>Deploy a deliberately faulty build only in the lab. Confirm which
+signal detects it and who or what initiates recovery. Measure when
+useful service returns, not only when the rollback command exits.</p>
+<p>Rolling back an application image does not automatically reverse
+database changes or queued messages. Test whether the previous version
+can read the current schema and messages. If recovery requires a forward
+fix or data repair, document and rehearse that route instead.</p>
+<p>For cloud practice, extend the experiment to identity permissions,
+network access, storage, and resource teardown. Check current service
+documentation and pricing before provisioning. A local Kubernetes lab
+can teach deployment behavior without proving a managed cloud
+environment's identity or network policies.</p>
+<h3 id="5-build-experience-through-small-owned-improvements">5. Build
+experience through small owned improvements</h3>
+<p>An SDET might improve reliable deployment checks. Someone exploring
+DevOps might improve the pipeline and its feedback. Someone exploring
+cloud engineering might provision the isolated environment and
+demonstrate recovery. Work with the people who operate the actual
+service and be explicit about what you owned.</p>
+<p>Bolton's automation guidance is a useful reminder to choose
+observations with meaningful expected outcomes. “Deployment command
+succeeded” and “users can finish their work” need different evidence. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Automation
+guidance</a></p>
+<h3 id="practical-challenge-one-broken-rollout">Practical challenge: one
+broken rollout</h3>
+<p>Create or plan a local lab with a tiny service, a versioned image, a
+readiness condition, and a post-deployment behavior check. Introduce a
+slow startup or a failing endpoint. Record the timeline from deployment
+to detection to recovery. Finish with an evidence report: what failed,
+which signal caught it, what restored service, what happened to data,
+and what the lab does not establish about production.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-54.html" rel="prev"><span>Previous</span>System Design for QA and SDETs: Build a Test Architecture Around One Report Pipeline</a><a href="/qa-blog/posts/qa-thinking-day-56.html" rel="next"><span>Next</span>CPI, eCPM, ROAS, and ARPDAU: Test the Meaning Behind an Advertising Dashboard</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

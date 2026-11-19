@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An AI assistant can generate a browser journey that ends at “Reward earned.” The useful question is whether the tests would catch a duplicated credit, another user&#39;s balance being exposed, or a completion event">
+  <meta name="color-scheme" content="light">
+  <title>Agentic API and UI Testing for a Reward Journey: Preserve the Business Oracle Through Every Layer | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 60</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-60">QA Thinking — Day 60</h1>
+<h2
+id="agentic-api-and-ui-testing-for-a-reward-journey-preserve-the-business-oracle-through-every-layer">Agentic
+API and UI Testing for a Reward Journey: Preserve the Business Oracle
+Through Every Layer</h2>
+<p>An AI assistant can generate a browser journey that ends at “Reward
+earned.” The useful question is whether the tests would catch a
+duplicated credit, another user's balance being exposed, or a completion
+event lost during recovery.</p>
+<p>This lesson designs a small testing workflow around a hypothetical
+reward service. Endpoints, states, and policies are illustrative. No
+reward service was deployed or tested for this article. The goal is to
+connect QA investigation, SDET skills, system design, cloud testing, and
+product judgment through one vertical slice.</p>
+<h3 id="1-agree-a-checkable-promise">1. Agree a checkable promise</h3>
+<p>Suppose refinement establishes these example rules:</p>
+<ul>
+<li>One validated completion credits one reward under the documented
+deduplication policy.</li>
+<li>Repeated deliveries of that completion do not add another
+credit.</li>
+<li>A player can read only their own balance and reward status.</li>
+<li>Interrupted processing eventually recovers within an agreed
+deadline.</li>
+<li>Pending work remains distinguishable from a confirmed
+rejection.</li>
+</ul>
+<p>Record the rule source and owner. Use examples for duplicates,
+invalid completions, late delivery, identity changes, and interrupted
+processing. Example Mapping helps separate rules, examples, and
+questions. <a
+href="https://cucumber.io/docs/bdd/example-mapping/">Cucumber: Example
+Mapping</a></p>
+<h3 id="2-draw-the-writes-and-failure-boundaries">2. Draw the writes and
+failure boundaries</h3>
+<pre class="text"><code>Client -&gt; Completion API -&gt; Queue -&gt; Validation worker -&gt; Reward ledger
+                                                          |
+                                                     Balance API -&gt; UI</code></pre>
+<p>Ask where data becomes durable, when messages are acknowledged, and
+how a retry is recognized. A ledger write followed by a lost
+acknowledgement is different from a failure before the write. The
+required test depends on the actual transaction boundaries.</p>
+<p>For cloud execution, verify the intended service identity can access
+the queue and ledger, while unintended identities cannot. Local mocks
+cannot establish deployed permissions or network access. Include
+resource ownership, bounded traffic, and teardown in the test plan.</p>
+<h3 id="3-select-a-small-portfolio-of-checks">3. Select a small
+portfolio of checks</h3>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Expected evidence</th>
+<th>Important limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Duplicate completion via API/integration</td>
+<td>One ledger credit and one balance increment</td>
+<td>Depends on the actual deduplication boundary</td>
+</tr>
+<tr>
+<td>Cross-user status or balance request</td>
+<td>Rejection and no unintended disclosure</td>
+<td>Does not establish every access path</td>
+</tr>
+<tr>
+<td>Worker interruption and redelivery</td>
+<td>Accepted work accounted for, with no duplicate credit</td>
+<td>Requires controlled interruption and observable state</td>
+</tr>
+<tr>
+<td>Pending UI with controlled responses</td>
+<td>Accurate status and useful next action</td>
+<td>Does not establish backend persistence</td>
+</tr>
+<tr>
+<td>Real UI journey plus independent API read</td>
+<td>Visible result agrees with stored user state</td>
+<td>One journey cannot cover every failure mode</td>
+</tr>
+</tbody>
+</table>
+<p>Playwright supports API setup and verification alongside browser
+tests. Use owned data and existing fixtures so parallel tests do not
+share mutable balances. <a
+href="https://playwright.dev/docs/api-testing">Playwright API
+testing</a></p>
+<h3 id="4-give-the-agent-a-bounded-workflow">4. Give the agent a bounded
+workflow</h3>
+<p>Playwright documents planner, generator, and healer agents. The
+business expectations still need independent sources and review. <a
+href="https://playwright.dev/docs/test-agents">Playwright Test
+Agents</a></p>
+<p>Use this planning prompt with your assistant:</p>
+<pre class="text"><code>Read the agreed reward rules and existing fixtures.
+Plan checks for duplicate delivery, cross-user access, interrupted processing,
+and honest pending feedback. For each, name the expected result, its source,
+test boundary, owned data, cleanup, and observable failure evidence.
+Keep unanswered business questions explicit. Produce the plan for review.</code></pre>
+<p>After review, ask it to generate only the selected checks, run them
+in the designated test environment, and report exact commands and
+results. Preserve failures rather than making expectations match
+whatever the app currently does.</p>
+<p>For a failing check, ask for classification: product defect, test
+defect, environment/data problem, or unresolved rule. Review assertion
+changes, skips, and deletions as changes to the evidence the suite
+provides.</p>
+<h3 id="5-prove-detection-then-carry-the-evidence-into-ci">5. Prove
+detection, then carry the evidence into CI</h3>
+<p>In an isolated implementation or controlled fixture, deliberately
+make duplicate delivery increment the balance twice. Confirm the
+relevant check fails for that reason, remove the fault, and confirm it
+passes. This experiment tests detection ability, not universal
+correctness.</p>
+<p>Retain revision, environment, data IDs, timestamps, redacted request
+evidence, and relevant traces. Assign ownership for failures. A
+reviewable CI report should distinguish executed checks from proposed or
+blocked checks.</p>
+<p>Bolton's automation guidance supports choosing repeatable
+observations while retaining investigation around the assumptions and
+results. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Which
+Test Cases Should I Automate?</a></p>
+<h3 id="practical-challenge">Practical challenge</h3>
+<p>Create a four-case plan for the portfolio above. Write one rule
+example, identify one durable-write interruption, and draft one
+assertion that would detect duplicate crediting. If you can run an
+isolated service, perform the controlled-fault experiment and record the
+result. Otherwise, publish the plan as a plan and list what is needed to
+execute it.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-59.html" rel="prev"><span>Previous</span>A Revenue Increase Can Still Be a Bad Product Change: Design the Experiment Before Celebrating</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

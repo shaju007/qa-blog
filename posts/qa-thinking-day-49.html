@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The product owner brings a story: “As an advertiser, I want to pause a campaign immediately so I can stop spending.” A designer has drawn a pause button. A developer estimates one day. QA is asked whether anyth">
+  <meta name="color-scheme" content="light">
+  <title>QA in Refinement: Turn “Pause the Campaign Immediately” Into Decisions the Team Can Test | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 49</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-49">QA Thinking — Day 49</h1>
+<h2
+id="qa-in-refinement-turn-pause-the-campaign-immediately-into-decisions-the-team-can-test">QA
+in Refinement: Turn “Pause the Campaign Immediately” Into Decisions the
+Team Can Test</h2>
+<p>The product owner brings a story: “As an advertiser, I want to pause
+a campaign immediately so I can stop spending.” A designer has drawn a
+pause button. A developer estimates one day. QA is asked whether
+anything is missing.</p>
+<p>Your contribution starts with the user's purpose: control financial
+exposure. That purpose is broader than a button or an HTTP response.
+This lesson extends <a href="qa-thinking-day-03.html">Day 3's
+introduction to refinement</a> into a practical requirements workshop
+with concrete outputs.</p>
+<h3 id="1-prepare-questions-around-one-business-example">1. Prepare
+questions around one business example</h3>
+<p>Before refinement, read the story, inspect the existing campaign
+states, and bring one realistic timeline:</p>
+<pre class="text"><code>10:00:00.000  advertiser clicks Pause
+10:00:00.050  API accepts the change
+10:00:01.000  an already-started auction wins
+10:00:04.000  another bidder receives the updated state
+10:01:10.000  a billable event from the earlier auction arrives</code></pre>
+<p>Ask: “Which of these activities should pause prevent, and what should
+the advertiser see about the later charge?” This gives product and
+engineering a decision they can discuss together.</p>
+<p>The goal is shared understanding, including needs that the ticket has
+not captured. Michael Bolton's discussion of missing requirements is a
+useful reminder that written specifications do not exhaust what matters.
+<a
+href="https://developsense.com/blog/2024/05/missing-requirements">Missing
+Requirements</a></p>
+<h3 id="2-map-rules-examples-and-questions-together">2. Map rules,
+examples, and questions together</h3>
+<p>Cucumber's Example Mapping separates the story, rules, concrete
+examples, and unanswered questions. Use that structure with product,
+development, and QA; include design or operations when their knowledge
+matters. <a href="https://cucumber.io/docs/bdd/example-mapping/">Example
+Mapping</a></p>
+<p>For our invented platform, the workshop might produce:</p>
+<table>
+<thead>
+<tr>
+<th>Rule under discussion</th>
+<th>Example to test our understanding</th>
+<th>Open decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Only campaign managers may pause</td>
+<td>A read-only analyst sends the API request directly</td>
+<td>Which roles are campaign managers?</td>
+</tr>
+<tr>
+<td>Pause stops new bid decisions</td>
+<td>A serving node has stale cached campaign state</td>
+<td>What is the maximum propagation delay?</td>
+</tr>
+<tr>
+<td>Existing obligations remain payable</td>
+<td>A prior auction produces a later billable event</td>
+<td>What explanation and amounts appear in the UI?</td>
+</tr>
+<tr>
+<td>Repeating pause is safe</td>
+<td>A client retries after losing the response</td>
+<td>Same response or documented no-op result?</td>
+</tr>
+<tr>
+<td>Concurrent edits do not silently overwrite intent</td>
+<td>Another manager resumes while pause is pending</td>
+<td>Version conflict, ordering policy, or another explicit rule?</td>
+</tr>
+</tbody>
+</table>
+<p>Keep the table visible. A question with an owner and a follow-up date
+is useful output. An invented answer hidden inside a test is a future
+disagreement.</p>
+<h3 id="3-make-acceptance-criteria-observable">3. Make acceptance
+criteria observable</h3>
+<p>Suppose the team chooses a 30-second propagation target. Record it as
+an example policy, not an adtech standard:</p>
+<blockquote>
+<p>Given an active campaign and an authorized campaign manager, when
+pause is accepted, the campaign API reports <code>paused</code>, and all
+serving nodes stop making new bid decisions for the campaign within 30
+seconds of acceptance. Previously accepted obligations remain billable.
+The UI explains the delay and the possibility of later charges.</p>
+</blockquote>
+<p>Now ask how each part can be observed. Do we have a request
+timestamp, a campaign version, decision logs, and a way to generate
+controlled opportunities? What exactly counts as a “new decision” at the
+deadline? Product intent and testability need to meet before estimation
+is reliable.</p>
+<p>Check boundaries: a decision just before the deadline, at it, and
+after it; a disconnected serving node; a pause during another edit; a
+client that loses the response. Agree on the authoritative timestamp and
+allowable measurement precision.</p>
+<h3 id="4-cover-more-than-functional-behavior">4. Cover more than
+functional behavior</h3>
+<p>Bring a short requirements checklist to the conversation:</p>
+<ul>
+<li><strong>Actors and access:</strong> campaign owner, agency user,
+support operator, service account, another tenant.</li>
+<li><strong>Data and state:</strong> valid transitions, stale versions,
+retention, audit events.</li>
+<li><strong>Time and failure:</strong> propagation, retries, outages,
+recovery, late events.</li>
+<li><strong>User experience:</strong> pending state, double clicks,
+keyboard use, understandable consequences.</li>
+<li><strong>Operations:</strong> evidence for support, alerts for missed
+propagation, rollback behavior.</li>
+<li><strong>Business outcome:</strong> whether advertisers understand
+and trust the pause promise.</li>
+</ul>
+<p>Use the checklist to find gaps in this story. It is a conversation
+aid rather than a demand to expand every story into every possible
+concern.</p>
+<h3 id="5-leave-refinement-with-a-small-usable-package">5. Leave
+refinement with a small, usable package</h3>
+<p>The package should include the agreed rules, examples with expected
+outcomes, unresolved decisions with owners, a proposed story slice, and
+the testability work needed for it. Link those artifacts to the story so
+developers and testers use the same decisions.</p>
+<p>A useful slice might deliver authorized manual pause, visible
+propagation state, and an audit trail. Automatic budget recommendations
+can be a separate discovery item. The product owner decides priority
+with the team; QA contributes evidence about risk and uncertainty.</p>
+<p>When a meeting becomes defensive, try:</p>
+<blockquote>
+<p>“I can test that the button calls the endpoint. To check the
+advertiser's promise, we also need a decision about when new bids stop
+and how we explain later charges. Could we agree those two examples
+before estimating?”</p>
+</blockquote>
+<h3
+id="practical-challenge-run-a-25-minute-refinement-exercise">Practical
+challenge: run a 25-minute refinement exercise</h3>
+<p>Take “Notify advertisers when a campaign is underperforming.” Spend
+five minutes defining whose problem this is, ten mapping rules and
+examples, five identifying unanswered questions, and five proposing a
+small first slice.</p>
+<p>Produce at least one example where an alert would be misleading:
+delayed conversion data, a campaign too new to evaluate, or a tiny
+sample. Write the acceptance criterion only after the team decides the
+policy. Keep unresolved questions visible instead of turning them into
+assumptions.</p>
+<p>Next: <a href="qa-thinking-day-50.html">give an AI testing agent this
+evidence before asking it to generate checks</a>.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-48.html" rel="prev"><span>Previous</span>Adtech Testing Across API, Events, and UI: Reconcile One Campaign Before Trusting the Dashboard</a><a href="/qa-blog/posts/qa-thinking-day-50.html" rel="next"><span>Next</span>An Agentic API and UI Testing Workflow: From Agreed Requirements to Reviewed Evidence</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

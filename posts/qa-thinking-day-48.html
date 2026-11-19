@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An advertiser sees 1,200 impressions and €3.00 spend. The auction service reports 1,500 wins. Support says the numbers disagree. Engineering says every endpoint is green. How do you decide whether there is a de">
+  <meta name="color-scheme" content="light">
+  <title>Adtech Testing Across API, Events, and UI: Reconcile One Campaign Before Trusting the Dashboard | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 48</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-48">QA Thinking — Day 48</h1>
+<h2
+id="adtech-testing-across-api-events-and-ui-reconcile-one-campaign-before-trusting-the-dashboard">Adtech
+Testing Across API, Events, and UI: Reconcile One Campaign Before
+Trusting the Dashboard</h2>
+<p>An advertiser sees 1,200 impressions and €3.00 spend. The auction
+service reports 1,500 wins. Support says the numbers disagree.
+Engineering says every endpoint is green. How do you decide whether
+there is a defect?</p>
+<p>Start by asking what each number counts. A <strong>DSP</strong> buys
+ad opportunities for advertisers; an <strong>SSP</strong> helps
+publishers sell inventory; an exchange connects trading participants. A
+winning bid, a rendered ad, a viewable ad, and a billable event describe
+different things. OpenRTB distinguishes win notifications
+(<code>nurl</code>) from billing notifications (<code>burl</code>), with
+billability depending on exchange policy. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md#423---object-bid">IAB
+Tech Lab OpenRTB 2.6, Bid object and notices</a></p>
+<p>Earlier lessons covered <a href="qa-thinking-day-14.html">event
+integrity</a> and <a href="qa-thinking-day-27.html">budget pacing</a>.
+Today we build a small reconciliation experiment across the whole
+product. Every number and policy below belongs to an invented test
+system.</p>
+<h3 id="1-write-the-counting-policy-before-creating-traffic">1. Write
+the counting policy before creating traffic</h3>
+<p>Our example campaign uses EUR and CPM pricing: cost per thousand
+billable impressions. For this controlled fixture, every billable
+impression clears at €2.50 CPM, with no fees or currency conversion.
+Production clearing prices may vary per event.</p>
+<p>The team agrees on these example rules:</p>
+<ul>
+<li>Wins appear only in the auction report.</li>
+<li>The advertiser's “Impressions” metric counts accepted billable
+impression events.</li>
+<li>Retries of the same billable event count once, keyed by partner and
+event ID.</li>
+<li>Events retain their event-time UTC day, including when they arrive
+later.</li>
+<li>The dashboard updates within 60 seconds of ingestion and shows its
+freshness time.</li>
+</ul>
+<p>These agreements make a useful oracle. Without them, testers may
+reconcile incompatible definitions and file misleading bugs.</p>
+<h3 id="2-create-a-tiny-ledger-with-an-answer-you-can-calculate">2.
+Create a tiny ledger with an answer you can calculate</h3>
+<table>
+<thead>
+<tr>
+<th>Fixture observation</th>
+<th>Count</th>
+<th>Expected treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Auction wins</td>
+<td>1,500</td>
+<td>Auction report only</td>
+</tr>
+<tr>
+<td>Distinct, valid billable impression events</td>
+<td>1,200</td>
+<td>Count and charge</td>
+</tr>
+<tr>
+<td>Retries of 40 of those same billable events</td>
+<td>40</td>
+<td>Preserve ingestion evidence; add no charge</td>
+</tr>
+<tr>
+<td>Invalid billable events with no required event ID</td>
+<td>10</td>
+<td>Reject or quarantine under the agreed policy</td>
+</tr>
+<tr>
+<td>Additional valid events arriving after the first snapshot</td>
+<td>20</td>
+<td>Add to their original event-time day</td>
+</tr>
+</tbody>
+</table>
+<p>At the first reporting checkpoint:</p>
+<pre class="text"><code>billable impressions = 1,200
+spend = 1,200 / 1,000 * EUR 2.50 = EUR 3.00</code></pre>
+<p>After the 20 late events have been processed:</p>
+<pre class="text"><code>billable impressions = 1,220
+spend = 1,220 / 1,000 * EUR 2.50 = EUR 3.05</code></pre>
+<p>Use a documented monetary representation and rounding policy. With
+varying prices, sum each event's charge at the agreed precision before
+applying presentation rounding. Multiplying an average displayed CPM by
+a displayed count may introduce a different result.</p>
+<h3 id="3-follow-the-same-cohort-through-the-system">3. Follow the same
+cohort through the system</h3>
+<p>Give this fixture a unique campaign ID and a correlation/run ID.
+Record the event IDs and timestamps. Inspect, in order:</p>
+<ol type="1">
+<li>The input dataset: which unique events did the test send?</li>
+<li>The ingestion result: which were accepted, rejected, quarantined, or
+deduplicated?</li>
+<li>The financial aggregate: which accepted events contributed to
+spend?</li>
+<li>The reporting API: which filters, time zone, currency, and watermark
+produced the response?</li>
+<li>The UI: does it display that response accurately and explain data
+freshness?</li>
+</ol>
+<p>Use the same campaign, date range, and processing checkpoint at every
+step. A comparison taken while one service has processed the late events
+and another has not is inconclusive until the freshness promise
+expires.</p>
+<p>An API response agreeing with the UI establishes presentation
+consistency. An independently calculated ledger agreeing with both gives
+stronger evidence about the amount. Querying the same aggregate through
+two endpoints does not create two independent oracles.</p>
+<h3 id="4-put-checks-at-the-boundary-that-can-answer-the-question">4.
+Put checks at the boundary that can answer the question</h3>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Suitable approach</th>
+<th>Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Are duplicate events charged twice?</td>
+<td>Service integration test with controlled event delivery</td>
+<td>Does not establish every partner's retry behavior</td>
+</tr>
+<tr>
+<td>Does the reporting endpoint isolate tenants?</td>
+<td>Authenticated API tests with two advertisers</td>
+<td>Does not establish UI usability</td>
+</tr>
+<tr>
+<td>Is the delayed-data state understandable?</td>
+<td>Browser check plus human exploration</td>
+<td>A screenshot alone does not prove accounting</td>
+</tr>
+<tr>
+<td>What happens if the billing consumer restarts?</td>
+<td>Replay experiment with controlled interruption</td>
+<td>Requires observability of accepted and committed events</td>
+</tr>
+<tr>
+<td>Are bidders meeting the auction deadline?</td>
+<td>Protocol/load check using the negotiated timing policy</td>
+<td>Browser timings cannot answer this</td>
+</tr>
+</tbody>
+</table>
+<p>For timing, OpenRTB's <code>tmax</code> includes network latency;
+test the actual partner contract rather than inventing a universal
+timeout. <a
+href="https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md#321---object-bidrequest">OpenRTB
+BidRequest</a></p>
+<p>Bolton's advice on selecting automatable work applies directly:
+choose repeatable observations with useful oracles. Keep exploratory
+sessions for confusing reconciliation, missing explanations, and novel
+partner behavior. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Automation
+guidance</a></p>
+<h3 id="5-report-a-discrepancy-with-the-missing-decision-exposed">5.
+Report a discrepancy with the missing decision exposed</h3>
+<p>Instead of “dashboard spend wrong,” write:</p>
+<blockquote>
+<p>For test campaign C-47, the accepted-event ledger contains 1,200
+distinct billable events at €2.50 CPM. The reporting API returns €3.10
+after the 60-second freshness deadline. The extra €0.10 equals 40
+retried events. Attached: input IDs, ingestion outcomes, aggregate
+query, and API response. Risk: advertisers may be charged twice for
+event retries. Decision needed: confirm the partner/event deduplication
+key and whether historical totals require correction.</p>
+</blockquote>
+<p>That is a hypothesis with evidence. The matching amount suggests a
+cause; it does not prove which component introduced it.</p>
+<h3 id="practical-challenge-find-the-first-divergence">Practical
+challenge: find the first divergence</h3>
+<p>Sketch the five checkpoints for the fixture above. Inject each fault
+separately: charge retries twice, assign late events to ingestion day,
+and omit the UI freshness timestamp. Predict which checks detect each
+fault and which stay green. Write one report that identifies the first
+observed divergence without claiming an unverified root cause.</p>
+<p>Next: <a href="qa-thinking-day-49.html">take these unanswered
+policies into refinement</a>.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-47.html" rel="prev"><span>Previous</span>API Testing in Practice: Prove the Business Change, the Permissions, and the Failure Path</a><a href="/qa-blog/posts/qa-thinking-day-49.html" rel="next"><span>Next</span>QA in Refinement: Turn “Pause the Campaign Immediately” Into Decisions the Team Can Test</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>

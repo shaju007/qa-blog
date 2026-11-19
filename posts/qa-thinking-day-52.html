@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="You do not have to choose your whole career before learning how a product works. Following one feature from customer need through code, infrastructure, release, and production gives you better questions today a">
+  <meta name="color-scheme" content="light">
+  <title>Growing From QA: Learning Paths Toward Product Ownership, SDET, Test Architecture, DevOps, and Cloud Engineering | QA Field Notes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/qa-blog/assets/site.css">
+  <script src="/qa-blog/assets/site.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/qa-blog/" aria-label="QA Field Notes home"><span class="brand-mark" aria-hidden="true">Q<span>A</span></span><span>QA Field Notes</span></a>
+      <nav aria-label="Main navigation"><a href="/qa-blog/#thinking">Learning blog</a><a href="/qa-blog/#interview">Interview Q&A</a></nav>
+    </div>
+  </header>
+<main class="article-width">
+  <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/qa-blog/">All writing</a><span aria-hidden="true">/</span><span>Learning blog</span><span aria-hidden="true">/</span><span>Day 52</span></nav>
+  <article class="article-body"><h1 id="qa-thinking--day-52">QA Thinking — Day 52</h1>
+<h2
+id="growing-from-qa-learning-paths-toward-product-ownership-sdet-test-architecture-devops-and-cloud-engineering">Growing
+From QA: Learning Paths Toward Product Ownership, SDET, Test
+Architecture, DevOps, and Cloud Engineering</h2>
+<p>You do not have to choose your whole career before learning how a
+product works. Following one feature from customer need through code,
+infrastructure, release, and production gives you better questions today
+and helps you discover which work you want to own later.</p>
+<p>This blog's expanded learning path connects product thinking with
+engineering depth. The paths below are suggested practice routes, not
+universal job descriptions or promises of a role change.
+Responsibilities differ between organizations.</p>
+<h3 id="1-build-a-shared-foundation">1. Build a shared foundation</h3>
+<p>Use an invented campaign-management product as a running example. An
+advertiser creates a campaign through a browser. An API stores it, a
+worker processes events, and a report shows its results.</p>
+<p>Learn enough HTTP, SQL, programming, Git, Linux, and networking to
+explain that journey. Then add test design, user needs, security
+boundaries, and failure analysis. Work through one unfamiliar concept at
+a time: define it, trace an example, change an input, and predict the
+result.</p>
+<p>An <strong>artifact</strong> is a concrete piece of work someone can
+inspect: a small test, architecture diagram, experiment report,
+deployment configuration, or product decision. End each lesson with one
+artifact and an explanation of its limits.</p>
+<h3 id="2-explore-the-different-directions">2. Explore the different
+directions</h3>
+<table>
+<thead>
+<tr>
+<th>Direction</th>
+<th>Work to practice</th>
+<th>Evidence to produce</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Product Owner</td>
+<td>Understand user problems, prioritize competing needs, clarify
+outcomes</td>
+<td>Discovery notes, ordered backlog proposal, and an experiment
+result</td>
+</tr>
+<tr>
+<td>SDET: software development engineer in test</td>
+<td>Write maintainable test software, build fixtures, debug across
+layers</td>
+<td>A small API/UI suite with isolation, useful assertions, and CI
+evidence</td>
+</tr>
+<tr>
+<td>Test architect</td>
+<td>Design a test strategy spanning services, teams, environments, and
+risks</td>
+<td>A justified check portfolio, testability changes, ownership, and
+rollout plan</td>
+</tr>
+<tr>
+<td>DevOps or platform work</td>
+<td>Improve delivery through automation and operational feedback</td>
+<td>A repeatable pipeline with observable deployment and recovery
+behavior</td>
+</tr>
+<tr>
+<td>Cloud engineer</td>
+<td>Provision and operate cloud resources, networking, identity, and
+recovery</td>
+<td>Reproducible infrastructure plus access, restore, teardown, and cost
+evidence</td>
+</tr>
+</tbody>
+</table>
+<p>These directions overlap. An SDET may improve pipelines; a cloud
+engineer may write automated checks. Test architecture also requires
+judgment about business risk and collaboration, not only framework
+design.</p>
+<h3 id="3-product-thinking-strengthens-qa-before-any-career-move">3.
+Product thinking strengthens QA before any career move</h3>
+<p>Compare “the report loads” with “the advertiser can decide whether to
+investigate spend.” The second goal changes what you test: accuracy,
+freshness, explanations, access, and whether the user understands the
+result.</p>
+<p>For a possible move into product ownership, practice discovery,
+saying why one outcome matters more than another, and following whether
+a change helped. In Scrum, Product Owner accountability includes product
+value and effective backlog management. <a
+href="https://scrumguides.org/scrum-guide.html#product-owner">Scrum
+Guide</a></p>
+<p>Try one supervised responsibility with your PO: facilitate an
+example-mapping discussion, summarize user evidence, or propose the
+ordering of three backlog items with explicit tradeoffs. Ask for
+feedback on the decision, then observe its outcome. <a
+href="qa-thinking-day-51.html">Worked adtech discovery example</a></p>
+<h3 id="4-technical-depth-starts-with-explainable-boundaries">4.
+Technical depth starts with explainable boundaries</h3>
+<p>For an engineering path, draw the browser, API, database, queue, and
+worker. Explain what each stores, who can access it, and how the caller
+learns that work succeeded.</p>
+<p>Architecture learning should consider operations, security,
+reliability, performance, cost, and sustainability. AWS's
+Well-Architected Framework provides one provider-specific set of review
+questions across those concerns. Use it as a lens, then verify the
+behavior of your actual provider and services. <a
+href="https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html">AWS
+Well-Architected</a></p>
+<p>The next lessons apply this approach to <a
+href="qa-thinking-day-53.html">cloud testing</a>, <a
+href="qa-thinking-day-54.html">system design and test architecture</a>,
+and <a href="qa-thinking-day-55.html">DevOps and cloud
+engineering</a>.</p>
+<h3 id="5-choose-one-next-responsibility">5. Choose one next
+responsibility</h3>
+<p>Keep a small learning log: what you expected, what you observed, what
+failed, and what you can now explain without assistance. Bring it to a
+colleague in the role you are exploring. Ask them to review both the
+work and your reasoning.</p>
+<p>If AI helps produce code or a design, inspect it, run it where
+appropriate, and explain why it should work. Retain the failure evidence
+and record what you did not verify. Bolton's automation guidance
+supports selecting useful tool-assisted observations while keeping the
+broader investigation visible. <a
+href="https://developsense.com/blog/2018/06/which-test-cases-should-i-automate">Which
+Test Cases Should I Automate?</a></p>
+<h3 id="practical-challenge-one-feature-two-perspectives">Practical
+challenge: one feature, two perspectives</h3>
+<p>Pick one feature. Write its user outcome and draw its technical
+journey. Choose one product responsibility and one engineering task from
+the table. Define a small deliverable for each, the evidence that would
+make it useful, and the person who can review it. Complete those before
+expanding your tool list.</p>
+</article>
+  <nav class="article-neighbors" aria-label="More articles"><a href="/qa-blog/posts/qa-thinking-day-51.html" rel="prev"><span>Previous</span>Think Like a Product Owner: Turn Adtech Testing Observations Into Product Experiments</a><a href="/qa-blog/posts/qa-thinking-day-53.html" rel="next"><span>Next</span>Cloud Testing: Check Identity, Network Boundaries, Recovery, and Cost Alongside the API</a></nav>
+  <a class="back-link" href="/qa-blog/">← Back to all writing</a>
+</main>
+  <footer class="site-footer"><div class="content-width"><span>QA Field Notes</span><span>Testing, quality, and the decisions between them.</span></div></footer>
+</body>
+</html>
